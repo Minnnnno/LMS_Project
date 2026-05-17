@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SkillUp LMS{% endblock title %}</title>
+
+    <link rel="stylesheet" href="/static/css/app.css">
+
+    {% block extra_css %}{% endblock extra_css %}
+</head>
+<body>
+    <div class="app-shell">
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">⏻</div>
+                <span class="brand-text">SkillUp</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item active">
+                    <span class="nav-icon">⌂</span>
+                    <span>Dashboard</span>
+                </a>
+
+                <a href="/courses" class="nav-item">
+                    <span class="nav-icon">◇</span>
+                    <span>Courses</span>
+                </a>
+
+                <a href="/lessons" class="nav-item">
+                    <span class="nav-icon">▣</span>
+                    <span>Lessons</span>
+                </a>
+
+                <a href="/assessments" class="nav-item">
+                    <span class="nav-icon">▤</span>
+                    <span>Assessments</span>
+                </a>
+
+                <a href="/challenges" class="nav-item">
+                    <span class="nav-icon">☆</span>
+                    <span>Challenges</span>
+                </a>
+
+                <a href="/certification" class="nav-item">
+                    <span class="nav-icon">▥</span>
+                    <span>Certification</span>
+                </a>
+
+                <a href="/projects" class="nav-item">
+                    <span class="nav-icon">□</span>
+                    <span>Project</span>
+                </a>
+
+                <a href="/downloads" class="nav-item">
+                    <span class="nav-icon">⇩</span>
+                    <span>Download</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main content -->
+        <main class="main-content">
+
+            <!-- Top navigation -->
+            <header class="topbar">
+                <nav class="top-links">
+                    <a href="/courses">Courses</a>
+                    <a href="/blog">Blog</a>
+                    <a href="/music">Music</a>
+                    <a href="/contest">Contest</a>
+                </nav>
+
+                <div class="top-actions">
+                    <form action="/search" method="get" class="search-box">
+                        <span>⌕</span>
+                        <input type="text" name="q" placeholder="search..">
+                    </form>
+
+                    <a href="/login" class="signin-btn">Sign In</a>
+                </div>
+            </header>
+
+            <!-- Page area -->
+            <section class="page-content">
+                {% block content %}{% endblock content %}
+            </section>
+
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    {% block extra_js %}{% endblock extra_js %}
+</body>
+</html>

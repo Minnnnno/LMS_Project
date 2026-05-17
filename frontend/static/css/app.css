@@ -1,0 +1,390 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #ffffff;
+    color: #222;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.app-shell {
+    min-height: 100vh;
+    display: flex;
+    background: #ffffff;
+}
+
+/* Sidebar */
+
+.sidebar {
+    width: 230px;
+    min-height: 100vh;
+    padding: 32px 20px;
+    background: #ffffff;
+    border-right: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 42px;
+}
+
+.brand-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 10px;
+    background: #eeeeee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: #111;
+}
+
+.brand-text {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -1px;
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.nav-item {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 10px;
+    border-radius: 4px;
+    color: #2d2d2d;
+    font-size: 15px;
+}
+
+.nav-item:hover,
+.nav-item.active {
+    background: #ececec;
+}
+
+.nav-icon {
+    width: 18px;
+    text-align: center;
+    font-size: 17px;
+}
+
+
+/* Main layout */
+
+.main-content {
+    flex: 1;
+    padding: 36px;
+    background: #ffffff;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 66px;
+}
+
+.top-links {
+    display: flex;
+    gap: 34px;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.top-links a:hover {
+    color: #666;
+}
+
+.top-actions {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+}
+
+.search-box {
+    width: 250px;
+    height: 46px;
+    border-radius: 7px;
+    background: #eeeeee;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+}
+
+.search-box span {
+    font-size: 24px;
+    color: #333;
+}
+
+.search-box input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+}
+
+.signin-btn {
+    height: 46px;
+    padding: 0 22px;
+    border-radius: 7px;
+    background: #171717;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+/* Page content */
+
+.page-content {
+    max-width: 1050px;
+}
+
+/* Reusable dashboard-style elements */
+
+.welcome-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 28px;
+}
+
+.avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #eaeaea;
+}
+
+.page-heading {
+    margin: 0;
+    font-size: 21px;
+    font-weight: 600;
+}
+
+.page-subtitle {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: #555;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 26px;
+    margin-bottom: 22px;
+}
+
+.stat-card {
+    min-height: 92px;
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 22px 18px;
+    box-shadow: 0 16px 35px rgba(0, 0, 0, 0.06);
+    position: relative;
+}
+
+.stat-card h3 {
+    margin: 0 0 18px;
+    font-size: 16px;
+    color: #555;
+}
+
+.stat-card p {
+    margin: 0;
+    color: #9a9a9a;
+    font-size: 13px;
+}
+
+.stat-icon {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #171717;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.section-title {
+    margin: 0 0 18px;
+    font-size: 21px;
+    font-weight: 600;
+}
+
+.card {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 22px 18px;
+    box-shadow: 0 16px 35px rgba(0, 0, 0, 0.06);
+}
+
+.course-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 26px;
+}
+
+.course-card {
+    min-height: 145px;
+}
+
+.course-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: #f4f4f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 18px;
+}
+
+.course-card h3 {
+    margin: 0 0 16px;
+    font-size: 16px;
+}
+
+.progress-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.progress-track {
+    flex: 1;
+    height: 10px;
+    border-radius: 999px;
+    background: #f0f0f0;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: #171717;
+}
+
+.progress-text {
+    font-size: 13px;
+    color: #777;
+}
+
+.two-column-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.95fr;
+    gap: 28px;
+}
+
+.list-card {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-height: 84px;
+}
+
+.list-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 4px;
+    background: #f4f4f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.list-card h3 {
+    margin: 0 0 8px;
+    font-size: 16px;
+}
+
+.meta-row {
+    display: flex;
+    gap: 20px;
+    font-size: 13px;
+    color: #333;
+}
+
+/* Responsive */
+
+@media (max-width: 1000px) {
+    .sidebar {
+        width: 190px;
+    }
+
+    .stats-grid,
+    .course-grid,
+    .two-column-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 20px;
+    }
+}
+
+@media (max-width: 720px) {
+    .app-shell {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        min-height: auto;
+    }
+
+    .premium-card {
+        display: none;
+    }
+
+    .main-content {
+        padding: 24px;
+    }
+
+    .top-links {
+        flex-wrap: wrap;
+        gap: 18px;
+    }
+
+    .top-actions {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+    }
+
+    .search-box {
+        width: 100%;
+    }
+
+    .signin-btn {
+        width: 100%;
+    }
+}
