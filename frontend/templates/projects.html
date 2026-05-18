@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Projects | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<h1 class="section-title">Project Submission</h1>
+<p class="page-subtitle">Upload your project files here.</p>
+
+<div class="card" style="margin-top: 28px;">
+    <input type="file" id="fileInput">
+    <button class="signin-btn" onclick="testUpload()">Upload Project</button>
+    <p id="uploadStatus"></p>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script src="/static/js/upload.js"></script>
+{% endblock extra_js %}

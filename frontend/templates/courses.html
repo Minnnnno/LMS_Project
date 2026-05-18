@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Courses | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<h1 class="section-title">Courses</h1>
+<p class="page-subtitle">View all available courses.</p>
+
+<div class="course-grid" style="margin-top: 28px;">
+    <div class="card course-card">
+        <div class="course-icon">🦀</div>
+        <h3>Rust Web Programming</h3>
+        <p>Learn Rust, Actix Web, APIs and PostgreSQL.</p>
+    </div>
+
+    <div class="card course-card">
+        <div class="course-icon">💻</div>
+        <h3>Frontend Development</h3>
+        <p>Learn HTML, CSS and JavaScript.</p>
+    </div>
+</div>
+{% endblock content %}

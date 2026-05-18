@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Login | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<div class="card" style="max-width: 420px;">
+    <h1 class="section-title">Sign In</h1>
+    <p class="page-subtitle">Login to access your learning dashboard.</p>
+
+    <form style="margin-top: 24px;">
+        <div style="margin-bottom: 16px;">
+            <label>Email</label>
+            <input type="email" placeholder="Enter your email" style="width:100%; height:42px; padding:10px; margin-top:8px;">
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label>Password</label>
+            <input type="password" placeholder="Enter your password" style="width:100%; height:42px; padding:10px; margin-top:8px;">
+        </div>
+
+        <button class="signin-btn" type="submit">Login</button>
+    </form>
+</div>
+{% endblock content %}
