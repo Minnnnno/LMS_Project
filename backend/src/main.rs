@@ -34,6 +34,7 @@ async fn main() -> std::io::Result<()> {
         .app_data(actix_web::web::Data::new(db_pool.clone()))
             .wrap(Cors::permissive())
             .configure(routes::cloudinary::init)
+            .configure(routes::mailer::init)
             .service(index)
             .service(Files::new("/static", "../frontend/static"))
     })
