@@ -1,9 +1,11 @@
 mod routes;
 mod controller;
 mod db; 
+mod models;
+mod entity;
 use db::connection::connect_db;
 use actix_files::Files;
-use actix_web::{get, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, App, HttpResponse, HttpServer, Responder, web};
 use actix_cors::Cors;
 use tera::{Context, Tera};
 
@@ -80,12 +82,13 @@ fn render_page(template_name: &str) -> HttpResponse {
 async fn main() -> std::io::Result<()> {
     dotenvy::from_path(format!("{}/.env", env!("CARGO_MANIFEST_DIR")))
         .expect("Failed to load .env file");
-    let db_pool = connect_db().await;
+    let db = connect_db().await;
     println!("Database connected!");
     HttpServer::new(move || {
     App::new()
-        .app_data(actix_web::web::Data::new(db_pool.clone()))
+        .app_data(actix_web::web::Data::new(db.clone()))
         .wrap(Cors::permissive())
+        .configure(routes::assignment_routes::init)
         .configure(routes::cloudinary::init)
         .configure(routes::mailer::init)
         .service(index)
