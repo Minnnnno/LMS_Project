@@ -1,0 +1,194 @@
+CREATE TABLE organisations (
+  org_id SERIAL PRIMARY KEY,
+  org_name VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE users (
+  user_id SERIAL PRIMARY KEY,
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  org_id INT,
+  FOREIGN KEY (org_id)
+    REFERENCES organisations(org_id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE courses (
+  course_id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  org_id INT NOT NULL,
+  FOREIGN KEY (org_id)
+    REFERENCES organisations(org_id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE enrollments (
+  user_id INT NOT NULL,
+  course_id INT NOT NULL,
+  PRIMARY KEY (user_id, course_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE roles (
+  role_id SERIAL PRIMARY KEY,
+  description VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE user_roles (
+  user_id INT NOT NULL,
+  role_id INT NOT NULL,
+  PRIMARY KEY (user_id, role_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (role_id)
+    REFERENCES roles(role_id)
+    ON DELETE CASCADE
+);
+
+
+-- Enum types first
+CREATE TYPE course_status AS ENUM ('draft', 'published', 'archived');
+CREATE TYPE content_type AS ENUM ('video', 'slides', 'file', 'text');
+
+-- Alter existing courses table
+ALTER TABLE courses
+  ADD COLUMN status course_status NOT NULL DEFAULT 'draft';
+
+-- Alter existing enrollments table
+ALTER TABLE enrollments
+  ADD COLUMN enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Alter existing roles table
+ALTER TABLE roles
+  ADD COLUMN org_id INT,
+  ADD FOREIGN KEY (org_id)
+    REFERENCES organisations(org_id)
+    ON DELETE CASCADE;
+
+CREATE TABLE lessons (
+  lesson_id     SERIAL PRIMARY KEY,
+  course_id     INT NOT NULL,
+  instructor_id INT,
+  title         VARCHAR(255) NOT NULL,
+  position      INT NOT NULL,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (instructor_id)
+    REFERENCES users(user_id)
+    ON DELETE SET NULL
+);
+
+CREATE TABLE lesson_contents (
+  content_id           SERIAL PRIMARY KEY,
+  lesson_id            INT NOT NULL,
+  content_type         content_type NOT NULL,
+  title                VARCHAR(255),
+  content_url          VARCHAR(2083),
+  cloudinary_public_id VARCHAR(255),
+  content_body         TEXT,
+  position             INT NOT NULL,
+  FOREIGN KEY (lesson_id)
+    REFERENCES lessons(lesson_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE lesson_progress (
+  user_id      INT NOT NULL,
+  lesson_id    INT NOT NULL,
+  completed_at TIMESTAMP,
+  PRIMARY KEY (user_id, lesson_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (lesson_id)
+    REFERENCES lessons(lesson_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE assignments (
+  assignment_id SERIAL PRIMARY KEY,
+  course_id     INT NOT NULL,
+  title         VARCHAR(255) NOT NULL,
+  description   TEXT,
+  due_date      TIMESTAMP,
+  max_score     DECIMAL(5, 2),
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE submissions (
+  submission_id        SERIAL PRIMARY KEY,
+  assignment_id        INT NOT NULL,
+  user_id              INT NOT NULL,
+  submitted_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submission_text      TEXT,
+  file_url             VARCHAR(2083),
+  cloudinary_public_id VARCHAR(255),
+  score                DECIMAL(5, 2),
+  feedback             TEXT,
+  FOREIGN KEY (assignment_id)
+    REFERENCES assignments(assignment_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE
+);
+
+ALTER TABLE enrollments  
+ADD COLUMN stripe_checkout_session_id VARCHAR(255) UNIQUE,  
+ADD COLUMN paid_at TIMESTAMP;
+
+
+ALTER TABLE courses
+ADD COLUMN price_cents INT NOT NULL DEFAULT 0,
+ADD COLUMN currency VARCHAR(10) NOT NULL DEFAULT 'sgd',
+ADD COLUMN is_paid BOOLEAN NOT NULL DEFAULT FALSE;
+
+
+CREATE TABLE payments (
+  payment_id SERIAL PRIMARY KEY,
+  user_id INT NOT NULL,
+  course_id INT NOT NULL,
+  provider VARCHAR(50) NOT NULL,
+  provider_payment_ref VARCHAR(255) UNIQUE,
+  amount NUMERIC(10,2) NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  payment_status VARCHAR(30) NOT NULL,  -- PENDING, SUCCEEDED, FAILED, REFUNDED
+  paid_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+
+ALTER TABLE lessons
+RENAME TO modules;
+
+ALTER TABLE lesson_contents
+RENAME TO module_contents;
+
+ALTER TABLE module_contents
+RENAME COLUMN lesson_id TO module_id;
+
+ALTER TABLE lesson_progress
+RENAME COLUMN lesson_id TO module_id;
+
+ALTER TABLE modules
+RENAME COLUMN lesson_id TO module_id;
+
+ALTER TABLE module_contents
+RENAME COLUMN content_id TO module_content_id;
