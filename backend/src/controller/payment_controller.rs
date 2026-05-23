@@ -470,7 +470,7 @@ async fn fulfill_payment(
     let mut active_payment = existing_payment.into_active_model();
     active_payment.payment_status = Set("SUCCEEDED".to_string());
     active_payment.payment_ref = Set(payment_ref);
-    active_payment.paid_at = Set(Some(Utc::now().naive_utc()));
+    active_payment.paid_at = Set(Some(Utc::now()));
 
     if let Err(err) = active_payment.update(db.get_ref()).await {
         return HttpResponse::InternalServerError()

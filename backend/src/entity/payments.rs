@@ -1,6 +1,6 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "payments")]
@@ -21,8 +21,8 @@ pub struct Model {
 
     pub payment_status: String,
 
-    pub paid_at: Option<NaiveDateTime>,
-    pub created_at: NaiveDateTime,
+    pub paid_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
