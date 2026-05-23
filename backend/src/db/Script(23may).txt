@@ -35,7 +35,7 @@ CREATE TABLE courses (
 CREATE TABLE enrollments (
   user_id INT NOT NULL,
   course_id INT NOT NULL,
-  enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  enrolled_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (user_id, course_id),
 
@@ -62,8 +62,8 @@ CREATE TABLE payments (
   currency CHAR(3) NOT NULL DEFAULT 'sgd',
 
   payment_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
-  paid_at TIMESTAMP,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   FOREIGN KEY (user_id)
     REFERENCES users(user_id)
@@ -133,7 +133,7 @@ CREATE TABLE module_contents (
 CREATE TABLE lesson_progress (
   user_id INT NOT NULL,
   module_id INT NOT NULL,
-  completed_at TIMESTAMP,
+  completed_at TIMESTAMPTZ,
 
   PRIMARY KEY (user_id, module_id),
 
@@ -151,7 +151,7 @@ CREATE TABLE assignments (
   course_id INT NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT,
-  due_date TIMESTAMP,
+  due_date TIMESTAMPTZ,
   max_score DECIMAL(5, 2),
 
   FOREIGN KEY (course_id)
@@ -163,7 +163,7 @@ CREATE TABLE submissions (
   submission_id SERIAL PRIMARY KEY,
   assignment_id INT NOT NULL,
   user_id INT NOT NULL,
-  submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   submission_text TEXT,
   file_url VARCHAR(2083),
   cloudinary_public_id VARCHAR(255),
