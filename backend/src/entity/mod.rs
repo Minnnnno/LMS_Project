@@ -9,3 +9,4 @@ pub mod lesson_contents;
 pub mod lesson_progress;
 pub mod assignments;
 pub mod submissions;
+pub mod payments;

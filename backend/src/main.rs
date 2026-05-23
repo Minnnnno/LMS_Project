@@ -91,6 +91,7 @@ async fn main() -> std::io::Result<()> {
         .configure(routes::assignment_routes::init)
         .configure(routes::cloudinary::init)
         .configure(routes::mailer::init)
+        .configure(routes::payment_routes::init)
         .service(index)
         .service(login)
         .service(courses)

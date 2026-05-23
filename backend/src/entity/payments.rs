@@ -1,19 +1,28 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use chrono::NaiveDateTime;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "courses")]
+#[sea_orm(table_name = "payments")]
 pub struct Model {
     #[sea_orm(primary_key)]
+    pub payment_id: i32,
+
+    pub user_id: i32,
     pub course_id: i32,
 
-    pub name: String,
-    pub org_id: i32,
-    pub status: String,
+    pub provider: String,
 
-    pub price_cents: i32,
+    pub checkout_session_id: Option<String>,
+    pub payment_ref: Option<String>,
+
+    pub amount_cents: i32,
     pub currency: String,
-    pub is_paid: bool,
+
+    pub payment_status: String,
+
+    pub paid_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
