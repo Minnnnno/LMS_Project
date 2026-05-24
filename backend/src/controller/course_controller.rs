@@ -42,6 +42,12 @@ pub async fn search_course(
         );
     }
 
+    if let Some(instructor_id) = &query.instructor_id {
+        db_query = db_query.filter(
+            courses::Column::InstructorId.eq(*instructor_id)
+        )
+    }
+
     if let Some(min_price) = query.min_price {
         db_query = db_query.filter(
             courses::Column::PriceCents.gte(min_price)
@@ -96,6 +102,9 @@ pub async fn update_course(
             if let Some(name) = data.name {
                 active.name = Set(Some(name));
             }
+            if let Some(instructor_id) = data.instructor_id {
+                active.instructor_id = Set(Some(instructor_id));
+            }
             if let Some(org_id) = data.org_id {
                 active.org_id = Set(Some(org_id));
             }
@@ -146,6 +155,7 @@ pub async fn create_course(
 
     let course = courses::ActiveModel {
         name: Set(Some(data.name)),
+        instructor_id: Set(Some(data.instructor_id)),
         org_id: Set(Some(data.org_id)),
 
         status: Set(
@@ -194,7 +204,7 @@ pub async fn delete_course(
             match active_model.delete(db.get_ref()).await {
                 Ok(_) => {
                     HttpResponse::Ok()
-                    .body("Assignment deleted!")
+                    .body("Course deleted!")
                 }
                 Err(err) => {
                     HttpResponse::InternalServerError()
@@ -204,7 +214,7 @@ pub async fn delete_course(
         }
         Ok(None) => {
             HttpResponse::NotFound()
-            .body("Assignment not found!")
+            .body("Course not found!")
         }
         Err(err) => {
             HttpResponse::InternalServerError()

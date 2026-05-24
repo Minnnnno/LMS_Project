@@ -192,3 +192,135 @@ RENAME COLUMN lesson_id TO module_id;
 
 ALTER TABLE module_contents
 RENAME COLUMN content_id TO module_content_id;
+
+
+****************************ALTER COURSE TABLE*************
+-- 1. Add instructor_id into courses table
+ALTER TABLE courses
+ADD COLUMN instructor_id INT;
+
+-- 2. Add foreign key constraint
+ALTER TABLE courses
+ADD CONSTRAINT fk_courses_instructor
+FOREIGN KEY (instructor_id)
+REFERENCES users(user_id)
+ON DELETE SET NULL;
+
+-- 3. Remove instructor_id from modules table
+ALTER TABLE modules
+DROP COLUMN instructor_id;
+
+
+CREATE TYPE role_name AS ENUM (
+    'LMS Admin',
+    'Organisation Admin',
+    'Instructor',
+    'Student'
+);
+
+DROP TABLE IF EXISTS user_roles CASCADE;
+DROP TABLE IF EXISTS roles CASCADE;
+
+CREATE TABLE roles (
+    role_id SERIAL PRIMARY KEY,
+    role_name role_name NOT NULL UNIQUE
+);
+
+
+CREATE TABLE user_roles (
+    user_id INT NOT NULL,
+    role_id INT NOT NULL,
+
+    PRIMARY KEY (user_id, role_id),
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (role_id)
+        REFERENCES roles(role_id)
+        ON DELETE CASCADE
+);
+
+INSERT INTO roles (role_name)
+VALUES
+('LMS Admin'),
+('Organisation Admin'),
+('Instructor'),
+('Student');
+
+
+-- Insert first instructor user
+INSERT INTO users (
+    first_name,
+    last_name,
+    email,
+    password_hash,
+    org_id
+)
+VALUES (
+    'John',
+    'Tan',
+    'john@example.com',
+    'hashed_password',
+    1
+);
+
+-- Assign Instructor role
+INSERT INTO user_roles (user_id, role_id)
+VALUES (
+    (
+        SELECT user_id
+        FROM users
+        WHERE email = 'john@example.com'
+    ),
+    (
+        SELECT role_id
+        FROM roles
+        WHERE role_name = 'Instructor'
+    )
+);
+
+
+
+-- Insert second instructor user
+INSERT INTO users (
+    first_name,
+    last_name,
+    email,
+    password_hash,
+    org_id
+)
+VALUES (
+    'Sarah',
+    'Lee',
+    'sarah@example.com',
+    'hashed_password',
+    1
+);
+
+-- Assign Instructor role
+INSERT INTO user_roles (user_id, role_id)
+VALUES (
+    (
+        SELECT user_id
+        FROM users
+        WHERE email = 'sarah@example.com'
+    ),
+    (
+        SELECT role_id
+        FROM roles
+        WHERE role_name = 'Instructor'
+    )
+);
+
+SELECT * FROM users
+SELECT * FROM courses
+
+UPDATE courses
+SET instructor_id = 2
+WHERE course_id = 1;
+
+UPDATE courses
+SET instructor_id = 3
+WHERE course_id = 2;

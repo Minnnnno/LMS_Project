@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub course_id: i32,
-
+    pub instructor_id: Option<i32>,
     pub name: Option<String>,
     pub org_id: Option<i32>,
     pub status: CourseStatus,
@@ -14,7 +14,6 @@ pub struct Model {
     pub currency: Option<String>,
     pub is_paid: Option<bool>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[sea_orm(
     rs_type = "String",

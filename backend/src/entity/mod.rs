@@ -5,7 +5,7 @@ pub mod user_roles;
 pub mod courses;
 pub mod enrollments;
 pub mod lessons;
-pub mod lesson_contents;
+pub mod module_contents;
 pub mod lesson_progress;
 pub mod assignments;
 pub mod submissions;
