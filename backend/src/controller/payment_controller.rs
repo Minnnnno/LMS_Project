@@ -100,7 +100,7 @@ pub async fn create_checkout_session(
     };
 
     // if course is a free course
-    if !course.is_paid {
+    if !course.is_paid.unwrap_or(false) {
         return HttpResponse::BadRequest()
             .body("This course is free, no checkout session needed")
     }
@@ -112,11 +112,11 @@ pub async fn create_checkout_session(
         user_id: Set(user_id),
         course_id: Set(course.course_id),
         provider: Set("stripe".to_string()), //hardcoded for now, will be dynamic once more payment providers are added
-        amount_cents: Set(course.price_cents),
-        currency: Set(course.currency.clone()),   //.clone because still need when creating stripe checkout session
+        amount_cents: Set(course.price_cents.unwrap_or(0)),
+        currency: Set(course.currency.clone().unwrap_or("SGD".to_string())),   //.clone because still need when creating stripe checkout session
         payment_status: Set("PENDING".to_string()),
         ..Default::default() //fill in the rest of the fields with default values
-    };
+    };  
     
 
     //insert new payment record into database
@@ -162,7 +162,11 @@ pub async fn create_checkout_session(
     );
 
     //convert database currency string into Stripe Currency enum
-    let stripe_currency = match course.currency.to_lowercase().as_str() {
+    let stripe_currency = match course.currency
+    .clone()
+    .unwrap_or("SGD".to_string())
+    .to_lowercase()
+    .as_str() {
         "sgd" => Currency::SGD,
         //to add more supported currency in the future..
         _ => {
@@ -186,9 +190,9 @@ pub async fn create_checkout_session(
             quantity: Some(1), //quantity only 1
             price_data: Some(CreateCheckoutSessionLineItemsPriceData {
                 currency: stripe_currency,
-                unit_amount: Some(course.price_cents as i64), //price in cents
+                unit_amount: Some(course.price_cents.unwrap_or(0) as i64), //price in cents
                 product_data: Some(CreateCheckoutSessionLineItemsPriceDataProductData {
-                    name: course.name.clone(), //course name as product name in stripe
+                    name: course.name.clone().unwrap_or("Course".to_string()), //course name as product name in stripe
                     ..Default::default()
                 }),
                 ..Default::default()
