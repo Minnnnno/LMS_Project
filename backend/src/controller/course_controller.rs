@@ -7,7 +7,7 @@ use sea_orm::sea_query::extension::postgres::PgExpr;
 use crate::entity::courses::{self, CourseStatus}; 
 use crate::models::course::{CreateCourse, CourseQuery, UpdateCourse};
 
-#[get("/courses")]
+#[get("/allcourses")]
 pub async fn get_courses(
     db: web::Data<DatabaseConnection>
 ) -> impl Responder {
