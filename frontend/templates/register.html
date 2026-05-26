@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Register | SkillUp{% endblock title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/register.css">
+{% endblock extra_css %}
+
+{% block content %}
+<section class="register-page">
+    <div class="register-layout">
+
+        <!-- Left Panel -->
+        <aside class="register-side-panel">
+            <span class="register-badge">Join SkillUp</span>
+
+            <h2>Create your learning account</h2>
+
+            <p>
+                Start learning, track your progress, and access courses built for your growth.
+            </p>
+        </aside>
+
+        <!-- Register Form -->
+        <div class="register-form-panel">
+            <div class="register-form-wrapper">
+
+                <div class="register-header">
+                    <p class="register-label">Get started</p>
+                    <h1>Create an account</h1>
+                    <p>Enter your details below to register for SkillUp.</p>
+                </div>
+
+                {% if error %}
+                <div class="error-banner" role="alert">
+                    <div class="error-banner-icon">!</div>
+                    <div class="error-banner-content">
+                        <strong>Registration error</strong>
+                        <span>{{ error }}</span>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form action="/register" method="post">
+                    <div class="row g-4">
+
+                        <div class="col-12 col-md-6">
+                            <label for="first_name" class="form-label">First name</label>
+                            <input
+                                type="text"
+                                class="form-control"
+                                id="first_name"
+                                name="first_name"
+                                placeholder="Enter first name"
+                                autocomplete="given-name"
+                                value="{{ first_name | default(value="") }}"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label for="last_name" class="form-label">Last name</label>
+                            <input
+                                type="text"
+                                class="form-control"
+                                id="last_name"
+                                name="last_name"
+                                placeholder="Enter last name"
+                                autocomplete="family-name"
+                                value="{{ last_name | default(value="") }}"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-12">
+                            <label for="email" class="form-label">Email</label>
+                            <input
+                                type="email"
+                                class="form-control"
+                                id="email"
+                                name="email"
+                                placeholder="Enter your email"
+                                autocomplete="email"
+                                value="{{ email | default(value="") }}"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label for="password" class="form-label">Password</label>
+                            <input
+                                type="password"
+                                class="form-control"
+                                id="password"
+                                name="password"
+                                placeholder="Create a password"
+                                autocomplete="new-password"
+                                minlength="8"
+                                required
+                            >
+                            <div class="form-text">Use at least 8 characters.</div>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label for="confirm_password" class="form-label">Confirm password</label>
+                            <input
+                                type="password"
+                                class="form-control"
+                                id="confirm_password"
+                                name="confirm_password"
+                                placeholder="Confirm password"
+                                autocomplete="new-password"
+                                minlength="8"
+                                required
+                            >
+                        </div>
+
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-dark w-100 register-submit-btn">
+                                Create account
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <div class="register-divider">
+                        <span>or continue with</span>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-12 col-sm-6">
+                            <button type="button" class="btn btn-outline-secondary w-100 social-btn">
+                                <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google logo">
+                                Google
+                            </button>
+                        </div>
+
+                        <div class="col-12 col-sm-6">
+                            <button type="button" class="btn btn-outline-secondary w-100 social-btn">
+                                <img src="https://www.svgrepo.com/show/512317/github-142.svg" alt="GitHub logo">
+                                GitHub
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="register-footer-text">
+                        Already have an account?
+                        <a href="/login">Sign in</a>
+                    </p>
+                </form>
+
+            </div>
+        </div>
+
+    </div>
+</section>
+{% endblock content %}

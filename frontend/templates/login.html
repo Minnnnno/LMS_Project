@@ -38,6 +38,16 @@
                         <p class="page-subtitle text-secondary mb-0">Access your courses, progress, and learning dashboard.</p>
                     </div>
 
+                    {% if error %}
+                    <div class="error-banner mb-4" role="alert">
+                        <div class="error-banner-icon">!</div>
+                        <div class="error-banner-content">
+                            <strong>Login error</strong>
+                            <span>{{ error }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <form class="login-form" action="/login" method="post">
                         <div class="mb-3">
                             <label for="email" class="form-label fw-semibold">Email</label>
@@ -48,6 +58,7 @@
                                 class="form-control form-control-lg"
                                 placeholder="Enter your email"
                                 autocomplete="email"
+                                value="{{ email | default(value="") }}"
                                 required
                             >
                         </div>

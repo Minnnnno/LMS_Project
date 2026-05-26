@@ -1,0 +1,383 @@
+/*
+   Register page override.
+   Your app.css likely limits .page-content with max-width.
+   This allows the register page to use the full available space.
+*/
+.page-content {
+    width: 100%;
+    max-width: none;
+}
+
+.register-page {
+    width: 100%;
+    min-height: calc(100vh - 120px);
+    padding: 4rem 3rem;
+    background: #f5f7fb;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.register-layout {
+    width: min(100%, 1280px);
+    min-height: 620px;
+
+    display: grid;
+    grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.6fr);
+
+    background: #ffffff;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
+}
+
+/* Left panel */
+
+.register-side-panel {
+    padding: 4.5rem 4rem;
+    background: linear-gradient(145deg, #111111, #22272e);
+    color: #ffffff;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.register-badge {
+    width: fit-content;
+    margin-bottom: 1.75rem;
+    padding: 0.5rem 0.95rem;
+
+    border-radius: 999px;
+    background: #ffffff;
+    color: #111111;
+
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+}
+
+.register-side-panel h2 {
+    max-width: 420px;
+    margin-bottom: 1.35rem;
+
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1.15;
+
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+.register-side-panel p {
+    max-width: 380px;
+    margin-bottom: 0;
+
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 1rem;
+    line-height: 1.7;
+}
+
+/* Right form panel */
+
+.register-form-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4.5rem 5rem;
+}
+
+.register-form-wrapper {
+    width: 100%;
+    max-width: 760px;
+}
+
+.register-header {
+    margin-bottom: 2.25rem;
+}
+
+.register-label {
+    margin-bottom: 0.65rem;
+
+    color: #2f528f;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+}
+
+.register-header h1 {
+    margin-bottom: 0.75rem;
+
+    color: #111827;
+    font-size: 2.45rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.register-header p {
+    max-width: 520px;
+    margin-bottom: 0;
+
+    color: #5f6b7a;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+/* Error banner */
+
+.error-banner {
+    width: 100%;
+    margin: -0.5rem 0 1.75rem;
+    padding: 1rem 1.1rem;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+
+    border: 1px solid #fecaca;
+    border-left: 5px solid #dc2626;
+    border-radius: 16px;
+
+    background: #fff1f2;
+    color: #7f1d1d;
+
+    box-shadow: 0 12px 30px rgba(220, 38, 38, 0.08);
+}
+
+.error-banner-icon {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 999px;
+    background: #dc2626;
+    color: #ffffff;
+
+    font-size: 0.9rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.error-banner-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.error-banner-content strong {
+    color: #7f1d1d;
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.error-banner-content span {
+    color: #991b1b;
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+
+/* Form controls */
+
+.register-form-wrapper .form-label {
+    margin-bottom: 0.5rem;
+    color: #111827;
+    font-weight: 700;
+}
+
+.register-form-wrapper .form-control {
+    width: 100%;
+    min-height: 54px;
+    padding: 0.85rem 1rem;
+
+    border: 1px solid #d6dce8;
+    border-radius: 14px;
+    background-color: #f9fafb;
+
+    color: #111827;
+    font-size: 0.96rem;
+}
+
+.register-form-wrapper .form-control:focus {
+    border-color: #111827;
+    background-color: #ffffff;
+    box-shadow: 0 0 0 0.22rem rgba(17, 24, 39, 0.12);
+}
+
+.register-form-wrapper .form-text {
+    margin-top: 0.55rem;
+    color: #6b7280;
+    font-size: 0.85rem;
+}
+
+.register-submit-btn {
+    min-height: 56px;
+    margin-top: 0.35rem;
+
+    border-radius: 14px;
+    font-weight: 800;
+}
+
+/* Divider */
+
+.register-divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    margin: 2rem 0;
+
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+.register-divider::before,
+.register-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+}
+
+/* Social buttons */
+
+.social-btn {
+    min-height: 50px;
+    border-radius: 14px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+
+    font-weight: 700;
+}
+
+.social-btn img {
+    width: 20px;
+    height: 20px;
+}
+
+/* Footer */
+
+.register-footer-text {
+    margin: 1.9rem 0 0;
+
+    text-align: center;
+    color: #6b7280;
+}
+
+.register-footer-text a {
+    color: #111827;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.register-footer-text a:hover {
+    text-decoration: underline;
+}
+
+/* Medium desktop */
+
+@media (max-width: 1200px) {
+    .register-page {
+        padding: 3rem 2rem;
+    }
+
+    .register-layout {
+        width: min(100%, 1120px);
+        grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.5fr);
+    }
+
+    .register-side-panel {
+        padding: 4rem 3rem;
+    }
+
+    .register-form-panel {
+        padding: 4rem 3.5rem;
+    }
+}
+
+/* Tablet */
+
+@media (max-width: 991.98px) {
+    .register-page {
+        min-height: auto;
+        padding: 2.5rem 1rem;
+        align-items: flex-start;
+    }
+
+    .register-layout {
+        width: min(100%, 680px);
+        min-height: auto;
+        display: block;
+    }
+
+    .register-side-panel {
+        display: none;
+    }
+
+    .register-form-panel {
+        padding: 3rem 2.5rem;
+    }
+
+    .register-form-wrapper {
+        max-width: none;
+    }
+}
+
+/* Phone */
+
+@media (max-width: 575.98px) {
+    .register-page {
+        padding: 1.5rem 0.75rem;
+    }
+
+    .register-layout {
+        border-radius: 22px;
+    }
+
+    .register-form-panel {
+        padding: 2rem 1.25rem;
+    }
+
+    .register-header {
+        margin-bottom: 1.5rem;
+    }
+
+    .register-header h1 {
+        font-size: 1.7rem;
+    }
+
+    .register-header p {
+        font-size: 0.95rem;
+    }
+
+    .error-banner {
+        margin-bottom: 1.25rem;
+        padding: 0.9rem;
+        border-radius: 14px;
+    }
+
+    .error-banner-content strong {
+        font-size: 0.9rem;
+    }
+
+    .error-banner-content span {
+        font-size: 0.86rem;
+    }
+
+    .register-form-wrapper .form-control {
+        min-height: 49px;
+    }
+
+    .register-submit-btn {
+        min-height: 51px;
+    }
+}

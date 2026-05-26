@@ -5,7 +5,8 @@ mod models;
 mod entity;
 use db::connection::connect_db;
 use actix_files::Files;
-use actix_web::{get, App, HttpResponse, HttpServer, Responder, web};
+use actix_session::{SessionMiddleware, storage::CookieSessionStore};
+use actix_web::{cookie::Key, get, App, HttpResponse, HttpServer, Responder, web};
 use actix_cors::Cors;
 use tera::{Context, Tera};
 
@@ -24,11 +25,6 @@ async fn index() -> impl Responder {
         .content_type("text/html")
         .body(html)
 }
-#[get("/login")]
-async fn login() -> impl Responder {
-    render_page("login.html")
-}
-
 #[get("/courses")]
 async fn courses() -> impl Responder {
     render_page("courses.html")
@@ -64,7 +60,7 @@ async fn downloads() -> impl Responder {
     render_page("downloads.html")
 }
 
-fn render_page(template_name: &str) -> HttpResponse {
+pub fn render_page(template_name: &str) -> HttpResponse {
     let tera = Tera::new("../frontend/templates/**/*")
         .expect("Failed to load templates");
 
@@ -93,8 +89,9 @@ async fn main() -> std::io::Result<()> {
         .configure(routes::mailer::init)
         .configure(routes::payment_routes::init)
         .configure(routes::course_routes::init)
+        .wrap(SessionMiddleware::new(CookieSessionStore::default(), Key::generate()))
+        .configure(routes::user_routes::init)
         .service(index)
-        .service(login)
         .service(courses)
         .service(lessons)
         .service(assessments)

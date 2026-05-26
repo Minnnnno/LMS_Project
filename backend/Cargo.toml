@@ -24,3 +24,6 @@ rust_decimal = { version = "1", features = ["serde"] }
 tera = "1.20.1"
 tokio = { version = "1.52.3", features = ["full"] }
 async-stripe = { version = "0.41", features = ["runtime-tokio-hyper", "webhook-events", "events"] }
+validator = { version = "0.16", features = ["derive"] }
+argon2 = "0.4"
+actix-session = { version = "0.8", features = ["cookie-session"] }
