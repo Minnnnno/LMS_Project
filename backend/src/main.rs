@@ -78,29 +78,42 @@ pub fn render_page(template_name: &str) -> HttpResponse {
 async fn main() -> std::io::Result<()> {
     dotenvy::from_path(format!("{}/.env", env!("CARGO_MANIFEST_DIR")))
         .expect("Failed to load .env file");
+
     let db = connect_db().await;
     println!("Database connected!");
+
+    let secret_key = Key::generate();
+
     HttpServer::new(move || {
-    App::new()
-        .app_data(actix_web::web::Data::new(db.clone()))
-        .wrap(Cors::permissive())
-        .configure(routes::assignment_routes::init)
-        .configure(routes::cloudinary::init)
-        .configure(routes::mailer::init)
-        .configure(routes::payment_routes::init)
-        .configure(routes::course_routes::init)
-        .wrap(SessionMiddleware::new(CookieSessionStore::default(), Key::generate()))
-        .configure(routes::user_routes::init)
-        .service(index)
-        .service(courses)
-        .service(lessons)
-        .service(assessments)
-        .service(challenges)
-        .service(certification)
-        .service(projects)
-        .service(downloads)
-        .service(Files::new("/static", "../frontend/static"))
-})
+        App::new()
+            .app_data(actix_web::web::Data::new(db.clone()))
+            .wrap(Cors::permissive())
+            .wrap(
+                SessionMiddleware::builder(
+                    CookieSessionStore::default(),
+                    secret_key.clone(),
+                )
+                .cookie_secure(false)
+                .build()
+            )
+            .configure(routes::assignment_routes::init)
+            .configure(routes::cloudinary::init)
+            .configure(routes::mailer::init)
+            .configure(routes::payment_routes::init)
+            .configure(routes::course_routes::init)
+            .configure(routes::student_routes::init)
+            .configure(routes::user_routes::init)
+            .configure(routes::enrollment_routes::init)
+            .service(index)
+            .service(courses)
+            .service(lessons)
+            .service(assessments)
+            .service(challenges)
+            .service(certification)
+            .service(projects)
+            .service(downloads)
+            .service(Files::new("/static", "../frontend/static"))
+    })
     .bind(("127.0.0.1", 8080))?
     .run()
     .await

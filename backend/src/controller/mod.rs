@@ -4,3 +4,5 @@ pub mod assignment_controller;
 pub mod payment_controller;
 pub mod course_controller;
 pub mod user_controller;
+pub mod student_controller;
+pub mod enrollment_controller;
