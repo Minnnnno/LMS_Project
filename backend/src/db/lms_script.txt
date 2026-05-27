@@ -1,0 +1,331 @@
+-- ============================================================
+-- LMS DATABASE SCHEMA
+-- Safe to re-run: uses CREATE IF NOT EXISTS throughout
+-- ============================================================
+
+-- Enum types (drop and recreate only if definition changes)
+DO $$ BEGIN
+  CREATE TYPE course_status AS ENUM ('draft', 'published', 'archived');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE content_type AS ENUM ('video', 'slides', 'file', 'text');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE role_name AS ENUM (
+    'LMS Admin',
+    'Organisation Admin',
+    'Instructor',
+    'Student'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE question_type AS ENUM ('mcq', 'long_answer');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ============================================================
+-- CORE TABLES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS organisations (
+  org_id   SERIAL PRIMARY KEY,
+  org_name VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  user_id       SERIAL PRIMARY KEY,
+  first_name    VARCHAR(100) NOT NULL,
+  last_name     VARCHAR(100) NOT NULL,
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  org_id        INT,
+  FOREIGN KEY (org_id)
+    REFERENCES organisations(org_id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS roles (
+  role_id   SERIAL PRIMARY KEY,
+  role_name role_name NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id INT NOT NULL,
+  role_id INT NOT NULL,
+  PRIMARY KEY (user_id, role_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (role_id)
+    REFERENCES roles(role_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS courses (
+  course_id     SERIAL PRIMARY KEY,
+  name          VARCHAR(255) NOT NULL,
+  org_id        INT NOT NULL,
+  status        course_status NOT NULL DEFAULT 'draft',
+  instructor_id INT,
+  price_cents   INT NOT NULL DEFAULT 0,
+  currency      VARCHAR(10) NOT NULL DEFAULT 'sgd',
+  is_paid       BOOLEAN NOT NULL DEFAULT FALSE,
+  FOREIGN KEY (org_id)
+    REFERENCES organisations(org_id)
+    ON DELETE RESTRICT,
+  FOREIGN KEY (instructor_id)
+    REFERENCES users(user_id)
+    ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+  user_id                    INT NOT NULL,
+  course_id                  INT NOT NULL,
+  enrolled_at                TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  stripe_checkout_session_id VARCHAR(255) UNIQUE,
+  paid_at                    TIMESTAMP,
+  PRIMARY KEY (user_id, course_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+-- ============================================================
+-- MODULES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS modules (
+  module_id SERIAL PRIMARY KEY,
+  course_id INT NOT NULL,
+  title     VARCHAR(255) NOT NULL,
+  position  INT NOT NULL,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS module_contents (
+  module_content_id    SERIAL PRIMARY KEY,
+  module_id            INT NOT NULL,
+  content_type         content_type NOT NULL,
+  title                VARCHAR(255),
+  content_url          VARCHAR(2083),
+  cloudinary_public_id VARCHAR(255),
+  content_body         TEXT,
+  position             INT NOT NULL,
+  FOREIGN KEY (module_id)
+    REFERENCES modules(module_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS module_progress (
+  user_id      INT NOT NULL,
+  module_id    INT NOT NULL,
+  completed_at TIMESTAMP,
+  PRIMARY KEY (user_id, module_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (module_id)
+    REFERENCES modules(module_id)
+    ON DELETE CASCADE
+);
+
+-- ============================================================
+-- ASSIGNMENTS & SUBMISSIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS assignments (
+  assignment_id SERIAL PRIMARY KEY,
+  course_id     INT NOT NULL,
+  title         VARCHAR(255) NOT NULL,
+  description   TEXT,
+  due_date      TIMESTAMP,
+  max_score     DECIMAL(5, 2),
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS submissions (
+  submission_id        SERIAL PRIMARY KEY,
+  assignment_id        INT NOT NULL,
+  user_id              INT NOT NULL,
+  submitted_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submission_text      TEXT,
+  file_url             VARCHAR(2083),
+  cloudinary_public_id VARCHAR(255),
+  score                DECIMAL(5, 2),
+  feedback             TEXT,
+  FOREIGN KEY (assignment_id)
+    REFERENCES assignments(assignment_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE
+);
+
+-- ============================================================
+-- PAYMENTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS payments (
+  payment_id           SERIAL PRIMARY KEY,
+  user_id              INT NOT NULL,
+  course_id            INT NOT NULL,
+  provider             VARCHAR(50) NOT NULL,
+  provider_payment_ref VARCHAR(255) UNIQUE,
+  amount               NUMERIC(10, 2) NOT NULL,
+  currency             CHAR(3) NOT NULL DEFAULT 'USD',
+  payment_status       VARCHAR(30) NOT NULL, -- PENDING, SUCCEEDED, FAILED, REFUNDED
+  paid_at              TIMESTAMP,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
+-- ============================================================
+-- QUIZZES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS quizzes (
+  quiz_id      SERIAL PRIMARY KEY,
+  module_id    INT NOT NULL,
+  title        VARCHAR(255) NOT NULL,
+  description  TEXT,
+  max_attempts INT DEFAULT NULL,       -- NULL = unlimited
+  time_limit   INT DEFAULT NULL,       -- in minutes, NULL = no limit
+  starts_at    TIMESTAMP DEFAULT NULL, -- NULL = not scheduled (inaccessible)
+  ends_at      TIMESTAMP GENERATED ALWAYS AS (
+    starts_at + (INTERVAL '1 minute' * 10)
+  ) STORED,                            -- always 10 minutes after starts_at
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (module_id)
+    REFERENCES modules(module_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS quiz_questions (
+  question_id   SERIAL PRIMARY KEY,
+  quiz_id       INT NOT NULL,
+  question_type question_type NOT NULL,
+  question_text TEXT NOT NULL,
+  position      INT NOT NULL,
+  points        INT NOT NULL DEFAULT 1,
+  FOREIGN KEY (quiz_id)
+    REFERENCES quizzes(quiz_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS quiz_options (
+  option_id   SERIAL PRIMARY KEY,
+  question_id INT NOT NULL,
+  option_text TEXT NOT NULL,
+  is_correct  BOOLEAN NOT NULL DEFAULT FALSE,
+  position    INT NOT NULL,
+  FOREIGN KEY (question_id)
+    REFERENCES quiz_questions(question_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+  attempt_id   SERIAL PRIMARY KEY,
+  quiz_id      INT NOT NULL,
+  user_id      INT NOT NULL,
+  started_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submitted_at TIMESTAMP,
+  total_score  INT,
+  FOREIGN KEY (quiz_id)
+    REFERENCES quizzes(quiz_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS quiz_answers (
+  answer_id          SERIAL PRIMARY KEY,
+  attempt_id         INT NOT NULL,
+  question_id        INT NOT NULL,
+  selected_option_id INT DEFAULT NULL,  -- MCQ only
+  answer_text        TEXT DEFAULT NULL, -- long answer only
+  score              INT DEFAULT NULL,
+  feedback           TEXT DEFAULT NULL, -- instructor feedback for long answer
+  FOREIGN KEY (attempt_id)
+    REFERENCES quiz_attempts(attempt_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (question_id)
+    REFERENCES quiz_questions(question_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (selected_option_id)
+    REFERENCES quiz_options(option_id)
+    ON DELETE SET NULL
+);
+
+-- ============================================================
+-- SEED DATA
+-- Skips inserts if data already exists
+-- ============================================================
+
+INSERT INTO organisations (org_name)
+VALUES ('Default Organisation')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO roles (role_name) VALUES
+  ('LMS Admin'),
+  ('Organisation Admin'),
+  ('Instructor'),
+  ('Student')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO users (first_name, last_name, email, password_hash, org_id)
+VALUES ('John', 'Tan', 'john@example.com', 'hashed_password', 1)
+ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO users (first_name, last_name, email, password_hash, org_id)
+VALUES ('Sarah', 'Lee', 'sarah@example.com', 'hashed_password', 1)
+ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id)
+VALUES (
+  (SELECT user_id FROM users WHERE email = 'john@example.com'),
+  (SELECT role_id FROM roles WHERE role_name = 'Instructor')
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id)
+VALUES (
+  (SELECT user_id FROM users WHERE email = 'sarah@example.com'),
+  (SELECT role_id FROM roles WHERE role_name = 'Instructor')
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO courses (name, org_id, instructor_id)
+SELECT 'Introduction to Programming', 1,
+  (SELECT user_id FROM users WHERE email = 'john@example.com')
+WHERE NOT EXISTS (
+  SELECT 1 FROM courses WHERE name = 'Introduction to Programming'
+);
+
+INSERT INTO courses (name, org_id, instructor_id)
+SELECT 'Web Development Basics', 1,
+  (SELECT user_id FROM users WHERE email = 'sarah@example.com')
+WHERE NOT EXISTS (
+  SELECT 1 FROM courses WHERE name = 'Web Development Basics'
+);
+
+SELECT * FROM users;
+SELECT * FROM courses;
