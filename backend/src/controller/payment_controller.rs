@@ -17,6 +17,7 @@ use stripe::{
 };
 
 use crate::entity::{courses, payments, enrollments}; //use course, payment and enrollment table entity
+use actix_session::Session;
 
 use chrono::Utc;
 
@@ -50,12 +51,23 @@ pub async fn payment_cancelled() -> impl Responder {
 pub async fn create_checkout_session(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
+    session: Session,
 ) -> impl Responder {
     let course_id = path.into_inner();
 
 
-    //temp hardcoded id for testing, replaced once login authentication is complete
-    let user_id = 1;
+    //user id mapping from session, return error response if user not logged in or session error occurs
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized()
+                .body("Please log in before buying a course");
+    }
+    Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err));
+    }
+};
 
 
     //check if user is already enrolled in the course
