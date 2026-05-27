@@ -55,7 +55,7 @@ pub async fn create_checkout_session(
 
 
     //temp hardcoded id for testing, replaced once login authentication is complete
-    let user_id = 1;
+    let user_id = 2;
 
 
     //check if user is already enrolled in the course

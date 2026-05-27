@@ -89,6 +89,8 @@ async fn main() -> std::io::Result<()> {
         .configure(routes::mailer::init)
         .configure(routes::payment_routes::init)
         .configure(routes::course_routes::init)
+        .configure(routes::module_routes::init)
+        .configure(routes::module_content_routes::init)
         .wrap(SessionMiddleware::new(CookieSessionStore::default(), Key::generate()))
         .configure(routes::user_routes::init)
         .service(index)

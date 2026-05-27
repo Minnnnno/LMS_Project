@@ -324,3 +324,32 @@ WHERE course_id = 1;
 UPDATE courses
 SET instructor_id = 3
 WHERE course_id = 2;
+
+
+
+************************** 27 may 2026 1542****************************** 
+CREATE TYPE content_type_enum AS ENUM (
+    'video',
+    'pdf',
+    'image',
+    'document',
+    'link'
+);
+
+CREATE TYPE content_category_enum AS ENUM (
+    'lecture',
+    'tutorial',
+    'assignment',
+    'reading',
+    'quiz'
+);
+
+ALTER TABLE module_contents
+DROP COLUMN IF EXISTS content_body;
+
+ALTER TABLE module_contents
+ALTER COLUMN content_type TYPE content_type_enum
+USING content_type::text::content_type_enum;
+
+ALTER TABLE module_contents
+ADD COLUMN content_category content_category_enum;

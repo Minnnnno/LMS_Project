@@ -27,3 +27,6 @@ async-stripe = { version = "0.41", features = ["runtime-tokio-hyper", "webhook-e
 validator = { version = "0.16", features = ["derive"] }
 argon2 = "0.4"
 actix-session = { version = "0.8", features = ["cookie-session"] }
+actix-multipart = "0.7"
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json", "multipart"] }
