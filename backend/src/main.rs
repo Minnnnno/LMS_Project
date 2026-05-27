@@ -3,6 +3,7 @@ mod controller;
 mod db; 
 mod models;
 mod entity;
+mod services;
 use db::connection::connect_db;
 use actix_files::Files;
 use actix_session::{SessionMiddleware, storage::CookieSessionStore};

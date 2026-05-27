@@ -3,6 +3,8 @@ use actix_web::{post, HttpResponse, Responder};
 use futures_util::StreamExt;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
+use crate::services::malware_scanner::scan_file_for_malware;
+use serde_json::json;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CloudinaryUploadResponse {
@@ -29,6 +31,9 @@ pub async fn upload_to_cloudinary(
         cloud_name
     );
 
+    if let Err(err) = scan_file_for_malware(&file_bytes).await {
+        return Err(err);
+    }
     let file_part = multipart::Part::bytes(file_bytes)
         .file_name(filename);
 
