@@ -257,6 +257,12 @@ pub async fn login_submit(
     if let Err(err) = session.insert("user_email", user.email.clone()) {
         println!("Session insert error: {:?}", err);
     }
+
+
+    println!("Login successful. Stored user_id: {}", user.user_id);
+
+    
+
     session.renew();
 
     HttpResponse::Found()

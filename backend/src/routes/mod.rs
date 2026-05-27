@@ -6,3 +6,5 @@ pub mod course_routes;
 pub mod user_routes;
 pub mod module_routes;
 pub mod module_content_routes;
+pub mod student_routes;
+pub mod enrollment_routes;
