@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Organisation | SkillUp LMS{% endblock title %}
+
+{% block extra_css %}
+<style>
+  .org-card {
+    background: #fff;
+    border-radius: 1rem;
+    border: 1px solid var(--skillup-border);
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .org-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); border-color: #c0c8d8; }
+  .org-card.active { border-color: var(--skillup-dark); }
+
+  .member-row { display: flex; align-items: center; gap: .75rem; padding: .55rem 0; border-bottom: 1px solid #f0f2f5; }
+  .member-row:last-child { border-bottom: none; }
+  .member-avatar {
+    width: 2.2rem; height: 2.2rem; border-radius: 50%;
+    background: var(--skillup-dark); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .75rem; font-weight: 700; flex-shrink: 0;
+  }
+  .badge-role { font-size: .7rem; padding: .2em .55em; border-radius: 999px; font-weight: 600; }
+  .badge-instructor { background: #e0f0ff; color: #0055aa; }
+  .badge-student    { background: #e6f9ee; color: #1a7a3a; }
+  .badge-admin      { background: #fff0e0; color: #a05000; }
+
+  #enroll-user-list { max-height: 240px; overflow-y: auto; }
+  .enroll-user-item { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; }
+  .section-panel { background: #fff; border-radius: 1rem; border: 1px solid var(--skillup-border); padding: 1.5rem; }
+</style>
+{% endblock extra_css %}
+
+{% block content %}
+<div class="px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h1 class="section-title mb-0">Organisations</h1>
+      <p class="page-subtitle mb-0">Manage organisations and enrol members.</p>
+    </div>
+    {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+    <button class="btn btn-dark rounded-3" data-bs-toggle="modal" data-bs-target="#createOrgModal">
+      <i class="bi bi-plus-lg me-1"></i> New Organisation
+    </button>
+    {% endif %}
+  </div>
+
+  <div class="row g-3">
+    <!-- Left: org list -->
+    <div class="col-12 col-lg-4">
+      <div class="section-panel">
+        <h6 class="fw-bold mb-3">All Organisations</h6>
+        <div id="org-list">
+          <p class="text-muted small">Loading…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: members panel -->
+    <div class="col-12 col-lg-8">
+      <div class="section-panel" id="members-panel" style="display:none">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="fw-bold mb-0" id="members-title">Members</h6>
+          {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+          <button class="btn btn-sm btn-outline-dark rounded-3" id="btn-open-enroll">
+            <i class="bi bi-people-fill me-1"></i>Enrol Members
+          </button>
+          {% endif %}
+        </div>
+        <div id="members-list">
+          <p class="text-muted small">Select an organisation on the left.</p>
+        </div>
+      </div>
+
+      <!-- Enrol panel (hidden until opened) -->
+      <div class="section-panel mt-3" id="enroll-panel" style="display:none">
+        <h6 class="fw-bold mb-3">Mass Enrol into <span id="enroll-org-name"></span></h6>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Role to assign</label>
+          <select class="form-select form-select-sm" id="enroll-role">
+            <option value="Student">Student</option>
+            <option value="Instructor">Instructor</option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Select users to enrol</label>
+          <input type="text" class="form-control form-control-sm mb-2" id="enroll-search"
+                 placeholder="Search by name or email…">
+          <div id="enroll-user-list" class="border rounded p-2">
+            <p class="text-muted small mb-0">Loading available users…</p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn btn-dark btn-sm rounded-3" id="btn-do-enroll">
+            <i class="bi bi-check2-all me-1"></i>Enrol Selected
+          </button>
+          <button class="btn btn-outline-secondary btn-sm rounded-3" id="btn-cancel-enroll">Cancel</button>
+        </div>
+
+        <div id="enroll-feedback" class="mt-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Org Modal -->
+<div class="modal fade" id="createOrgModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content rounded-4">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold">New Organisation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label fw-semibold">Organisation name</label>
+        <input type="text" class="form-control rounded-3" id="new-org-name" placeholder="e.g. Acme Corp">
+        <div id="create-org-error" class="text-danger small mt-2"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-dark rounded-3 w-100" id="btn-create-org">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="/static/js/organisation.js"></script>
+{% endblock extra_js %}

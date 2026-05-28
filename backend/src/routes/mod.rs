@@ -8,3 +8,4 @@ pub mod module_routes;
 pub mod module_content_routes;
 pub mod student_routes;
 pub mod enrollment_routes;
+pub mod organisation_routes;

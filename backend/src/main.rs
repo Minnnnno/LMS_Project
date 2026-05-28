@@ -152,6 +152,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::student_routes::init)
             .configure(routes::user_routes::init)
             .configure(routes::enrollment_routes::init)
+            .configure(routes::organisation_routes::init)
             .configure(routes::module_routes::init)
             .configure(routes::module_content_routes::init)
             .service(index)
@@ -167,7 +168,7 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/static", "../frontend/static").show_files_listing())
             .service(pdf_viewer_page)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 8081))?
     .run()
     .await
 }

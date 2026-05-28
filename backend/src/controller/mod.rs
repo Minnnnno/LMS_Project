@@ -8,3 +8,4 @@ pub mod module_controller;
 pub mod module_content_controller;
 pub mod student_controller;
 pub mod enrollment_controller;
+pub mod organisation_controller;

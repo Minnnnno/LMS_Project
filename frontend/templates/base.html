@@ -61,6 +61,9 @@
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
                 <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Project</span></a>
                 <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Download</span></a>
+                {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+                <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
+                {% endif %}
             </nav>
 
             <div class="mt-auto d-grid gap-2">
@@ -90,6 +93,9 @@
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
                 <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Project</span></a>
                 <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Download</span></a>
+                {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+                <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
+                {% endif %}
             </nav>
         </aside>
 
