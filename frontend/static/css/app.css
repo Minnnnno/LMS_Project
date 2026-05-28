@@ -322,3 +322,25 @@ a {
         gap: 0.8rem;
     }
 }
+.content-navigation {
+    max-width: 520px;
+    padding: 24px;
+}
+
+.module-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 22px 0;
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+}
+
+.module-row:hover {
+    background: #f7f7f7;
+}
+
+.module-arrow {
+    font-size: 32px;
+    color: #555;
+}

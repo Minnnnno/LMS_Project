@@ -2,24 +2,24 @@ function goToCourse(courseId) {
     window.location.href = "/course/" + courseId;
 }
 
-async function loadCourses() {
+async function loadModules(courseId) {
     try {
         const response = await axios.get(
-            "/allcourses"
+            "/module/" + courseId
         );
 
-        const courses = response.data;
+        const modules = response.data;
 
-        const courseGrid =
-            document.getElementById("course-grid");
+        const moduleGrid =
+            document.getElementById("module-grid");
 
-        courseGrid.innerHTML = "";
+        moduleGrid.innerHTML = "";
 
-        courses.forEach(course => {
+        modules.forEach(module => {
 
-            courseGrid.innerHTML += `
-                <div class="card course-card" onclick="goToCourse(${course.course_id})">
-                    <div class="course-icon">📘</div>
+            moduleGrid.innerHTML += `
+                <div class="card module-card">
+                    <div class="module-icon">�</div>
 
                     <h3>${course.name}</h3>
 

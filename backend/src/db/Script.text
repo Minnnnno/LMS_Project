@@ -353,3 +353,4 @@ USING content_type::text::content_type_enum;
 
 ALTER TABLE module_contents
 ADD COLUMN content_category content_category_enum;
+

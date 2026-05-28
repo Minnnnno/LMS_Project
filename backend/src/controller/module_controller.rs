@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 use actix_web::{HttpResponse, HttpServer, Responder, get, web, post, put, delete};
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, ActiveModelTrait};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, ActiveModelTrait, QueryOrder};
 use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use crate::entity::modules::{self, Entity as Modules}; 
@@ -40,6 +40,7 @@ pub async fn get_modules_by_course_id(
     let course_id = path.into_inner(); 
     let result = modules::Entity::find()
     .filter(modules::Column::CourseId.eq(course_id))
+    .order_by_asc(modules::Column::Position)
     .all(db.get_ref())
     .await;
     match result {

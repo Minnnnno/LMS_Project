@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Course Details | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<div class="course-banner">
+    <h1 id="course-title">Loading course...</h1>
+</div>
+
+<h2 style="margin-top: 30px;">Modules</h2>
+
+<div id="module-list" class="course-grid" style="margin-top: 20px;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="/static/js/course_details.js"></script>
+{% endblock content %}

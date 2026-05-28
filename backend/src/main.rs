@@ -10,7 +10,6 @@ use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{cookie::Key, get, App, HttpResponse, HttpServer, Responder, web};
 use actix_cors::Cors;
 use tera::{Context, Tera};
-
 #[get("/")]
 async fn index() -> impl Responder {
     let tera = Tera::new("../frontend/templates/**/*")
@@ -59,6 +58,16 @@ async fn projects() -> impl Responder {
 #[get("/downloads")]
 async fn downloads() -> impl Responder {
     render_page("downloads.html")
+}
+
+#[get("/course/{course_id}")]
+async fn course_details_page() -> impl Responder {
+    render_page("course_details.html")
+}
+
+#[get("/module-content-page/{module_id}")]
+async fn module_content_page() -> impl Responder {
+    render_page("module_content.html")
 }
 
 pub fn render_page(template_name: &str) -> HttpResponse {
@@ -115,7 +124,10 @@ async fn main() -> std::io::Result<()> {
             .service(certification)
             .service(projects)
             .service(downloads)
-            .service(Files::new("/static", "../frontend/static"))
+            .service(course_details_page)
+            .service(module_content_page)
+            .service(Files::new("/static", "../frontend/static").show_files_listing())
+            
     })
     .bind(("127.0.0.1", 8080))?
     .run()
