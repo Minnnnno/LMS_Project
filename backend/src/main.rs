@@ -168,7 +168,7 @@ async fn main() -> std::io::Result<()> {
             .service(Files::new("/static", "../frontend/static").show_files_listing())
             .service(pdf_viewer_page)
     })
-    .bind(("127.0.0.1", 8081))?
+    .bind(("127.0.0.1", 8080))?
     .run()
     .await
 }
