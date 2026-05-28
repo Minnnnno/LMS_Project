@@ -332,11 +332,7 @@ SELECT * FROM courses;
 
 
 
-<<<<<<< HEAD
 ************************** 27 may 2026 1942****************************** 
-=======
--- ***************** 27 may 2026 1542****************************** 
->>>>>>> fe4649a028b0a8398f1e85667f233f3badab591e
 CREATE TYPE content_type_enum AS ENUM (
     'video',
     'pdf',
@@ -380,3 +376,7 @@ ALTER TABLE courses
 ALTER COLUMN org_id DROP DEFAULT;
 
 
+****** alter courses table to add background img and desc ****** 
+ALTER TABLE courses
+ADD COLUMN description TEXT,
+ADD COLUMN background_image_url TEXT;

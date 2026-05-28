@@ -1,0 +1,16 @@
+.page-content {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+#pdf-viewer {
+    width: 100%;
+    height: calc(100vh - 120px);
+    border: none;
+
+    display: block;
+
+    margin: 0 auto;
+    overflow: hidden;
+}

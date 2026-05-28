@@ -1,0 +1,30 @@
+.module-page {
+    width: 100%;
+}
+
+.page-title {
+    font-size: 36px;
+    margin-bottom: 30px;
+}
+
+.content-list {
+    margin-bottom: 24px;
+}
+
+.module-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 0;
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+    font-size: 18px;
+}
+
+.module-row:hover {
+    background: #f3f8ff;
+}
+
+.module-arrow {
+    font-size: 32px;
+}

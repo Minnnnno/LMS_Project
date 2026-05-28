@@ -28,6 +28,28 @@ pub async fn get_courses(
     }
   }
 
+#[get("/course/{course_id}")]
+pub async fn get_course_by_course_id(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>
+) -> impl Responder {
+    let course_id = path.into_inner(); 
+    let result = courses::Entity::find_by_id(course_id)
+    .one(db.get_ref())
+    .await;
+    match result {
+        Ok(course) => {
+            if let Some(course) = course {
+                HttpResponse::Ok().json(course)
+            } else {
+                HttpResponse::NotFound().body("Course not found")
+            }
+        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error: {}", err))
+    }
+}
+
 #[get("/course")]
 pub async fn search_course(
     db: web::Data<DatabaseConnection>,
@@ -130,6 +152,12 @@ pub async fn update_course(
             if let Some(currency) = data.currency {
                 active.currency = Set(Some(currency));
             }
+            if let Some(description) = data.description {
+                active.description = Set(Some(description));
+            }
+            if let Some(background_image_url) = data.background_image_url {
+                active.background_image_url = Set(Some(background_image_url));
+            }
 
             match active.update(db.get_ref()).await {
                 Ok(_) => HttpResponse::Ok()
@@ -174,6 +202,8 @@ pub async fn create_course(
         price_cents: Set(Some(data.price_cents)),
         currency: Set(Some(data.currency)),
         is_paid: Set(Some(data.is_paid)),
+        description: Set(data.description),
+        background_image_url: Set(data.background_image_url),
 
         ..Default::default()
     };

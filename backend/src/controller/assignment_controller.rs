@@ -39,13 +39,7 @@ pub async fn get_assignment_by_course_id(
     .await;
     match result {
         Ok(assignment) => {
-            if assignment.is_empty() {
-                HttpResponse::NotFound()
-                .body("No assignments found")
-            
-            }else{
-                HttpResponse::Ok().json(assignment)
-            }
+            HttpResponse::Ok().json(assignment)
         }
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Database error: {}", err)),
