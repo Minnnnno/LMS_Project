@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Profile | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<h1 class="section-title">Profile</h1>
+<p class="page-subtitle">Your signed-in account details.</p>
+
+{% if success %}
+<div class="alert alert-success mt-4 mb-0" role="status">
+    {{ success }}
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger mt-4 mb-0" role="alert">
+    {{ error }}
+</div>
+{% endif %}
+
+<div class="card mt-4 p-4">
+    <div class="mb-3">
+        <p class="text-secondary mb-1">Email</p>
+        <h2 class="h5 mb-0">{{ user_email | default(value="") }}</h2>
+    </div>
+
+    <div>
+        <p class="text-secondary mb-2">Roles</p>
+        {% if role_names | length > 0 %}
+        <div class="d-flex flex-wrap gap-2">
+            {% for role_name in role_names %}
+            <span class="badge text-bg-dark">{{ role_name }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="mb-0">No roles assigned.</p>
+        {% endif %}
+    </div>
+
+    <form action="/logout" method="post" class="mt-4">
+        <button type="submit" class="btn btn-outline-danger">
+            <i class="bi bi-box-arrow-right me-2"></i>Logout
+        </button>
+    </form>
+</div>
+
+{% if can_signup_as_lecturer %}
+<div class="card mt-4 p-4">
+    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <div>
+            <h2 class="h5 mb-1">Lecturer account</h2>
+            <p class="text-secondary mb-0">Sign up as a lecturer to create and manage course content.</p>
+        </div>
+
+        <form action="/profile/lecturer-signup" method="post">
+            <button type="submit" class="btn btn-dark">
+                <i class="bi bi-person-workspace me-2"></i>Sign up as lecturer
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock content %}

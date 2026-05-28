@@ -6,16 +6,17 @@ mod entity;
 mod services;
 use db::connection::connect_db;
 use actix_files::Files;
-use actix_session::{SessionMiddleware, storage::CookieSessionStore};
-use actix_web::{cookie::Key, get, App, HttpResponse, HttpServer, Responder, web};
+use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
+use actix_web::{cookie::Key, get, App, HttpResponse, HttpServer, Responder};
 use actix_cors::Cors;
 use tera::{Context, Tera};
+use include_dir::{include_dir, Dir};
 #[get("/")]
-async fn index() -> impl Responder {
+async fn index(session: Session) -> impl Responder {
     let tera = Tera::new("../frontend/templates/**/*")
         .expect("Failed to load templates");
 
-    let context = Context::new();
+    let context = build_page_context(&session);
 
     let html = tera
         .render("index.html", &context)
@@ -26,57 +27,90 @@ async fn index() -> impl Responder {
         .body(html)
 }
 #[get("/courses")]
-async fn courses() -> impl Responder {
-    render_page("courses.html")
+async fn courses(session: Session) -> impl Responder {
+    render_page("courses.html", &session)
 }
 
 #[get("/lessons")]
-async fn lessons() -> impl Responder {
-    render_page("lessons.html")
+async fn lessons(session: Session) -> impl Responder {
+    render_page("lessons.html", &session)
 }
 
 #[get("/assessments")]
-async fn assessments() -> impl Responder {
-    render_page("assessments.html")
+async fn assessments(session: Session) -> impl Responder {
+    render_page("assessments.html", &session)
 }
 
 #[get("/challenges")]
-async fn challenges() -> impl Responder {
-    render_page("challenges.html")
+async fn challenges(session: Session) -> impl Responder {
+    render_page("challenges.html", &session)
 }
 
 #[get("/certification")]
-async fn certification() -> impl Responder {
-    render_page("certification.html")
+async fn certification(session: Session) -> impl Responder {
+    render_page("certification.html", &session)
 }
 
 #[get("/projects")]
-async fn projects() -> impl Responder {
-    render_page("projects.html")
+async fn projects(session: Session) -> impl Responder {
+    render_page("projects.html", &session)
 }
 
 #[get("/downloads")]
-async fn downloads() -> impl Responder {
-    render_page("downloads.html")
+async fn downloads(session: Session) -> impl Responder {
+    render_page("downloads.html", &session)
 }
 
 #[get("/course/{course_id}")]
-async fn course_details_page() -> impl Responder {
-    render_page("course_details.html")
+async fn course_details_page(session: Session) -> impl Responder {
+    render_page("course_details.html", &session)
 }
 
 #[get("/module-content-page/{module_id}")]
-async fn module_content_page() -> impl Responder {
-    render_page("module_content.html")
+async fn module_content_page(session: Session) -> impl Responder {
+    render_page("module_content.html",&session)
 }
 
-pub fn render_page(template_name: &str) -> HttpResponse {
-    let tera = Tera::new("../frontend/templates/**/*")
+pub fn build_page_context(session: &Session) -> Context {
+    let mut context: Context = Context::new();
+
+    if let Ok(Some(user_id)) = session.get::<i32>("user_id") {
+        context.insert("is_logged_in", &true);
+        context.insert("user_id", &user_id);
+    } else {
+        context.insert("is_logged_in", &false);
+    }
+
+    if let Ok(Some(user_email)) = session.get::<String>("user_email") {
+        context.insert("user_email", &user_email);
+    }
+
+    let role_names: Vec<String> = session
+        .get::<Vec<String>>("role_names")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    context.insert("role_names", &role_names);
+
+    let role_ids: Vec<i32> = session
+        .get::<Vec<i32>>("role_ids")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    context.insert("role_ids", &role_ids);
+
+    context
+}
+
+pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
+    let tera: Tera = Tera::new(dir!("../frontend/templates/**/*"))
         .expect("Failed to load templates");
 
-    let context = Context::new();
+    let context = build_page_context(session);
 
-    let html = tera
+    let html: String = tera
         .render(template_name, &context)
         .expect("Failed to render template");
 
