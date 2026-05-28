@@ -13,8 +13,6 @@ pub struct Model {
     pub price_cents: Option<i32>,
     pub currency: Option<String>,
     pub is_paid: Option<bool>,
-    pub description: Option<String>,
-    pub background_image_url: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[sea_orm(

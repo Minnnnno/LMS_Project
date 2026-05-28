@@ -357,6 +357,36 @@ pub async fn remove_org_member(
     }
 }
 
+/// GET /api/users/all  –  all users in the system (for CSV/Excel file matching)
+#[get("/api/users/all")]
+pub async fn list_all_users(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    if let Err(e) = require_org_admin(&session) {
+        return e;
+    }
+
+    match users::Entity::find().all(db.get_ref()).await {
+        Ok(users) => {
+            let safe: Vec<serde_json::Value> = users
+                .iter()
+                .map(|u| {
+                    serde_json::json!({
+                        "user_id": u.user_id,
+                        "first_name": u.first_name,
+                        "last_name": u.last_name,
+                        "email": u.email,
+                    })
+                })
+                .collect();
+            HttpResponse::Ok().json(safe)
+        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error: {}", err)),
+    }
+}
+
 /// GET /api/users/unassigned  –  users not yet in any organisation (for the picker)
 #[get("/api/users/unassigned")]
 pub async fn list_unassigned_users(

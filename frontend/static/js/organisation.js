@@ -1,22 +1,48 @@
-// organisation.js – Organisation view: list orgs, view members, mass enrol
+// organisation.js – Organisation view with manual + CSV/Excel mass enrolment
 
 let currentOrgId = null;
-let allUnassignedUsers = [];
+let allUnassignedUsers = [];       // users with no org yet (for manual tab)
+let allSystemUsers = [];           // all users (for file matching)
 let selectedEnrollUserIds = new Set();
+let fileMatchedRows = [];          // parsed rows from CSV/Excel with matched user_id
 
-// ── Utilities ──────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function escHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function roleBadge(roleName) {
-    if (!roleName) return '';
-    const cls =
-        roleName.includes('Admin')      ? 'badge-admin' :
-        roleName.includes('Instructor') ? 'badge-instructor' :
-                                          'badge-student';
-    return `<span class="badge-role ${cls}">${roleName}</span>`;
+    const cls = roleName.includes('Admin')      ? 'badge-admin'
+              : roleName.includes('Instructor') ? 'badge-instructor'
+                                                : 'badge-student';
+    return `<span class="badge-role ${cls}">${escHtml(roleName)}</span>`;
 }
 
 function initials(first, last) {
-    return ((first || '')[0] || '') + ((last || '')[0] || '').toUpperCase();
+    return ((first || '')[0] || '').toUpperCase() + ((last || '')[0] || '').toUpperCase();
+}
+
+function setProgress(show, label, pct) {
+    const el = document.getElementById('upload-progress');
+    el.style.display = show ? '' : 'none';
+    if (show) {
+        document.getElementById('progress-label').textContent = label;
+        document.getElementById('progress-pct').textContent = pct + '%';
+        document.getElementById('progress-bar').style.width = pct + '%';
+    }
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────────
+
+function switchTab(tab) {
+    document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
+    document.getElementById('tab-file').classList.toggle('active', tab === 'file');
+    document.getElementById('pane-manual').style.display = tab === 'manual' ? '' : 'none';
+    document.getElementById('pane-file').style.display   = tab === 'file'   ? '' : 'none';
+    document.getElementById('enroll-feedback').innerHTML = '';
 }
 
 // ── Organisations list ─────────────────────────────────────────────────────────
@@ -25,14 +51,13 @@ async function loadOrganisations() {
     try {
         const { data: orgs } = await axios.get('/api/organisations');
         const el = document.getElementById('org-list');
-
         if (!orgs.length) {
             el.innerHTML = '<p class="text-muted small">No organisations yet.</p>';
             return;
         }
-
         el.innerHTML = orgs.map(org => `
-            <div class="org-card mb-2" id="org-card-${org.org_id}" onclick="selectOrg(${org.org_id}, '${escHtml(org.org_name)}')">
+            <div class="org-card mb-2" id="org-card-${org.org_id}"
+                 onclick="selectOrg(${org.org_id}, '${escHtml(org.org_name)}')">
                 <div class="d-flex align-items-center justify-content-between">
                     <div>
                         <div class="fw-semibold">${escHtml(org.org_name)}</div>
@@ -42,40 +67,28 @@ async function loadOrganisations() {
                 </div>
             </div>
         `).join('');
-    } catch (err) {
+    } catch {
         document.getElementById('org-list').innerHTML =
             '<p class="text-danger small">Failed to load organisations.</p>';
     }
 }
 
-function escHtml(str) {
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-// ── Select an organisation & load members ──────────────────────────────────────
+// ── Select org & show members ─────────────────────────────────────────────────
 
 async function selectOrg(orgId, orgName) {
     currentOrgId = orgId;
-
     document.querySelectorAll('.org-card').forEach(c => c.classList.remove('active'));
-    const card = document.getElementById(`org-card-${orgId}`);
-    if (card) card.classList.add('active');
+    document.getElementById(`org-card-${orgId}`)?.classList.add('active');
 
     document.getElementById('members-panel').style.display = '';
     document.getElementById('members-title').textContent = `Members – ${orgName}`;
     document.getElementById('members-list').innerHTML = '<p class="text-muted small">Loading…</p>';
-
-    // Hide enrol panel when switching orgs
     hideEnrolPanel();
 
     try {
         const { data: members } = await axios.get(`/api/organisations/${orgId}/members`);
         renderMembers(members, orgId);
-    } catch (err) {
+    } catch {
         document.getElementById('members-list').innerHTML =
             '<p class="text-danger small">Failed to load members.</p>';
     }
@@ -87,20 +100,16 @@ function renderMembers(members, orgId) {
         el.innerHTML = '<p class="text-muted small">No members yet. Use "Enrol Members" to add some.</p>';
         return;
     }
-
     el.innerHTML = members.map(m => `
         <div class="member-row">
             <div class="member-avatar">${initials(m.first_name, m.last_name)}</div>
-            <div class="flex-grow-1">
+            <div class="flex-grow-1 min-w-0">
                 <div class="fw-semibold">${escHtml(m.first_name)} ${escHtml(m.last_name)}</div>
-                <div class="text-muted small">${escHtml(m.email)}</div>
+                <div class="text-muted small text-truncate">${escHtml(m.email)}</div>
             </div>
-            <div class="d-flex gap-1 flex-wrap">
-                ${(m.roles || []).map(roleBadge).join(' ')}
-            </div>
+            <div class="d-flex gap-1 flex-wrap">${(m.roles || []).map(roleBadge).join('')}</div>
             <button class="btn btn-sm btn-outline-danger rounded-3 ms-1"
-                    onclick="removeMember(${orgId}, ${m.user_id})"
-                    title="Remove from org">
+                    onclick="removeMember(${orgId}, ${m.user_id})" title="Remove from org">
                 <i class="bi bi-person-x"></i>
             </button>
         </div>
@@ -111,44 +120,59 @@ async function removeMember(orgId, userId) {
     if (!confirm('Remove this member from the organisation?')) return;
     try {
         await axios.delete(`/api/organisations/${orgId}/members/${userId}`);
-        selectOrg(orgId, document.getElementById('members-title').textContent.replace('Members – ', ''));
+        const orgName = document.getElementById('members-title').textContent.replace('Members – ', '');
+        selectOrg(orgId, orgName);
     } catch (err) {
         alert('Failed to remove member: ' + (err.response?.data || err.message));
     }
 }
 
-// ── Mass Enrol panel ───────────────────────────────────────────────────────────
+// ── Enrol panel open/close ────────────────────────────────────────────────────
 
 function hideEnrolPanel() {
     document.getElementById('enroll-panel').style.display = 'none';
     selectedEnrollUserIds.clear();
+    fileMatchedRows = [];
     document.getElementById('enroll-feedback').innerHTML = '';
+    clearFilePreview();
 }
 
 document.getElementById('btn-open-enroll')?.addEventListener('click', async () => {
     if (!currentOrgId) return;
-
     const panel = document.getElementById('enroll-panel');
     if (panel.style.display !== 'none') { hideEnrolPanel(); return; }
 
     const orgName = document.getElementById('members-title').textContent.replace('Members – ', '');
     document.getElementById('enroll-org-name').textContent = orgName;
     selectedEnrollUserIds.clear();
-
     panel.style.display = '';
-    document.getElementById('enroll-user-list').innerHTML = '<p class="text-muted small">Loading…</p>';
+    switchTab('manual');
 
+    // Load unassigned users for manual tab
+    document.getElementById('enroll-user-list').innerHTML =
+        '<p class="text-muted small mb-0">Loading…</p>';
     try {
         const { data } = await axios.get('/api/users/unassigned');
         allUnassignedUsers = data;
         renderEnrollUserList(allUnassignedUsers);
-    } catch (err) {
+    } catch {
         document.getElementById('enroll-user-list').innerHTML =
-            '<p class="text-danger small">Failed to load users.</p>';
+            '<p class="text-danger small mb-0">Failed to load users.</p>';
+    }
+
+    // Load ALL users for file matching (silently)
+    try {
+        const { data } = await axios.get('/api/users/all');
+        allSystemUsers = data;
+    } catch {
+        // fallback: use unassigned list for matching
+        allSystemUsers = allUnassignedUsers;
     }
 });
 
 document.getElementById('btn-cancel-enroll')?.addEventListener('click', hideEnrolPanel);
+
+// ── Manual tab: user list ─────────────────────────────────────────────────────
 
 function renderEnrollUserList(users) {
     const el = document.getElementById('enroll-user-list');
@@ -158,8 +182,9 @@ function renderEnrollUserList(users) {
     }
     el.innerHTML = users.map(u => `
         <div class="enroll-user-item">
-            <input type="checkbox" class="form-check-input enroll-check" id="eu-${u.user_id}"
-                   value="${u.user_id}" ${selectedEnrollUserIds.has(u.user_id) ? 'checked' : ''}
+            <input type="checkbox" class="form-check-input" id="eu-${u.user_id}"
+                   value="${u.user_id}"
+                   ${selectedEnrollUserIds.has(u.user_id) ? 'checked' : ''}
                    onchange="toggleEnrollUser(${u.user_id}, this.checked)">
             <label class="form-check-label small" for="eu-${u.user_id}">
                 <strong>${escHtml(u.first_name)} ${escHtml(u.last_name)}</strong>
@@ -177,59 +202,226 @@ function toggleEnrollUser(userId, checked) {
 document.getElementById('enroll-search')?.addEventListener('input', function () {
     const q = this.value.toLowerCase();
     const filtered = allUnassignedUsers.filter(u =>
-        `${u.first_name} ${u.last_name} ${u.email}`.toLowerCase().includes(q)
-    );
+        `${u.first_name} ${u.last_name} ${u.email}`.toLowerCase().includes(q));
     renderEnrollUserList(filtered);
 });
 
-document.getElementById('btn-do-enroll')?.addEventListener('click', async () => {
+document.getElementById('btn-do-enroll')?.addEventListener('click', () =>
+    doEnroll([...selectedEnrollUserIds], 'manual'));
+
+// ── File upload tab ───────────────────────────────────────────────────────────
+
+// Template download
+document.getElementById('btn-download-template')?.addEventListener('click', e => {
+    e.preventDefault();
+    const csv = 'email,first_name,last_name\njohn.doe@example.com,John,Doe\njane.smith@example.com,Jane,Smith\n';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob), download: 'enrolment_template.csv'
+    });
+    a.click();
+});
+
+// Drag & drop
+const dropZone = document.getElementById('drop-zone');
+dropZone?.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone?.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone?.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+});
+
+document.getElementById('file-input')?.addEventListener('change', function () {
+    if (this.files[0]) handleFile(this.files[0]);
+    this.value = ''; // reset so same file can be re-selected
+});
+
+function clearFilePreview() {
+    document.getElementById('csv-preview-wrap').style.display = 'none';
+    document.getElementById('file-enroll-actions').style.display = 'none';
+    document.getElementById('csv-preview-body').innerHTML = '';
+    document.getElementById('preview-summary').textContent = '';
+    setProgress(false);
+    fileMatchedRows = [];
+}
+
+document.getElementById('btn-clear-file')?.addEventListener('click', clearFilePreview);
+
+async function handleFile(file) {
+    clearFilePreview();
+    document.getElementById('enroll-feedback').innerHTML = '';
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+        showFeedback('Please upload a .csv, .xlsx, or .xls file.', 'error');
+        return;
+    }
+
+    setProgress(true, 'Reading file…', 10);
+
+    try {
+        let rows;
+        if (ext === 'csv') {
+            rows = await parseCSV(file);
+        } else {
+            rows = await parseExcel(file);
+        }
+
+        setProgress(true, 'Matching against system users…', 60);
+
+        // Normalise headers (lowercase, trim)
+        const normalised = rows.map(r => {
+            const out = {};
+            for (const k of Object.keys(r)) out[k.trim().toLowerCase()] = String(r[k] ?? '').trim();
+            return out;
+        }).filter(r => r.email);
+
+        if (!normalised.length) {
+            setProgress(false);
+            showFeedback('No rows with an "email" column found in the file.', 'error');
+            return;
+        }
+
+        // Build lookup: email → user
+        const emailMap = {};
+        for (const u of allSystemUsers) emailMap[u.email.toLowerCase()] = u;
+        // Also try unassigned as fallback
+        for (const u of allUnassignedUsers) emailMap[u.email.toLowerCase()] = u;
+
+        fileMatchedRows = normalised.map(r => ({
+            email: r.email,
+            first_name: r.first_name || r.firstname || r['first name'] || '',
+            last_name: r.last_name || r.lastname || r['last name'] || '',
+            matched: emailMap[r.email.toLowerCase()] || null,
+        }));
+
+        setProgress(true, 'Building preview…', 90);
+        renderFilePreview(fileMatchedRows);
+        setProgress(false);
+
+    } catch (err) {
+        setProgress(false);
+        showFeedback('Failed to parse file: ' + err.message, 'error');
+    }
+}
+
+function parseCSV(file) {
+    return new Promise((resolve, reject) => {
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: r => resolve(r.data),
+            error: e => reject(e),
+        });
+    });
+}
+
+function parseExcel(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const wb = XLSX.read(e.target.result, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                resolve(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+            } catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(new Error('FileReader error'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function renderFilePreview(rows) {
+    const matched = rows.filter(r => r.matched);
+    const tbody = document.getElementById('csv-preview-body');
+
+    tbody.innerHTML = rows.map((r, i) => {
+        const cls = r.matched ? 'preview-match' : 'preview-nomatch';
+        const status = r.matched
+            ? `<span class="text-success"><i class="bi bi-check-circle-fill"></i> Found</span>`
+            : `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Not found</span>`;
+        return `<tr class="${cls}">
+            <td>${i + 1}</td>
+            <td>${escHtml(r.email)}</td>
+            <td>${escHtml(r.first_name)}</td>
+            <td>${escHtml(r.last_name)}</td>
+            <td>${status}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('preview-summary').textContent =
+        `${rows.length} row(s) found · ${matched.length} matched · ${rows.length - matched.length} will be skipped`;
+
+    document.getElementById('csv-preview-wrap').style.display = '';
+    document.getElementById('file-enroll-count').textContent = matched.length;
+    document.getElementById('file-enroll-actions').style.display = matched.length ? '' : 'none';
+}
+
+document.getElementById('btn-do-file-enroll')?.addEventListener('click', () => {
+    const ids = fileMatchedRows.filter(r => r.matched).map(r => r.matched.user_id);
+    doEnroll(ids, 'file');
+});
+
+// ── Shared enrol call ─────────────────────────────────────────────────────────
+
+async function doEnroll(userIds, source) {
     if (!currentOrgId) return;
-    if (!selectedEnrollUserIds.size) {
-        document.getElementById('enroll-feedback').innerHTML =
-            '<p class="text-warning small">Select at least one user.</p>';
+
+    if (!userIds.length) {
+        showFeedback('No users selected.', 'error');
         return;
     }
 
     const role = document.getElementById('enroll-role').value;
-    const fb = document.getElementById('enroll-feedback');
-    fb.innerHTML = '<p class="text-muted small">Enrolling…</p>';
+    showFeedback('Enrolling…', 'info');
 
     try {
         const { data } = await axios.post(`/api/organisations/${currentOrgId}/enroll`, {
-            user_ids: [...selectedEnrollUserIds],
+            user_ids: userIds,
             role,
         });
 
-        fb.innerHTML = `<p class="text-success small">${escHtml(data.message)}</p>` +
-            (data.errors.length
-                ? `<p class="text-danger small">Errors: ${data.errors.map(escHtml).join('; ')}</p>`
-                : '');
+        const type = data.errors.length ? 'partial' : 'success';
+        let msg = `<i class="bi bi-check2-circle me-1"></i>${escHtml(data.message)}`;
+        if (data.errors.length) {
+            msg += `<br><small>Skipped: ${data.errors.map(escHtml).join('; ')}</small>`;
+        }
+        showFeedback(msg, type);
 
-        // Refresh members list
+        // Refresh members
         const orgName = document.getElementById('members-title').textContent.replace('Members – ', '');
         await selectOrg(currentOrgId, orgName);
-        selectedEnrollUserIds.clear();
 
-        // Reload unassigned list
+        // Refresh user lists
         try {
             const { data: fresh } = await axios.get('/api/users/unassigned');
             allUnassignedUsers = fresh;
-            renderEnrollUserList(fresh);
-        } catch (_) {}
-    } catch (err) {
-        fb.innerHTML = `<p class="text-danger small">Error: ${escHtml(err.response?.data || err.message)}</p>`;
-    }
-});
+            if (source === 'manual') renderEnrollUserList(fresh);
+        } catch {}
 
-// ── Create Organisation modal ─────────────────────────────────────────────────
+        selectedEnrollUserIds.clear();
+        if (source === 'file') clearFilePreview();
+
+    } catch (err) {
+        showFeedback('Error: ' + escHtml(err.response?.data || err.message), 'error');
+    }
+}
+
+function showFeedback(msg, type) {
+    const el = document.getElementById('enroll-feedback');
+    const cls = type === 'success' ? 'success' : type === 'partial' ? 'partial' : type === 'info' ? '' : 'error';
+    el.innerHTML = `<div class="result-summary ${cls}">${msg}</div>`;
+}
+
+// ── Create organisation ───────────────────────────────────────────────────────
 
 document.getElementById('btn-create-org')?.addEventListener('click', async () => {
     const name = document.getElementById('new-org-name').value.trim();
     const errEl = document.getElementById('create-org-error');
-
     if (!name) { errEl.textContent = 'Please enter an organisation name.'; return; }
     errEl.textContent = '';
-
     try {
         await axios.post('/api/organisations', { org_name: name });
         document.getElementById('new-org-name').value = '';
@@ -240,5 +432,5 @@ document.getElementById('btn-create-org')?.addEventListener('click', async () =>
     }
 });
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────
 loadOrganisations();

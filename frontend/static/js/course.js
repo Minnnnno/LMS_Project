@@ -1,10 +1,12 @@
 function goToCourse(courseId) {
-    window.location.href = "/course-page/" + courseId;
+    window.location.href = "/course/" + courseId;
 }
 
 async function loadCourses() {
     try {
-        const response = await axios.get("/allcourses");
+        const response = await axios.get(
+            "/allcourses"
+        );
 
         const courses = response.data;
 
@@ -16,24 +18,14 @@ async function loadCourses() {
         courses.forEach(course => {
 
             courseGrid.innerHTML += `
-                <div class="modern-course-card"
-                    onclick="goToCourse(${course.course_id})">
+                <div class="card course-card" onclick="goToCourse(${course.course_id})">
+                    <div class="course-icon">📘</div>
 
-                    <div class="course-image"
-                        style="background-image: url('${course.background_image_url}')">
-                    </div>
+                    <h3>${course.name}</h3>
 
-                    <div class="course-content">
-
-                        <h3 class="course-title">
-                            ${course.name}
-                        </h3>
-
-                        <p class="course-description">
-                            ${course.description || "No description"}
-                        </p>
-
-                    </div>
+                    <p>
+                        ${course.description || "No description"}
+                    </p>
                 </div>
             `;
         });

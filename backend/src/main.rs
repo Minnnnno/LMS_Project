@@ -60,7 +60,7 @@ async fn downloads(session: Session) -> impl Responder {
     render_page("downloads.html", &session)
 }
 
-#[get("/course-page/{course_id}")]
+#[get("/course/{course_id}")]
 async fn course_details_page(session: Session) -> impl Responder {
     render_page("course_details.html", &session)
 }
@@ -68,11 +68,6 @@ async fn course_details_page(session: Session) -> impl Responder {
 #[get("/module-content-page/{module_id}")]
 async fn module_content_page(session: Session) -> impl Responder {
     render_page("module_content.html",&session)
-}
-
-#[get("/pdf-viewer-page")]
-async fn pdf_viewer_page(session: Session) -> impl Responder {
-    render_page("pdf_viewer.html", &session)
 }
 
 pub fn build_page_context(session: &Session) -> Context {
@@ -166,7 +161,7 @@ async fn main() -> std::io::Result<()> {
             .service(course_details_page)
             .service(module_content_page)
             .service(Files::new("/static", "../frontend/static").show_files_listing())
-            .service(pdf_viewer_page)
+            
     })
     .bind(("127.0.0.1", 8080))?
     .run()

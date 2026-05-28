@@ -4,6 +4,7 @@ use crate::controller::organisation_controller::{
     create_organisation,
     delete_organisation,
     get_organisation,
+    list_all_users,
     list_org_members,
     list_organisations,
     list_unassigned_users,
@@ -21,5 +22,6 @@ pub fn init(cfg: &mut web::ServiceConfig) {
         .service(list_org_members)
         .service(mass_enroll)
         .service(remove_org_member)
+        .service(list_all_users)
         .service(list_unassigned_users);
 }

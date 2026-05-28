@@ -1,3 +1,7 @@
+function goToCourse(courseId) {
+    window.location.href = "/course/" + courseId;
+}
+
 async function loadModules(courseId) {
     try {
         const response = await axios.get(
