@@ -5,3 +5,4 @@ pub mod modules;
 pub mod module_content;
 pub mod student;
 pub mod organisation;
+pub mod quiz;

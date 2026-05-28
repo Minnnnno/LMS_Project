@@ -155,6 +155,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::organisation_routes::init)
             .configure(routes::module_routes::init)
             .configure(routes::module_content_routes::init)
+            .configure(routes::quiz_routes::init)
             .service(index)
             .service(courses)
             .service(lessons)
