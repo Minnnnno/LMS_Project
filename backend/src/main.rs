@@ -10,7 +10,6 @@ use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{cookie::Key, get, App, HttpResponse, HttpServer, Responder};
 use actix_cors::Cors;
 use tera::{Context, Tera};
-use include_dir::{include_dir, Dir};
 #[get("/")]
 async fn index(session: Session) -> impl Responder {
     let tera = Tera::new("../frontend/templates/**/*")
@@ -105,7 +104,7 @@ pub fn build_page_context(session: &Session) -> Context {
 }
 
 pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
-    let tera: Tera = Tera::new(dir!("../frontend/templates/**/*"))
+    let tera: Tera = Tera::new(("../frontend/templates/**/*"))
         .expect("Failed to load templates");
 
     let context = build_page_context(session);
