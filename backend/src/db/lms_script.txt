@@ -332,7 +332,7 @@ SELECT * FROM courses;
 
 
 
-************************** 27 may 2026 1542****************************** 
+-- ***************** 27 may 2026 1542****************************** 
 CREATE TYPE content_type_enum AS ENUM (
     'video',
     'pdf',
@@ -358,3 +358,21 @@ USING content_type::text::content_type_enum;
 
 ALTER TABLE module_contents
 ADD COLUMN content_category content_category_enum;
+
+
+
+-- org ID null by default 
+
+ALTER TABLE users
+ALTER COLUMN org_id DROP NOT NULL;
+
+ALTER TABLE users
+ALTER COLUMN org_id DROP DEFAULT;
+
+ALTER TABLE courses
+ALTER COLUMN org_id DROP NOT NULL;
+
+ALTER TABLE courses
+ALTER COLUMN org_id DROP DEFAULT;
+
+

@@ -64,7 +64,11 @@
             </nav>
 
             <div class="mt-auto d-grid gap-2">
+                {% if is_logged_in %}
+                <a href="/profile" class="btn btn-dark rounded-3">Profile</a>
+                {% else %}
                 <a href="/login" class="btn btn-dark rounded-3">Sign In</a>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -106,7 +110,11 @@
                         <input class="form-control bg-light border-start-0" type="search" name="q" placeholder="Search courses..." aria-label="Search">
                     </form>
 
+                    {% if is_logged_in %}
+                    <a href="/profile" class="btn btn-dark rounded-3 px-4">Profile</a>
+                    {% else %}
                     <a href="/login" class="btn btn-dark rounded-3 px-4">Sign In</a>
+                    {% endif %}
                 </div>
             </header>
 

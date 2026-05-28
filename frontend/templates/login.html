@@ -38,6 +38,16 @@
                         <p class="page-subtitle text-secondary mb-0">Access your courses, progress, and learning dashboard.</p>
                     </div>
 
+                    {% if success %}
+                    <div class="success-banner mb-4" role="status">
+                        <div class="success-banner-icon"><i class="bi bi-check-lg"></i></div>
+                        <div class="success-banner-content">
+                            <strong>Registration complete</strong>
+                            <span>{{ success }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     {% if error %}
                     <div class="error-banner mb-4" role="alert">
                         <div class="error-banner-icon">!</div>
