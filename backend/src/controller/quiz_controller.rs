@@ -78,7 +78,6 @@ pub async fn create_quiz(
     }
 }
 
-
 #[put("/quiz/{quiz_id}")]
 pub async fn update_quiz(
     db:web::Data<DatabaseConnection>,
