@@ -10,4 +10,4 @@ pub mod student_routes;
 pub mod enrollment_routes;
 pub mod organisation_routes;
 pub mod quiz_routes;
-pub mod quiz_controller_routes;
+pub mod quiz_questions_routes;

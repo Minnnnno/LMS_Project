@@ -139,8 +139,8 @@ pub async fn delete_quiz(
         .await;
 
     match existing {
-        Ok(Some(updated_quiz)) => {
-            let active_model: quiz::ActiveModel = updated_quiz.into();
+        Ok(Some(target_quiz)) => {
+            let active_model: quiz::ActiveModel = target_quiz.into();
             match active_model.delete(db.get_ref()).await {
                 Ok(_) => HttpResponse::Ok().body("Quiz deleted!"),
                 Err(err) => HttpResponse::InternalServerError()
