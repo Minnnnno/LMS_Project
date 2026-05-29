@@ -4,16 +4,17 @@ const moduleId = pathParts[2];
 async function loadModuleContent() {
     try {
         const response = await axios.get("/module-content/" + moduleId);
-        const contents = response.data;
-
+        const contents = Array.isArray(response.data)
+            ? response.data
+            : [response.data];
         const contentList = document.getElementById("content-list");
         contentList.innerHTML = "";
 
         contents.forEach(content => {
             contentList.innerHTML += `
-                <div class="module-row" onclick="openContent('${content.content_url}')">
+                <div class="module-row" onclick="openPdf('${content.content_url}')">
                     <span>${content.title}</span>
-                    <span class="module-arrow">✓</span>
+                    <span class="module-arrow">›</span>
                 </div>
             `;
         });
@@ -23,8 +24,9 @@ async function loadModuleContent() {
     }
 }
 
-function openContent(url) {
-    window.open(url, "_blank");
+function openPdf(pdfUrl) {
+    const encodedUrl = encodeURIComponent(pdfUrl);
+    window.location.href = `/pdf-viewer-page?url=${encodedUrl}`;
 }
 
 loadModuleContent();

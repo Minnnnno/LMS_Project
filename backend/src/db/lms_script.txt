@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS users (
   first_name    VARCHAR(100) NOT NULL,
   last_name     VARCHAR(100) NOT NULL,
   email         VARCHAR(255) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255),
+  auth_provider VARCHAR(20) NOT NULL DEFAULT 'password',
   org_id        INT,
   FOREIGN KEY (org_id)
     REFERENCES organisations(org_id)
@@ -383,8 +384,8 @@ ADD COLUMN background_image_url TEXT;
 
 
 
-******28 may**********
-****** Alter enrollment to TIMESTAMPTZ******
+-- ******28 may**********
+-- ****** Alter enrollment to TIMESTAMPTZ******
 ALTER TABLE enrollments
 ALTER COLUMN enrolled_at TYPE TIMESTAMPTZ
 USING enrolled_at AT TIME ZONE 'Asia/Singapore';
@@ -441,3 +442,12 @@ ON DELETE CASCADE;
 
 ALTER TABLE quizzes
 ADD COLUMN passing_mark INT NOT NULL DEFAULT 50;
+
+
+-- alter password column to be nullable to support google auth
+-- added a column so that it is able to support multiple login types
+ALTER TABLE users
+ALTER COLUMN password_hash DROP NOT NULL;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) NOT NULL DEFAULT 'password';
