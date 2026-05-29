@@ -344,3 +344,10 @@ a {
     font-size: 32px;
     color: #555;
 }
+
+body {
+    overflow-x: hidden;
+}
+.page-content {
+    padding-right: 0;
+}

@@ -26,9 +26,16 @@ pub async fn upload_to_cloudinary(
     let api_secret = std::env::var("CLOUDINARY_API_SECRET")
         .map_err(|_| "CLOUDINARY_API_SECRET not found".to_string())?;
 
+    let resource_type = if filename.to_lowercase().ends_with(".pdf") {
+    "raw"
+    } else {
+        "image"
+    };
+
     let upload_url = format!(
-        "https://api.cloudinary.com/v1_1/{}/auto/upload",
-        cloud_name
+        "https://api.cloudinary.com/v1_1/{}/{}/upload",
+        cloud_name,
+        resource_type
     );
 
     if let Err(err) = scan_file_for_malware(&file_bytes).await {

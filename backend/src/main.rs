@@ -60,9 +60,14 @@ async fn downloads(session: Session) -> impl Responder {
     render_page("downloads.html", &session)
 }
 
-#[get("/course/{course_id}")]
+#[get("/course-page/{course_id}")]
 async fn course_details_page(session: Session) -> impl Responder {
     render_page("course_details.html", &session)
+}
+
+#[get("/pdf-viewer-page")]
+async fn pdf_viewer_page(session: Session) -> impl Responder {
+    render_page("pdf_viewer.html", &session)
 }
 
 #[get("/module-content-page/{module_id}")]
@@ -161,6 +166,7 @@ async fn main() -> std::io::Result<()> {
             .service(downloads)
             .service(course_details_page)
             .service(module_content_page)
+            .service(pdf_viewer_page)
             .service(Files::new("/static", "../frontend/static").show_files_listing())
             
     })
