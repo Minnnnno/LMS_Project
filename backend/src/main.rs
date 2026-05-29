@@ -158,6 +158,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::quiz_routes::init)
             .configure(routes::quiz_questions_routes::init)
             .configure(routes::quiz_options_routes::init)
+            .configure(routes::quiz_attempts_routes::init)
             .service(index)
             .service(courses)
             .service(lessons)
