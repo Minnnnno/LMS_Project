@@ -9,7 +9,8 @@ pub struct Model {
     pub first_name: String,
     pub last_name: String,
     pub email: String,
-    pub password_hash: String,
+    pub password_hash: Option<String>,
+    pub auth_provider: String,
     pub org_id: Option<i32>,
 }
 

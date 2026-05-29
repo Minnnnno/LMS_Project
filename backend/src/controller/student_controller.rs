@@ -124,8 +124,16 @@ pub async fn change_password(
         }
     };
 
+    let password_hash = match &user.password_hash {
+        Some(password_hash) => password_hash,
+        None => {
+            return HttpResponse::BadRequest()
+                .body("This account does not have a password. Please sign in with Google.");
+        }
+    };
+
     //parse existing password hash from database for argon2 password verification
-    let parsed_hash = match PasswordHash::new(&user.password_hash) {
+    let parsed_hash = match PasswordHash::new(password_hash) {
         Ok(hash) => hash,     // if password hash is successfully parsed, return it
         Err(err) => {           // if there is an error parsing password hash, return internal server error with error message
             println!("Password hash parse error: {:?}", err);
@@ -173,7 +181,8 @@ pub async fn change_password(
 
     //update user's password hash in database
     let mut update_user = user.into_active_model();  // convert user to active model to update it
-    update_user.password_hash = Set(new_password_hash);  // set new password hash
+    update_user.password_hash = Set(Some(new_password_hash));  // set new password hash
+    update_user.auth_provider = Set("password".to_string());
 
     match update_user.update(db.get_ref()).await {
         Ok(_) => HttpResponse::Ok().body("Password changed successfully!"),  // if update is successful, return success message
