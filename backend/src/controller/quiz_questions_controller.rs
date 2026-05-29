@@ -6,7 +6,7 @@ use sea_orm::{
 };
 
 use crate::entity::quiz_questions::Entity as QuizQuestionEntity;
-use crate::entity::{quiz, roles, user_roles};
+use crate::entity::{roles, user_roles};
 use crate::entity::quiz_questions::QuestionType;
 use crate::models::quiz_questions::{CreateQuizQuestion, UpdateQuizQuestion};
 
