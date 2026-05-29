@@ -18,7 +18,6 @@ pub struct ModuleContent {
     pub position: i32, 
 }
 
-
 #[derive(Serialize, Deserialize)]
 pub struct UpdateModuleContent{
     pub module_id: Option<i32>, 
