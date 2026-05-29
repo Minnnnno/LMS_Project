@@ -10,3 +10,7 @@ pub mod lesson_progress;
 pub mod assignments;
 pub mod submissions;
 pub mod payments;
+pub mod quiz;
+pub mod quiz_answers;
+pub mod quiz_options;
+pub mod quiz_questions;
