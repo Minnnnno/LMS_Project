@@ -1,6 +1,5 @@
 use actix_session::Session;
 use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
-use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };

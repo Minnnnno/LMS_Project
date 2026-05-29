@@ -7,3 +7,4 @@ pub mod student;
 pub mod organisation;
 pub mod quiz;
 pub mod quiz_questions;
+pub mod quiz_options;
