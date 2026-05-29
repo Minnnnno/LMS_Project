@@ -438,3 +438,6 @@ ADD CONSTRAINT quizzes_course_fk
 FOREIGN KEY (course_id)
 REFERENCES courses(course_id)
 ON DELETE CASCADE;
+
+ALTER TABLE quizzes
+ADD COLUMN passing_mark INT NOT NULL DEFAULT 50;
