@@ -10,3 +10,4 @@ pub mod student_controller;
 pub mod enrollment_controller;
 pub mod organisation_controller;
 pub mod quiz_controller;
+pub mod quiz_questions_controller;
