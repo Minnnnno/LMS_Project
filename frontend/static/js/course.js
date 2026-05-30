@@ -5,7 +5,7 @@ function goToCourse(courseId) {
 async function loadCourses() {
     try {
         const response = await axios.get(
-            "/allcourses"
+            "/api/courses"
         );
 
         const courses = response.data;

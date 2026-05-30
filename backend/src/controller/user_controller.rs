@@ -841,3 +841,19 @@ pub async fn lecturer_signup(
         .insert_header((header::LOCATION, "/profile"))
         .finish()
 }
+
+
+#[get("/debug-session")]
+async fn debug_session(session: Session) -> impl Responder {
+    let user_id: Option<i32> = session.get("user_id").unwrap();
+    let user_email: Option<String> = session.get("user_email").unwrap();
+    let role_ids: Option<Vec<i32>> = session.get("role_ids").unwrap();
+    let role_names: Option<Vec<String>> = session.get("role_names").unwrap();
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "user_shouldntd": user_id,
+        "user_email": user_email,
+        "role_ids": role_ids,
+        "role_names": role_names
+    }))
+}

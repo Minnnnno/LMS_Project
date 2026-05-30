@@ -11,7 +11,11 @@
     </div>
 </div>
 <div class="course-layout">
-
+    <div id="instructor-controls" class="instructor-controls" style="display: none;">
+        <button id="edit-course-btn">Edit Course</button>
+        <button id="add-module-btn">+ Add Module</button>
+        <button id="student-view-btn">View Student View</button>
+    </div>
     <div class="course-card">
         <h2>Modules</h2>
 
@@ -24,7 +28,20 @@
     </div>
 
 </div>
+<div id="add-module-modal" style="display: none;">
+    <div class="modal-content">
+        <h2>Add Module</h2>
 
+        <input 
+            type="text" 
+            id="module-title-input" 
+            placeholder="Module title, e.g. Week 1 Introduction"
+        >
+
+        <button id="save-module-btn">Save</button>
+        <button id="close-module-modal-btn">Cancel</button>
+    </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/static/js/course_details.js"></script>
 {% endblock content %}

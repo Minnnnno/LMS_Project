@@ -3,7 +3,7 @@ const moduleId = pathParts[2];
 
 async function loadModuleContent() {
     try {
-        const response = await axios.get("/module-content/" + moduleId);
+        const response = await axios.get("/api/module-content/" + moduleId);
         const contents = Array.isArray(response.data)
             ? response.data
             : [response.data];

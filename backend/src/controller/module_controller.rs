@@ -11,7 +11,7 @@ use crate::models::modules::{
     UpdateModules,
 };
 
-#[get("/allmodules")]
+#[get("/api/modules")]
 pub async fn get_modules(
     db: web::Data<DatabaseConnection>
 ) -> impl Responder {
@@ -32,7 +32,7 @@ pub async fn get_modules(
     }
   }
 
-#[get("/module/{course_id}")]
+#[get("/api/modules/{course_id}")]
 pub async fn get_modules_by_course_id(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>
@@ -58,7 +58,7 @@ pub async fn get_modules_by_course_id(
     }
 }
 
-#[put("/modules/{module_id}")]
+#[put("/api/modules/{module_id}")]
 pub async fn update_module(
     db:web::Data<DatabaseConnection>,
     path: web::Path<i32>,
@@ -101,7 +101,7 @@ pub async fn update_module(
     }
 }
 
-#[post("/modules")]
+#[post("/api/modules")]
 pub async fn create_module(
     db: web::Data<DatabaseConnection>,
     body: web::Json<CreateModules>
@@ -126,7 +126,7 @@ pub async fn create_module(
     }
 }
 
-#[delete("/module/{module_id}")]
+#[delete("/api/module/{module_id}")]
 pub async fn delete_module(
     db:web::Data<DatabaseConnection>, 
     path:web::Path<i32>

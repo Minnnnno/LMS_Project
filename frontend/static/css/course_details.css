@@ -1,115 +1,20 @@
-.course-banner {
-    height: 220px;
-    background: linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
-                url("/static/images/course-banner.jpg");
-    background-size: cover;
-    background-position: center;
-    display: flex;
-    align-items: end;
-    padding: 40px;
-    color: white;
-}
-
-.course-banner h1 {
-    font-size: 42px;
-    margin: 0;
-}
-
-.course-layout {
-    display: grid;
-    grid-template-columns: 1.4fr 1fr;
-    gap: 32px;
-    padding: 40px;
-    background: #f5f6f8;
-}
-
-.course-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-}
-
-.card-header h2 {
-    margin: 0 0 20px;
-}
-
-.module-row,
-.assignment-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 18px 10px;
-    border-bottom: 1px solid #ddd;
-    cursor: pointer;
-}
-
-.module-row:hover {
-    background: #f3f8ff;
-}
-
-.module-title,
-.assignment-title {
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.module-subtitle,
-.assignment-subtitle {
-    font-size: 14px;
-    color: #666;
-    margin-top: 5px;
-}
-
-.module-arrow {
-    font-size: 32px;
-    color: #555;
-}
-
-.course-layout {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 24px;
-    align-items: start;
-}
-
-.course-card {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-}
-
 .course-hero {
     width: 100%;
     height: 220px;
-
-    border-radius: 0;
-    overflow: hidden;
-
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-
     position: relative;
-
     margin-bottom: 24px;
 }
 
 .course-hero-overlay {
     width: 100%;
     height: 100%;
-
     display: flex;
     align-items: flex-end;
-
     padding: 24px;
-
-    background: linear-gradient(
-        to top,
-        rgba(0,0,0,0.45),
-        rgba(0,0,0,0.1)
-    );
+    background: linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0.1));
 }
 
 #course-title {
@@ -117,21 +22,127 @@
     font-size: 48px;
     font-weight: 500;
     margin: 0;
-
     text-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 
 .course-layout {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1fr 300px;
     gap: 24px;
+    align-items: start;
+    padding: 32px;
+    background: #f5f6f8;
+}
+
+.instructor-controls {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.instructor-controls button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #2f5bea;
+    color: white;
+    cursor: pointer;
 }
 
 .course-card {
     background: white;
     border-radius: 18px;
     padding: 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
 
-    box-shadow:
-        0 2px 8px rgba(0,0,0,0.08);
+.course-card h2 {
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+.module-row,
+.assignment-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    background: white;
+    cursor: pointer;
+}
+
+.module-row:hover {
+    background: #f5f7ff;
+}
+
+.module-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.module-title,
+.assignment-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.assignment-subtitle {
+    font-size: 13px;
+    color: #666;
+    margin-top: 4px;
+}
+
+.module-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.module-actions button {
+    padding: 6px 9px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.edit-btn {
+    background: #ffc107;
+    color: #111;
+}
+
+.delete-btn {
+    background: #dc3545;
+    color: white;
+}
+
+.module-arrow {
+    font-size: 22px;
+    color: #555;
+}
+
+#add-module-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 25px;
+    border-radius: 12px;
+    width: 350px;
+}
+
+.modal-content input {
+    width: 100%;
+    padding: 10px;
+    margin: 15px 0;
 }

@@ -7,7 +7,7 @@ use sea_orm::sea_query::extension::postgres::PgExpr;
 use crate::entity::courses::{self, CourseStatus}; 
 use crate::models::course::{CreateCourse, CourseQuery, UpdateCourse};
 
-#[get("/allcourses")]
+#[get("/api/courses")]
 pub async fn get_courses(
     db: web::Data<DatabaseConnection>
 ) -> impl Responder {
@@ -28,7 +28,7 @@ pub async fn get_courses(
     }
   }
 
-#[get("/course/{course_id}")]
+#[get("/api/courses/{course_id}")]
 pub async fn get_course_by_course_id(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>
@@ -50,7 +50,7 @@ pub async fn get_course_by_course_id(
     }
 }
 
-#[get("/course")]
+#[get("/api/courses/search")]
 pub async fn search_course(
     db: web::Data<DatabaseConnection>,
     query: web::Query<CourseQuery>,
@@ -105,7 +105,7 @@ pub async fn search_course(
     }
 }
 
-#[put("/course/{course_id}")]
+#[put("/api/courses/{course_id}")]
 pub async fn update_course(
     db:web::Data<DatabaseConnection>,
     path: web::Path<i32>,
@@ -174,7 +174,7 @@ if          let Some(description) = data.description {
 }
 
 
-#[post("/course")]
+#[post("/api/courses")]
 pub async fn create_course(
     db: web::Data<DatabaseConnection>,
     body: web::Json<CreateCourse>
@@ -219,7 +219,7 @@ pub async fn create_course(
     }
 }
 
-#[delete("/course/{course_id}")]
+#[delete("/api/courses/{course_id}")]
 pub async fn delete_course(
     db:web::Data<DatabaseConnection>, 
     path:web::Path<i32>

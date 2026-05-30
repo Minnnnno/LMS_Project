@@ -5,7 +5,7 @@ function goToCourse(courseId) {
 async function loadModules(courseId) {
     try {
         const response = await axios.get(
-            "/module/" + courseId
+            "/api/modules/" + courseId
         );
 
         const modules = response.data;
