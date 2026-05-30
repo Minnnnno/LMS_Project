@@ -4,7 +4,8 @@ use actix_session::Session;
 use actix_web::http::header;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, Set, TransactionTrait,
 };
 use serde::Deserialize;
 use std::env;
@@ -100,6 +101,30 @@ fn store_roles_in_session(session: &Session, role_ids: Vec<i32>, role_names: Vec
     if let Err(err) = session.insert("role_names", role_names) {
         println!("Session insert error: {:?}", err);
     }
+}
+
+async fn assign_role_to_user<C>(
+    db: &C,
+    user_id: i32,
+    role_name: roles::RoleName,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let role = roles::Entity::find()
+        .filter(roles::Column::RoleName.eq(role_name))
+        .one(db)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound("Role not found in database.".to_string()))?;
+
+    let new_user_role = user_roles::ActiveModel {
+        user_id: Set(user_id),
+        role_id: Set(role.role_id),
+    };
+
+    new_user_role.insert(db).await?;
+
+    Ok(())
 }
 
 fn redirect_login_with_error(session: &Session, error_message: &str) -> HttpResponse {
@@ -342,19 +367,21 @@ pub async fn register_submit(
         ..Default::default()
     };
 
-    let response = match new_user.insert(db.get_ref()).await {
-        Ok(_) => {
-            if let Err(err) = session.insert(
-                "flash_success",
-                "User registered successfully. Please log in.",
-            ) {
-                println!("Session flash insert error: {:?}", err);
-            }
-
-            HttpResponse::Found()
-                .insert_header((header::LOCATION, "/login"))
-                .finish()
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            println!("Registration transaction error: {:?}", err);
+            return render_register_error(
+                "Unable to register your account right now.",
+                &first_name,
+                &last_name,
+                &email,
+            );
         }
+    };
+
+    let inserted_user = match new_user.insert(&txn).await {
+        Ok(user) => user,
         Err(err) => {
             println!("Insert user error: {:?}", err);
             return render_register_error(
@@ -366,7 +393,38 @@ pub async fn register_submit(
         }
     };
 
-    response
+    if let Err(err) =
+        assign_role_to_user(&txn, inserted_user.user_id, roles::RoleName::Student).await
+    {
+        println!("Assign student role error: {:?}", err);
+        return render_register_error(
+            "Unable to assign the student role right now.",
+            &first_name,
+            &last_name,
+            &email,
+        );
+    }
+
+    if let Err(err) = txn.commit().await {
+        println!("Registration commit error: {:?}", err);
+        return render_register_error(
+            "Unable to register your account right now.",
+            &first_name,
+            &last_name,
+            &email,
+        );
+    }
+
+    if let Err(err) = session.insert(
+        "flash_success",
+        "User registered successfully. Please log in.",
+    ) {
+        println!("Session flash insert error: {:?}", err);
+    }
+
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, "/login"))
+        .finish()
 }
 
 #[post("/login")]
@@ -651,7 +709,18 @@ pub async fn google_callback(
                 ..Default::default()
             };
 
-            match new_user.insert(db.get_ref()).await {
+            let txn = match db.get_ref().begin().await {
+                Ok(txn) => txn,
+                Err(err) => {
+                    println!("Google registration transaction error: {:?}", err);
+                    return redirect_login_with_error(
+                        &session,
+                        "Unable to create your account from Google login.",
+                    );
+                }
+            };
+
+            let user = match new_user.insert(&txn).await {
                 Ok(user) => user,
                 Err(err) => {
                     println!("Google user insert error: {:?}", err);
@@ -660,7 +729,27 @@ pub async fn google_callback(
                         "Unable to create your account from Google login.",
                     );
                 }
+            };
+
+            if let Err(err) =
+                assign_role_to_user(&txn, user.user_id, roles::RoleName::Student).await
+            {
+                println!("Google student role assignment error: {:?}", err);
+                return redirect_login_with_error(
+                    &session,
+                    "Unable to assign the student role to your account.",
+                );
             }
+
+            if let Err(err) = txn.commit().await {
+                println!("Google registration commit error: {:?}", err);
+                return redirect_login_with_error(
+                    &session,
+                    "Unable to create your account from Google login.",
+                );
+            }
+
+            user
         }
         Err(err) => {
             println!("Google login user lookup error: {:?}", err);
@@ -696,8 +785,9 @@ pub async fn profile(session: Session) -> impl Responder {
         .ok()
         .flatten()
         .unwrap_or_default();
-    let can_signup_as_lecturer = !role_names.iter().any(|role_name| role_name == "Student")
-        && !role_names.iter().any(|role_name| role_name == "Instructor");
+    let can_signup_as_lecturer = !role_names
+        .iter()
+        .any(|role_name| role_name == "Instructor");
     context.insert("can_signup_as_lecturer", &can_signup_as_lecturer);
 
     if let Ok(Some(success)) = session.get::<String>("profile_success") {
@@ -753,19 +843,6 @@ pub async fn lecturer_signup(
                 .finish();
         }
     };
-
-    if current_role_names
-        .iter()
-        .any(|role_name| role_name == "Student")
-    {
-        let _ = session.insert(
-            "profile_error",
-            "Student accounts cannot sign up as lecturers.",
-        );
-        return HttpResponse::Found()
-            .insert_header((header::LOCATION, "/profile"))
-            .finish();
-    }
 
     if current_role_names
         .iter()
