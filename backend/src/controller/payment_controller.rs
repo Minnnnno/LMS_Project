@@ -1,4 +1,4 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{get, post, rt::time::sleep, web, HttpRequest, HttpResponse, Responder};
 
 use sea_orm::{
     DatabaseConnection, EntityTrait, ActiveModelTrait, IntoActiveModel,
@@ -20,6 +20,13 @@ use crate::entity::{courses, payments, enrollments}; //use course, payment and e
 use actix_session::Session;
 
 use chrono::Utc;
+use std::time::Duration;
+
+// Delete stale PENDING payment rows after this many seconds.
+// Keep this in sync with the checkout/payment window you want to allow.
+const PENDING_PAYMENT_TTL_SECONDS: u64 =  30 * 60;
+// Stripe Checkout requires expires_at to be at least 30 minutes after creation.
+const STRIPE_CHECKOUT_EXPIRY_SECONDS: i64 = 30 * 60;
 
 
 //struct for converting struct into json response
@@ -29,6 +36,30 @@ struct CheckoutResponse {
     payment_id: i32,
     checkout_session_id: String,
     checkout_url: String,
+}
+
+fn schedule_pending_payment_cleanup(db: DatabaseConnection, payment_id: i32) {
+    actix_web::rt::spawn(async move {
+        sleep(Duration::from_secs(PENDING_PAYMENT_TTL_SECONDS)).await;
+
+        // The status filter prevents deleting payments that were already completed by a webhook.
+        match payments::Entity::delete_many()
+            .filter(payments::Column::PaymentId.eq(payment_id))
+            .filter(payments::Column::PaymentStatus.eq("PENDING"))
+            .exec(&db)
+            .await
+        {
+            Ok(result) if result.rows_affected > 0 => {
+                println!("Deleted expired pending payment {}", payment_id);
+            }
+            Ok(_) => {
+                println!("Payment {} was no longer pending, cleanup skipped", payment_id);
+            }
+            Err(err) => {
+                println!("Failed to delete expired pending payment {}: {}", payment_id, err);
+            }
+        }
+    });
 }
 
 //payment success page
@@ -158,16 +189,13 @@ pub async fn create_checkout_session(
     let stripe_client = Client::new(stripe_secret_key);
 
     //success url for payment completion
-    let success_url = format!(
-        "{}/payment-success?payment_id={}",
-        frontend_url,
-        inserted_payment.payment_id
-    );
+    let success_url = format!("{}/", frontend_url);
 
     //cancel url for payment cancellation
     let cancel_url = format!(
-        "{}/payment-cancelled?payment_id={}",
+        "{}/course-page/{}?payment=cancelled&payment_id={}",
         frontend_url,
+        course.course_id,
         inserted_payment.payment_id
     );
 
@@ -190,6 +218,10 @@ pub async fn create_checkout_session(
 
     session_params.success_url = Some(success_url.as_str());
     session_params.cancel_url = Some(cancel_url.as_str());
+    // Stripe will stop accepting payment for this checkout session after this time.
+    session_params.expires_at = Some(
+        (Utc::now() + chrono::Duration::seconds(STRIPE_CHECKOUT_EXPIRY_SECONDS)).timestamp(),
+    );
 
     //setting of payment mode
     session_params.mode = Some(CheckoutSessionMode::Payment);
@@ -257,6 +289,9 @@ pub async fn create_checkout_session(
     //update checkout session id in db from NULL to session_id.
     match active_payment.update(db.get_ref()).await {
         Ok(_) => {
+            // Start cleanup only after the checkout session id is safely stored.
+            schedule_pending_payment_cleanup(db.get_ref().clone(), payment_id);
+
             HttpResponse::Ok().json(CheckoutResponse {
                 message: "Checkout session created successfully".to_string(),
                 payment_id,
@@ -480,7 +515,7 @@ async fn fulfill_payment(
             .body("Payment already fulfilled");
     }
 
-    //update payment record in database to "SUCCEEDED" after successful payment
+    // Mark the payment as succeeded before creating enrollment access.
     let mut active_payment = existing_payment.into_active_model();
     active_payment.payment_status = Set("SUCCEEDED".to_string());
     active_payment.payment_ref = Set(payment_ref);

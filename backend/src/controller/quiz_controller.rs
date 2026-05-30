@@ -5,23 +5,24 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
 
+use crate::entity::quiz::Entity as QuizEntity;
 use crate::entity::{quiz, roles, user_roles};
 use crate::models::quiz::{CreateQuiz, UpdateQuiz};
 
-//SELECT * FROM quiz
+// SELECT * FROM quiz
 #[get("/quiz")]
 pub async fn get_quiz(
     db: web::Data<DatabaseConnection>
 ) -> impl Responder {
-    let result = quiz::Entity::find()
-    .all(db.get_ref())
-    .await;
+    let result = QuizEntity::find()
+        .all(db.get_ref())
+        .await;
+
     match result {
         Ok(quizzes) => {
-            if quizzes.is_empty(){
-                HttpResponse::NotFound()
-                .body("No quizzes found")
-            }else{
+            if quizzes.is_empty() {
+                HttpResponse::NotFound().body("No quizzes found")
+            } else {
                 HttpResponse::Ok().json(quizzes)
             }
         }
@@ -30,23 +31,23 @@ pub async fn get_quiz(
     }
 }
 
-//SELECT * FROM quiz WHERE course_id =
+// SELECT * FROM quiz WHERE course_id =
 #[get("/quiz/{course_id}")]
 pub async fn get_quiz_by_course_id(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>
 ) -> impl Responder {
-    let course_id = path.into_inner(); 
-    let result = quiz::Entity::find()
-    .filter(quiz::Column::CourseId.eq(course_id))
-    .all(db.get_ref())
-    .await;
+    let course_id = path.into_inner();
+    let result = QuizEntity::find()
+        .filter(quiz::Column::CourseId.eq(course_id))
+        .all(db.get_ref())
+        .await;
+
     match result {
         Ok(quizzes) => {
-            if quizzes.is_empty(){
-                HttpResponse::NotFound()
-                .body("No quizzes found")
-            }else{
+            if quizzes.is_empty() {
+                HttpResponse::NotFound().body("No quizzes found")
+            } else {
                 HttpResponse::Ok().json(quizzes)
             }
         }
@@ -57,42 +58,43 @@ pub async fn get_quiz_by_course_id(
 
 #[post("/quiz")]
 pub async fn create_quiz(
-    db:web::Data<DatabaseConnection>, 
-    body:web::Json<CreateQuiz>
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<CreateQuiz>
 ) -> impl Responder {
-    let data = body.into_inner(); 
-    let new_quiz = quiz::ActiveModel{
+    let data = body.into_inner();
+    let new_quiz = quiz::ActiveModel {
         course_id: Set(data.course_id),
         title: Set(data.title),
         description: Set(data.description),
-        max_attempts: Set(data.max_attempts), 
+        max_attempts: Set(data.max_attempts),
         time_limit: Set(data.time_limit),
         starts_at: Set(data.starts_at),
         ..Default::default()
     };
+
     match new_quiz.insert(db.get_ref()).await {
-        Ok(_) => HttpResponse::Ok()
-        .body("New quiz created successfully!"), 
+        Ok(_) => HttpResponse::Ok().body("New quiz created successfully!"),
         Err(err) => HttpResponse::InternalServerError()
-        .body(format!("Insert error: {}", err))
+            .body(format!("Insert error: {}", err)),
     }
 }
 
 #[put("/quiz/{quiz_id}")]
 pub async fn update_quiz(
-    db:web::Data<DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
     body: web::Json<UpdateQuiz>
 ) -> impl Responder {
     let quiz_id = path.into_inner();
     let data = body.into_inner();
-    let existing = quiz::Entity::find_by_id(quiz_id)
-    .one(db.get_ref())
-    .await;
+
+    let existing = QuizEntity::find_by_id(quiz_id)
+        .one(db.get_ref())
+        .await;
 
     match existing {
         Ok(Some(updated_quiz)) => {
-            let mut active :quiz::ActiveModel = updated_quiz.into();
+            let mut active: quiz::ActiveModel = updated_quiz.into();
 
             if let Some(course_id) = data.course_id {
                 active.course_id = Set(course_id);
@@ -115,48 +117,38 @@ pub async fn update_quiz(
 
             match active.update(db.get_ref()).await {
                 Ok(_) => HttpResponse::Ok()
-                .body(format!("Quiz with id {} updated!", quiz_id)),
+                    .body(format!("Quiz with id {} updated!", quiz_id)),
                 Err(err) => HttpResponse::InternalServerError()
-                .body(format!("Update error: {}", err))
+                    .body(format!("Update error: {}", err)),
             }
         }
-        Ok(None) => HttpResponse::NotFound().body("Quiz not found"), 
+        Ok(None) => HttpResponse::NotFound().body("Quiz not found"),
         Err(err) => HttpResponse::InternalServerError()
-        .body(format!("Database error: {}", err))
+            .body(format!("Database error: {}", err)),
     }
 }
 
 #[delete("/quiz/{quiz_id}")]
 pub async fn delete_quiz(
-    db:web::Data<DatabaseConnection>, 
-    path:web::Path<i32>
-)-> impl Responder {
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>
+) -> impl Responder {
     let quiz_id = path.into_inner();
-    let existing = quiz::Entity::find_by_id(quiz_id)
-    .one(db.get_ref())
-    .await;
+    let existing = QuizEntity::find_by_id(quiz_id)
+        .one(db.get_ref())
+        .await;
 
     match existing {
-        Ok(Some(updated_quiz)) => {
-            let active_model:quiz::ActiveModel = updated_quiz.into();
+        Ok(Some(target_quiz)) => {
+            let active_model: quiz::ActiveModel = target_quiz.into();
             match active_model.delete(db.get_ref()).await {
-                Ok(_) => {
-                    HttpResponse::Ok()
-                    .body("Quiz deleted!")
-                }
-                Err(err) => {
-                    HttpResponse::InternalServerError()
-                    .body(format!("Delete error: {}", err))
-                }
+                Ok(_) => HttpResponse::Ok().body("Quiz deleted!"),
+                Err(err) => HttpResponse::InternalServerError()
+                    .body(format!("Delete error: {}", err)),
             }
         }
-        Ok(None) => {
-            HttpResponse::NotFound()
-            .body("Quiz not found!")
-        }
-        Err(err) => {
-            HttpResponse::InternalServerError()
-            .body(format!("Delete error {}", err))
-        }
+        Ok(None) => HttpResponse::NotFound().body("Quiz not found!"),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Delete error {}", err)),
     }
 }

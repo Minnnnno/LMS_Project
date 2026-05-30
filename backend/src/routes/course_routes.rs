@@ -3,6 +3,7 @@ use actix_web::web;
 use crate::{
     controller::course_controller::{
         get_courses,
+        get_my_courses,
         get_course_by_course_id,
         search_course, 
         update_course,
@@ -13,6 +14,7 @@ use crate::{
 
 pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(get_courses);
+    cfg.service(get_my_courses);
     cfg.service(get_course_by_course_id);
     cfg.service(search_course);
     cfg.service(update_course);
