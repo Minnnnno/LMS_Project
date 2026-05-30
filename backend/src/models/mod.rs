@@ -9,3 +9,4 @@ pub mod quiz;
 pub mod quiz_questions;
 pub mod quiz_options;
 pub mod quiz_attempts;
+pub mod quiz_answers;
