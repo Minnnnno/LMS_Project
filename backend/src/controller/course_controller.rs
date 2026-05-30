@@ -1,10 +1,12 @@
 use std::f64::consts::PI;
 
+use actix_session::Session;
 use actix_web::{HttpResponse, HttpServer, Responder, get, web, post, put, delete};
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, ActiveModelTrait};
 use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use crate::entity::courses::{self, CourseStatus}; 
+use crate::entity::enrollments;
 use crate::models::course::{CreateCourse, CourseQuery, UpdateCourse};
 
 #[get("/allcourses")]
@@ -27,6 +29,55 @@ pub async fn get_courses(
             .body(format!("Database error: {}", err))
     }
   }
+
+#[get("/my-courses")]
+pub async fn get_my_courses(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return HttpResponse::Unauthorized()
+                .body("User not logged in");
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err));
+        }
+    };
+
+    let enrollment_rows = match enrollments::Entity::find()
+        .filter(enrollments::Column::UserId.eq(user_id))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding enrollments: {}", err));
+        }
+    };
+
+    let course_ids: Vec<i32> = enrollment_rows
+        .into_iter()
+        .map(|enrollment| enrollment.course_id)
+        .collect();
+
+    if course_ids.is_empty() {
+        return HttpResponse::Ok().json(Vec::<courses::Model>::new());
+    }
+
+    match courses::Entity::find()
+        .filter(courses::Column::CourseId.is_in(course_ids))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(courses) => HttpResponse::Ok().json(courses),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error finding courses: {}", err)),
+    }
+}
 
 #[get("/course/{course_id}")]
 pub async fn get_course_by_course_id(

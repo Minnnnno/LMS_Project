@@ -3,6 +3,105 @@
 {% block title %}Dashboard | LMS{% endblock title %}
 
 {% block content %}
-    <h1>Welcome to LMS</h1>
-    <p>This is the first page rendered using Actix + Tera.</p>
+<section class="dashboard-header">
+    <div>
+        <h1 class="page-heading">Dashboard</h1>
+        <p class="page-subtitle">Pick up where you left off.</p>
+    </div>
+</section>
+
+<section class="my-courses-panel" aria-labelledby="my-courses-title">
+    <div class="my-courses-header">
+        <div>
+            <h2 id="my-courses-title" class="section-title">My Courses</h2>
+            <p class="page-subtitle">Your enrolled courses</p>
+        </div>
+        <a class="my-courses-browse" href="/courses">Browse Courses</a>
+    </div>
+
+    <div id="my-courses-list" class="my-courses-list">
+        <div class="my-courses-empty">Loading your courses...</div>
+    </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+const myCoursesList = document.getElementById("my-courses-list");
+
+function courseTitle(course) {
+    return course.name || `Course #${course.course_id}`;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+function coursePrice(course) {
+    if (!course.is_paid) {
+        return "Free";
+    }
+
+    const priceCents = course.price_cents || 0;
+    const currency = course.currency || "SGD";
+
+    return new Intl.NumberFormat("en-SG", {
+        style: "currency",
+        currency,
+    }).format(priceCents / 100);
+}
+
+function renderMyCourses(courses) {
+    if (!courses.length) {
+        myCoursesList.innerHTML = `
+            <div class="my-courses-empty">
+                <i class="bi bi-journal-bookmark" aria-hidden="true"></i>
+                <span>You are not enrolled in any courses yet.</span>
+            </div>
+        `;
+        return;
+    }
+
+    myCoursesList.innerHTML = courses.map(course => `
+        <a class="my-course-item" href="/course-page/${course.course_id}">
+            <span class="my-course-thumb" style="background-image: url('${escapeHtml(course.background_image_url || "")}')"></span>
+            <span class="my-course-body">
+                <span class="my-course-title">${escapeHtml(courseTitle(course))}</span>
+                <span class="my-course-meta">${escapeHtml(coursePrice(course))}</span>
+            </span>
+            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+        </a>
+    `).join("");
+}
+
+async function loadMyCourses() {
+    try {
+        const response = await axios.get("/my-courses");
+        renderMyCourses(response.data);
+    } catch (error) {
+        if (error.response?.status === 401) {
+            myCoursesList.innerHTML = `
+                <div class="my-courses-empty">
+                    <i class="bi bi-person-lock" aria-hidden="true"></i>
+                    <span>Sign in to see your courses.</span>
+                </div>
+            `;
+            return;
+        }
+
+        myCoursesList.innerHTML = `
+            <div class="my-courses-empty">
+                <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                <span>Unable to load your courses right now.</span>
+            </div>
+        `;
+    }
+}
+
+loadMyCourses();
+</script>
 {% endblock content %}

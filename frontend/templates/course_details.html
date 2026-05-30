@@ -3,13 +3,37 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css">
+<link rel="stylesheet" href="/static/css/course_details.css?v=2">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
-        <h1 id="course-title">Loading course...</h1>
+        <div class="course-hero-content">
+            <div class="course-heading">
+                <h1 id="course-title">Loading course...</h1>
+            </div>
+        </div>
     </div>
 </div>
+
+<div class="course-action-strip">
+    <div class="course-action-info">
+        <span class="course-action-icon" aria-hidden="true">
+            <i class="bi bi-mortarboard"></i>
+        </span>
+        <div class="course-action-copy">
+            <span class="course-action-label">Course Access</span>
+            <p id="course-price" class="course-price"></p>
+        </div>
+    </div>
+    <div class="course-action-panel">
+        <button type="button" id="course-action-button" class="course-action-button" disabled>
+            <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+            <span>Loading...</span>
+        </button>
+    </div>
+    <div id="course-action-message" class="course-action-message" role="status" aria-live="polite"></div>
+</div>
+
 <div class="course-layout">
 
     <div class="course-card">
