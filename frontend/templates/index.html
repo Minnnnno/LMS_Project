@@ -13,10 +13,10 @@
 <section class="my-courses-panel" aria-labelledby="my-courses-title">
     <div class="my-courses-header">
         <div>
-            <h2 id="my-courses-title" class="section-title">My Training</h2>
-            <p class="page-subtitle">Your enrolled training programmes</p>
+            <h2 id="my-courses-title" class="section-title">My Courses</h2>
+            <p class="page-subtitle">Your enrolled courses</p>
         </div>
-        <a class="my-courses-browse" href="/courses">Browse Training</a>
+        <a class="my-courses-browse" href="/courses">Browse Courses</a>
     </div>
 
     <div id="my-courses-list" class="my-courses-list">
@@ -29,7 +29,7 @@
 const myCoursesList = document.getElementById("my-courses-list");
 
 function courseTitle(course) {
-    return course.name || `Training Programme #${course.course_id}`;
+    return course.name || `Course #${course.course_id}`;
 }
 
 function escapeHtml(value) {
@@ -41,13 +41,34 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
+function coursePriceCents(course) {
+    if (Number.isFinite(Number(course.price))) {
+        const decimalPriceCents = Math.round(Number(course.price) * 100);
+
+        if (decimalPriceCents > 0) {
+            return decimalPriceCents;
+        }
+    }
+
+    if (Number.isFinite(Number(course.price_cents))) {
+        return Number(course.price_cents);
+    }
+
+    return null;
+}
+
 function coursePrice(course) {
-    if (!course.is_paid) {
+    const priceCents = coursePriceCents(course);
+
+    if (!course.is_paid && (priceCents === null || priceCents <= 0)) {
         return "Free";
     }
 
-    const priceCents = course.price_cents || 0;
     const currency = course.currency || "SGD";
+
+    if (priceCents === null) {
+        return "Price unavailable";
+    }
 
     return new Intl.NumberFormat("en-SG", {
         style: "currency",
@@ -60,7 +81,7 @@ function renderMyCourses(courses) {
         myCoursesList.innerHTML = `
             <div class="my-courses-empty">
                 <i class="bi bi-journal-bookmark" aria-hidden="true"></i>
-                <span>You are not enrolled in any training programmes yet.</span>
+                <span>You are not enrolled in any courses yet.</span>
             </div>
         `;
         return;
@@ -87,7 +108,7 @@ async function loadMyCourses() {
             myCoursesList.innerHTML = `
                 <div class="my-courses-empty">
                     <i class="bi bi-person-lock" aria-hidden="true"></i>
-                    <span>Sign in to see your training programmes.</span>
+                    <span>Sign in to see your courses.</span>
                 </div>
             `;
             return;
@@ -96,7 +117,7 @@ async function loadMyCourses() {
         myCoursesList.innerHTML = `
             <div class="my-courses-empty">
                 <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
-                <span>Unable to load your training programmes right now.</span>
+                <span>Unable to load your courses right now.</span>
             </div>
         `;
     }

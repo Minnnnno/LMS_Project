@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Training Programme | SkillUp LMS{% endblock title %}
+{% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
 <link rel="stylesheet" href="/static/css/course_details.css?v=4">
@@ -21,7 +21,7 @@
             <i class="bi bi-mortarboard"></i>
         </span>
         <div class="course-action-copy">
-            <span class="course-action-label">Training Access</span>
+            <span class="course-action-label">Course Access</span>
             <p id="course-price" class="course-price"></p>
         </div>
     </div>
@@ -36,26 +36,26 @@
 
 <div class="course-layout">
     <div id="instructor-controls" class="instructor-controls" style="display: none;">
-        <button id="edit-course-btn">Edit Programme</button>
-        <button id="delete-course-btn" class="danger-btn">Delete Programme</button>
+        <button id="edit-course-btn">Edit Course</button>
+        <button id="delete-course-btn" class="danger-btn">Delete Course</button>
         <button id="add-module-btn">+ Add Module</button>
-        <button id="student-view-btn">View Learner View</button>
+        <button id="student-view-btn">View Student View</button>
     </div>
     <div class="course-card">
-        <h2>Training Modules</h2>
+        <h2>Modules</h2>
 
         <div id="module-list"></div>
     </div>
 
     <div class="course-card">
-        <h2>Tasks Due</h2>
+        <h2>Assignments Due</h2>
     <div id="assignment-list"></div>
     </div>
 
 </div>
 <div id="edit-course-modal" class="course-modal" style="display: none;">
     <div class="modal-content course-edit-modal">
-        <h2>Edit Programme</h2>
+        <h2>Edit Course</h2>
 
         <label for="course-name-input">Name</label>
         <input type="text" id="course-name-input">
@@ -86,7 +86,7 @@
 
         <label class="checkbox-label">
             <input type="checkbox" id="course-paid-input">
-            Paid programme
+            Paid course
         </label>
 
         <div class="modal-actions">
@@ -122,5 +122,5 @@
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=11"></script>
+<script src="/static/js/course_details.js?v=14"></script>
 {% endblock content %}

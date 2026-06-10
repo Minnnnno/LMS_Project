@@ -7,34 +7,10 @@ use sea_orm::{
 
 use crate::entity::{organisations, roles, user_roles, users};
 use crate::models::organisation::{CreateOrganisationForm, MassEnrollForm, OrgMemberDto};
+use crate::services::organisation_service;
 use crate::ssr::pages::render_page;
 
 // ── Session helpers ────────────────────────────────────────────────────────────
-
-fn get_session_user_id(session: &Session) -> Result<i32, HttpResponse> {
-    match session.get::<i32>("user_id") {
-        Ok(Some(id)) => Ok(id),
-        Ok(None) => Err(HttpResponse::Unauthorized().body("User not logged in")),
-        Err(_) => Err(HttpResponse::InternalServerError().body("Failed to retrieve session")),
-    }
-}
-
-fn require_org_admin(session: &Session) -> Result<(), HttpResponse> {
-    let role_names: Vec<String> = session
-        .get::<Vec<String>>("role_names")
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-
-    if role_names
-        .iter()
-        .any(|r| r == "Organisation Admin" || r == "LMS Admin")
-    {
-        Ok(())
-    } else {
-        Err(HttpResponse::Forbidden().body("Organisation Admin or LMS Admin role required"))
-    }
-}
 
 // ── Page route ─────────────────────────────────────────────────────────────────
 
@@ -80,7 +56,7 @@ pub async fn create_organisation(
     session: Session,
     body: web::Json<CreateOrganisationForm>,
 ) -> impl Responder {
-    if let Err(e) = require_org_admin(&session) {
+    if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
     }
 
@@ -103,7 +79,7 @@ pub async fn delete_organisation(
     session: Session,
     path: web::Path<i32>,
 ) -> impl Responder {
-    if let Err(e) = require_org_admin(&session) {
+    if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
     }
 
@@ -164,20 +140,6 @@ pub async fn list_org_members(
             Err(_) => vec![],
         };
 
-        let role_names: Vec<String> = user_role_rows
-            .iter()
-            .filter_map(|ur| {
-                all_roles
-                    .iter()
-                    .find(|r| r.role_id == ur.role_id)
-                    .map(|r| format!("{:?}", r.role_name)
-                        .replace("LmsAdmin", "LMS Admin")
-                        .replace("OrganisationAdmin", "Organisation Admin")
-                        .replace("Instructor", "Instructor")
-                        .replace("Student", "Student"))
-            })
-            .collect();
-
         // Use the sea_orm string value instead of Debug
         let role_names: Vec<String> = user_role_rows
             .iter()
@@ -221,7 +183,7 @@ pub async fn mass_enroll(
     path: web::Path<i32>,
     body: web::Json<MassEnrollForm>,
 ) -> impl Responder {
-    if let Err(e) = require_org_admin(&session) {
+    if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
     }
 
@@ -332,7 +294,7 @@ pub async fn remove_org_member(
     session: Session,
     path: web::Path<(i32, i32)>,
 ) -> impl Responder {
-    if let Err(e) = require_org_admin(&session) {
+    if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
     }
 
@@ -363,7 +325,7 @@ pub async fn list_all_users(
     db: web::Data<DatabaseConnection>,
     session: Session,
 ) -> impl Responder {
-    if let Err(e) = require_org_admin(&session) {
+    if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
     }
 
@@ -393,7 +355,7 @@ pub async fn list_unassigned_users(
     db: web::Data<DatabaseConnection>,
     session: Session,
 ) -> impl Responder {
-    if let Err(e) = require_org_admin(&session) {
+    if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
     }
 

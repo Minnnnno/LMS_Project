@@ -1,97 +1,18 @@
-use std::f64::consts::PI;
-
 use actix_session::Session;
-use actix_web::{HttpResponse, HttpServer, Responder, get, web, post, put, delete};
+use actix_web::{HttpResponse, Responder, get, web, post, put, delete};
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, ActiveModelTrait};
 use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use rust_decimal::prelude::ToPrimitive;
 use crate::entity::courses::{self, CourseStatus};
-use crate::entity::{enrollments, users};
+use crate::entity::enrollments;
 use crate::models::course::{CreateCourse, CourseQuery, UpdateCourse};
-
-fn price_to_cents(price: rust_decimal::Decimal) -> Result<i32, HttpResponse> {
-    if price.is_sign_negative() {
-        return Err(HttpResponse::BadRequest().body("Price cannot be negative"));
-    }
-
-    let cents = (price * rust_decimal::Decimal::new(100, 0))
-        .round_dp(0)
-        .to_i32()
-        .ok_or_else(|| HttpResponse::BadRequest().body("Invalid price"))?;
-
-    Ok(cents)
-}
-
-fn get_role_names(session: &Session) -> Vec<String> {
-    session
-        .get::<Vec<String>>("role_names")
-        .ok()
-        .flatten()
-        .unwrap_or_default()
-}
-
-fn has_role(session: &Session, role_name: &str) -> bool {
-    get_role_names(session).iter().any(|role| role == role_name)
-}
-
-async fn can_manage_course(
-    db: &DatabaseConnection,
-    session: &Session,
-    course: &courses::Model,
-) -> Result<bool, HttpResponse> {
-    if has_role(session, "LMS Admin") {
-        return Ok(true);
-    }
-
-    if !has_role(session, "Organisation Admin") {
-        return Ok(false);
-    }
-
-    let user_id = match session.get::<i32>("user_id") {
-        Ok(Some(user_id)) => user_id,
-        Ok(None) => return Ok(false),
-        Err(err) => {
-            return Err(HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err)));
-        }
-    };
-
-    let user = users::Entity::find_by_id(user_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding user: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("User not found"))?;
-
-    Ok(user.org_id.is_some() && user.org_id == course.org_id)
-}
-
-async fn get_session_user_org_id(
-    db: &DatabaseConnection,
-    session: &Session,
-) -> Result<Option<i32>, HttpResponse> {
-    let user_id = match session.get::<i32>("user_id") {
-        Ok(Some(user_id)) => user_id,
-        Ok(None) => return Err(HttpResponse::Unauthorized().body("User not logged in")),
-        Err(err) => {
-            return Err(HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err)));
-        }
-    };
-
-    users::Entity::find_by_id(user_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding user: {}", err))
-        })?
-        .map(|user| user.org_id)
-        .ok_or_else(|| HttpResponse::NotFound().body("User not found"))
-}
+use crate::services::course_service::{
+    can_manage_course,
+    get_organisation_courses_for_session,
+    get_session_user_org_id,
+    has_role,
+    price_to_cents,
+};
 
 #[get("/courses")]
 pub async fn get_courses(
@@ -168,52 +89,9 @@ pub async fn get_organisation_courses(
     db: web::Data<DatabaseConnection>,
     session: Session,
 ) -> impl Responder {
-    if !has_role(&session, "Organisation Admin") && !has_role(&session, "LMS Admin") {
-        return HttpResponse::Forbidden().body("Organisation Admin role required");
-    }
-
-    if has_role(&session, "LMS Admin") {
-        return match courses::Entity::find().all(db.get_ref()).await {
-            Ok(courses) => HttpResponse::Ok().json(courses),
-            Err(err) => HttpResponse::InternalServerError()
-                .body(format!("Database error finding courses: {}", err)),
-        };
-    }
-
-    let user_id = match session.get::<i32>("user_id") {
-        Ok(Some(user_id)) => user_id,
-        Ok(None) => return HttpResponse::Unauthorized().body("User not logged in"),
-        Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err));
-        }
-    };
-
-    let user = match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
-        Ok(Some(user)) => user,
-        Ok(None) => return HttpResponse::NotFound().body("User not found"),
-        Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Database error finding user: {}", err));
-        }
-    };
-
-    let org_id = match user.org_id {
-        Some(org_id) => org_id,
-        None => {
-            return HttpResponse::Forbidden()
-                .body("Organisation Admin is not assigned to an organisation");
-        }
-    };
-
-    match courses::Entity::find()
-        .filter(courses::Column::OrgId.eq(org_id))
-        .all(db.get_ref())
-        .await
-    {
+    match get_organisation_courses_for_session(db.get_ref(), &session).await {
         Ok(courses) => HttpResponse::Ok().json(courses),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error finding organisation courses: {}", err)),
+        Err(response) => response,
     }
 }
 
