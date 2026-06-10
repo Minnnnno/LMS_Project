@@ -9,7 +9,7 @@ function renderCourseGrid(courseGrid, courses, options = {}) {
     courseGrid.innerHTML = "";
 
     if (!courses.length) {
-        courseGrid.innerHTML = `<p class="course-empty">No courses available.</p>`;
+        courseGrid.innerHTML = `<p class="course-empty">No training programmes available.</p>`;
         return;
     }
 
@@ -51,7 +51,7 @@ async function loadOrganisationCourses() {
         organisationCourseIds = new Set();
 
         if (error.response?.status !== 401 && error.response?.status !== 403) {
-            console.error("Failed to load organisation courses:", error);
+            console.error("Failed to load organisation training programmes:", error);
         }
     }
 }
@@ -72,7 +72,7 @@ async function loadCourses() {
 
         renderCourseGrid(courseGrid, courses);
     } catch (error) {
-        console.error("Failed to load courses:", error);
+        console.error("Failed to load training programmes:", error);
     }
 }
 
@@ -98,7 +98,7 @@ async function loadEnrolledCourses() {
         enrolledCourseIds = new Set();
 
         if (error.response?.status !== 401) {
-            console.error("Failed to load enrolled courses:", error);
+            console.error("Failed to load enrolled training programmes:", error);
         }
     }
 }

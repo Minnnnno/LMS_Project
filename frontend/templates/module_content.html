@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Module Content | SkillUp LMS{% endblock title %}
+{% block title %}Training Materials | SkillUp LMS{% endblock title %}
 {% block extra_css %}
 <link rel="stylesheet" href="/static/css/module_content.css?v=2">
 {% endblock extra_css %}
@@ -8,9 +8,9 @@
 <div class="module-page">
     <div class="module-page-header">
         <div>
-            <h1 class="page-title">Content Navigation</h1>
+            <h1 class="page-title">Training Materials</h1>
         </div>
-        <button id="add-content-btn" class="primary-btn" style="display: none;">+ Add Content</button>
+        <button id="add-content-btn" class="primary-btn" style="display: none;">+ Add Material</button>
     </div>
     <div id="content-status-message" class="content-status-message" role="status" aria-live="polite"></div>
     <div id="content-list" class="content-list"></div>
@@ -18,7 +18,7 @@
 
 <div id="content-modal" class="content-modal" style="display: none;">
     <div class="modal-content content-edit-modal">
-        <h2 id="content-modal-title">Add Content</h2>
+        <h2 id="content-modal-title">Add Material</h2>
 
         <label for="content-title-input">Title</label>
         <input type="text" id="content-title-input" placeholder="Lecture slides">
@@ -38,11 +38,11 @@
                 <label for="content-category-input">Category</label>
                 <select id="content-category-input">
                     <option value="">None</option>
-                    <option value="lecture">Lecture</option>
+                    <option value="lecture">Training Session</option>
                     <option value="tutorial">Tutorial</option>
-                    <option value="assignment">Assignment</option>
+                    <option value="assignment">Task</option>
                     <option value="reading">Reading</option>
-                    <option value="quiz">Quiz</option>
+                    <option value="quiz">Assessment</option>
                 </select>
             </div>
         </div>
@@ -61,5 +61,5 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/module_content.js?v=7"></script>
+<script src="/static/js/module_content.js?v=8"></script>
 {% endblock content %}

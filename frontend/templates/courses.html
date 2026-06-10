@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Courses | SkillUp LMS{% endblock title %}
+{% block title %}Training Programmes | SkillUp LMS{% endblock title %}
 
 {% block content %}
 <link rel="stylesheet" href="/static/css/course.css?v=2">
 <section id="organisation-courses-section" class="course-section organisation-course-section" hidden>
     <div class="course-section-heading">
         <div>
-            <h2 class="course-section-title">Organisation Courses</h2>
-            <p class="page-subtitle">Courses assigned to your organisation.</p>
+            <h2 class="course-section-title">Organisation Training</h2>
+            <p class="page-subtitle">Training programmes assigned to your organisation.</p>
         </div>
     </div>
     <div id="organisation-course-grid" class="course-grid"></div>
@@ -17,8 +17,8 @@
 <section id="enrolled-courses-section" class="course-section" hidden>
     <div class="course-section-heading">
         <div>
-            <h2 class="course-section-title">Enrolled Courses</h2>
-            <p class="page-subtitle">Courses you are currently taking.</p>
+            <h2 class="course-section-title">My Training</h2>
+            <p class="page-subtitle">Training programmes you are currently taking.</p>
         </div>
     </div>
     <div id="enrolled-course-grid" class="course-grid"></div>
@@ -27,8 +27,8 @@
 <section id="all-courses-section" class="course-section">
     <div class="course-section-heading">
         <div>
-            <h1 class="section-title">Available Courses</h1>
-            <p class="page-subtitle">Courses available for enrolment.</p>
+            <h1 class="section-title">Available Training</h1>
+            <p class="page-subtitle">Training programmes available for enrolment.</p>
         </div>
     </div>
 <div id="course-grid" class="course-grid">
@@ -36,5 +36,5 @@
 </div>
 </section>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course.js?v=6"></script>
+<script src="/static/js/course.js?v=7"></script>
 {% endblock content %}

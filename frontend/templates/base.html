@@ -49,17 +49,17 @@
         <div class="offcanvas-body d-flex flex-column gap-4">
             <form action="/search" method="get" class="input-group">
                 <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
-                <input class="form-control bg-light border-start-0" type="search" name="q" placeholder="Search courses..." aria-label="Search">
+                <input class="form-control bg-light border-start-0" type="search" name="q" placeholder="Search training..." aria-label="Search">
             </form>
 
             <nav class="nav nav-pills flex-column gap-1 sidebar-nav">
                 <a href="/" class="nav-link"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
-                <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
-                <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Assessments</span></a>
+                <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Training Programmes</span></a>
+                <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Tasks</span></a>
                 <a href="/challenges" class="nav-link"><i class="bi bi-trophy"></i><span>Challenges</span></a>
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
-                <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Project</span></a>
-                <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Download</span></a>
+                <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Projects</span></a>
+                <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Downloads</span></a>
                 {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
                 <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% endif %}
@@ -85,12 +85,12 @@
 
             <nav class="nav nav-pills flex-column gap-1 sidebar-nav">
                 <a href="/" class="nav-link"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
-                <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
-                <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Assessments</span></a>
+                <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Training Programmes</span></a>
+                <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Tasks</span></a>
                 <a href="/challenges" class="nav-link"><i class="bi bi-trophy"></i><span>Challenges</span></a>
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
-                <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Project</span></a>
-                <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Download</span></a>
+                <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Projects</span></a>
+                <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Downloads</span></a>
                 {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
                 <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% endif %}
@@ -102,7 +102,7 @@
             <!-- Desktop top navigation -->
             <header class="topbar d-none d-lg-flex align-items-center justify-content-between gap-4 bg-white rounded-4 shadow-sm border">
                 <nav class="top-links nav gap-2">
-                    <a class="nav-link" href="/courses">Courses</a>
+                    <a class="nav-link" href="/courses">Training</a>
                     <a class="nav-link" href="/blog">Blog</a>
                     <a class="nav-link" href="/music">Music</a>
                     <a class="nav-link" href="/contest">Contest</a>
@@ -111,7 +111,7 @@
                 <div class="top-actions d-flex align-items-center gap-3">
                     <form action="/search" method="get" class="input-group search-box">
                         <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
-                        <input class="form-control bg-light border-start-0" type="search" name="q" placeholder="Search courses..." aria-label="Search">
+                        <input class="form-control bg-light border-start-0" type="search" name="q" placeholder="Search training..." aria-label="Search">
                     </form>
 
                     {% if is_logged_in %}

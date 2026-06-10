@@ -12,7 +12,7 @@ function goToModuleContent(moduleId) {
 
 function formatCoursePrice(course) {
     if (!course.is_paid) {
-        return "Free course";
+        return "Free programme";
     }
 
     const priceCents = course.price_cents || 0;
@@ -64,9 +64,9 @@ function resetCourseActionButton() {
     }
 
     if (currentCourse.is_paid) {
-        setActionButton('<i class="bi bi-credit-card" aria-hidden="true"></i><span>Buy Course</span>');
+        setActionButton('<i class="bi bi-credit-card" aria-hidden="true"></i><span>Buy Programme</span>');
     } else {
-        setActionButton('<i class="bi bi-check2-circle" aria-hidden="true"></i><span>Enroll Now</span>');
+        setActionButton('<i class="bi bi-check2-circle" aria-hidden="true"></i><span>Join Programme</span>');
     }
 }
 
@@ -90,7 +90,7 @@ function refreshCourseDisplay() {
         return;
     }
 
-    document.getElementById("course-title").textContent = currentCourse.name || "Untitled course";
+    document.getElementById("course-title").textContent = currentCourse.name || "Untitled programme";
 
     if (currentCourse.background_image_url) {
         document.getElementById("course-hero").style.backgroundImage =
@@ -108,7 +108,7 @@ async function handleCourseAction() {
     setActionButton(
         currentCourse.is_paid
             ? '<i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Opening checkout...</span>'
-            : '<i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Enrolling...</span>',
+            : '<i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Joining...</span>',
         true
     );
     showActionMessage("");
@@ -121,8 +121,8 @@ async function handleCourseAction() {
         }
 
         await axios.post(`/api/courses/${courseId}/enroll`);
-        setActionButton('<i class="bi bi-check2" aria-hidden="true"></i><span>Enrolled</span>', true);
-        showActionMessage("You are enrolled in this course.", "success");
+        setActionButton('<i class="bi bi-check2" aria-hidden="true"></i><span>Joined</span>', true);
+        showActionMessage("You have joined this training programme.", "success");
     } catch (error) {
         if (error.response?.status === 401) {
             window.location.href = "/login";
@@ -145,7 +145,7 @@ async function loadModules() {
         moduleList.innerHTML = "";
 
         if (modules.length === 0) {
-            moduleList.innerHTML = "<p>No modules available.</p>";
+            moduleList.innerHTML = "<p>No training modules available.</p>";
             return;
         }
 
@@ -183,7 +183,7 @@ async function loadAssignments() {
         assignmentList.innerHTML = "";
 
         if (!assignments.length) {
-            assignmentList.innerHTML = "<p>No assignments due.</p>";
+            assignmentList.innerHTML = "<p>No tasks due.</p>";
             return;
         }
 
@@ -199,7 +199,7 @@ async function loadAssignments() {
         });
     } catch (error) {
         const assignmentList = document.getElementById("assignment-list");
-        assignmentList.innerHTML = "<p>No assignments due.</p>";
+        assignmentList.innerHTML = "<p>No tasks due.</p>";
         console.error("Failed to load assignments:", error);
     }
 }
@@ -212,7 +212,7 @@ async function loadCourseTitle() {
         refreshCourseDisplay();
     } catch (error) {
         console.error("Failed to load course title:", error);
-        showActionMessage("Failed to load course details.", "error");
+        showActionMessage("Failed to load training programme details.", "error");
     }
 }
 
@@ -248,7 +248,7 @@ function editCourse(event, courseId) {
 async function deleteCourse(event, courseId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this course?")) {
+    if (!confirm("Delete this training programme?")) {
         return;
     }
 
@@ -256,7 +256,7 @@ async function deleteCourse(event, courseId) {
         await axios.delete(`/api/courses/${courseId}`);
         window.location.href = "/courses";
     } catch (error) {
-        const message = error.response?.data || "Failed to delete course.";
+        const message = error.response?.data || "Failed to delete training programme.";
         showActionMessage(message, "error");
     }
 }
@@ -267,9 +267,9 @@ function openCourseModal() {
     }
 
     document.getElementById("course-name-input").value = currentCourse.name || "";
-    document.getElementById("course-name-input").placeholder = currentCourse.name || "Course name";
+    document.getElementById("course-name-input").placeholder = currentCourse.name || "Programme name";
     document.getElementById("course-description-input").value = currentCourse.description || "";
-    document.getElementById("course-description-input").placeholder = currentCourse.description || "Course description";
+    document.getElementById("course-description-input").placeholder = currentCourse.description || "Programme description";
     document.getElementById("course-image-input").value = "";
     document.getElementById("course-price-input").value = ((currentCourse.price_cents || 0) / 100).toFixed(2);
     document.getElementById("course-price-input").placeholder = ((currentCourse.price_cents || 0) / 100).toFixed(2);
@@ -308,7 +308,7 @@ async function saveCourse() {
     const isPaid = document.getElementById("course-paid-input").checked;
 
     if (!name) {
-        alert("Please enter a course name");
+        alert("Please enter a programme name");
         return;
     }
 
@@ -329,9 +329,9 @@ async function saveCourse() {
 
         closeCourseModal();
         await loadCourseTitle();
-        showActionMessage("Course updated.", "success");
+        showActionMessage("Training programme updated.", "success");
     } catch (error) {
-        const message = error.response?.data || "Failed to update course.";
+        const message = error.response?.data || "Failed to update training programme.";
         showActionMessage(message, "error");
     }
 }

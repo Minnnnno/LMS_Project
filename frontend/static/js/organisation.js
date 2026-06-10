@@ -18,7 +18,12 @@ function roleBadge(roleName) {
     const cls = roleName.includes('Admin')      ? 'badge-admin'
               : roleName.includes('Instructor') ? 'badge-instructor'
                                                 : 'badge-student';
-    return `<span class="badge-role ${cls}">${escHtml(roleName)}</span>`;
+    const displayName = roleName === 'Student'
+        ? 'Learner'
+        : roleName === 'Instructor'
+            ? 'Trainer'
+            : roleName;
+    return `<span class="badge-role ${cls}">${escHtml(displayName)}</span>`;
 }
 
 function initials(first, last) {
@@ -97,7 +102,7 @@ async function selectOrg(orgId, orgName) {
 function renderMembers(members, orgId) {
     const el = document.getElementById('members-list');
     if (!members.length) {
-        el.innerHTML = '<p class="text-muted small">No members yet. Use "Enrol Members" to add some.</p>';
+        el.innerHTML = '<p class="text-muted small">No learners yet. Use "Add Learners" to add some.</p>';
         return;
     }
     el.innerHTML = members.map(m => `
@@ -375,7 +380,7 @@ async function doEnroll(userIds, source) {
     }
 
     const role = document.getElementById('enroll-role').value;
-    showFeedback('Enrolling…', 'info');
+    showFeedback('Adding learners...', 'info');
 
     try {
         const { data } = await axios.post(`/api/organisations/${currentOrgId}/enroll`, {

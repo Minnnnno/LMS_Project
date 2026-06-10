@@ -33,7 +33,7 @@ async function loadModuleContent() {
         contentList.innerHTML = "";
 
         if (!currentContents.length) {
-            contentList.innerHTML = "<p>No content available for this module.</p>";
+            contentList.innerHTML = "<p>No training materials available for this module.</p>";
             return;
         }
 
@@ -60,8 +60,8 @@ async function loadModuleContent() {
         });
     } catch (error) {
         currentContents = [];
-        contentList.innerHTML = "<p>No content available for this module.</p>";
-        console.error("Failed to load module content:", error);
+        contentList.innerHTML = "<p>No training materials available for this module.</p>";
+        console.error("Failed to load training materials:", error);
     }
 }
 
@@ -77,7 +77,7 @@ function openContent(contentUrl) {
 function openContentModal(content = null) {
     currentEditingContentId = content?.module_content_id || null;
 
-    document.getElementById("content-modal-title").textContent = content ? "Edit Content" : "Add Content";
+    document.getElementById("content-modal-title").textContent = content ? "Edit Material" : "Add Material";
     document.getElementById("content-title-input").value = content?.title || "";
     document.getElementById("content-title-input").placeholder = content?.title || "Lecture slides";
     document.getElementById("content-type-input").value = normalizeEnumValue(content?.content_type) || "pdf";
@@ -111,7 +111,7 @@ function editContent(event, contentId) {
 async function deleteContent(event, contentId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this module content?")) {
+    if (!confirm("Delete this training material?")) {
         return;
     }
 
@@ -154,7 +154,7 @@ async function saveContent() {
         : null;
 
     if (!title) {
-        alert("Please enter a content title");
+        alert("Please enter a material title");
         return;
     }
 
@@ -169,7 +169,7 @@ async function saveContent() {
     }
 
     closeContentModal();
-    showContentStatus(contentFile ? "Uploading content..." : "Saving content...");
+    showContentStatus(contentFile ? "Uploading material..." : "Saving material...");
 
     try {
         const uploadedContent = contentFile
@@ -179,7 +179,7 @@ async function saveContent() {
                 public_id: existingContent.cloudinary_public_id,
             };
 
-        showContentStatus("Saving content...");
+        showContentStatus("Saving material...");
 
         const payload = {
             module_id: Number(moduleId),
@@ -198,9 +198,9 @@ async function saveContent() {
         }
 
         await loadModuleContent();
-        showContentStatus("Content saved.", "success");
+        showContentStatus("Material saved.", "success");
     } catch (error) {
-        showContentStatus(error.response?.data || "Failed to save content.", "error");
+        showContentStatus(error.response?.data || "Failed to save material.", "error");
     }
 }
 
