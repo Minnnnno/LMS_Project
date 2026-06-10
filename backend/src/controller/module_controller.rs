@@ -11,7 +11,63 @@ use crate::models::modules::{
     UpdateModules,
 };
 
-#[get("/api/modules")]
+async fn reorder_modules_for_course(
+    db: &DatabaseConnection,
+    course_id: i32,
+    moving_module_id: Option<i32>,
+    requested_position: i32,
+) -> Result<(), HttpResponse> {
+    if requested_position < 1 {
+        return Err(HttpResponse::BadRequest().body("Module position must be 1 or higher"));
+    }
+
+    let siblings = modules::Entity::find()
+        .filter(modules::Column::CourseId.eq(course_id))
+        .order_by_asc(modules::Column::Position)
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding modules: {}", err))
+        })?;
+
+    let mut reordered: Vec<modules::Model> = siblings
+        .into_iter()
+        .filter(|module| Some(module.module_id) != moving_module_id)
+        .collect();
+
+    let insert_index = (requested_position as usize).saturating_sub(1).min(reordered.len());
+
+    if let Some(module_id) = moving_module_id {
+        let moving_module = modules::Entity::find_by_id(module_id)
+            .one(db)
+            .await
+            .map_err(|err| {
+                HttpResponse::InternalServerError()
+                    .body(format!("Database error finding module: {}", err))
+            })?
+            .ok_or_else(|| HttpResponse::NotFound().body("Module not found"))?;
+
+        reordered.insert(insert_index, moving_module);
+    }
+
+    for (index, module) in reordered.into_iter().enumerate() {
+        let new_position = index as i32 + 1;
+
+        if module.position != new_position {
+            let mut active: modules::ActiveModel = module.into();
+            active.position = Set(new_position);
+            active.update(db).await.map_err(|err| {
+                HttpResponse::InternalServerError()
+                    .body(format!("Module reorder error: {}", err))
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+#[get("/modules")]
 pub async fn get_modules(
     db: web::Data<DatabaseConnection>
 ) -> impl Responder {
@@ -32,7 +88,7 @@ pub async fn get_modules(
     }
   }
 
-#[get("/api/modules/{course_id}")]
+#[get("/modules/{course_id}")]
 pub async fn get_modules_by_course_id(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>
@@ -58,7 +114,7 @@ pub async fn get_modules_by_course_id(
     }
 }
 
-#[put("/api/modules/{module_id}")]
+#[put("/modules/{module_id}")]
 pub async fn update_module(
     db:web::Data<DatabaseConnection>,
     path: web::Path<i32>,
@@ -72,6 +128,16 @@ pub async fn update_module(
 
     match existing {
         Ok(Some(module)) => {
+            let current_course_id = module.course_id;
+            let current_position = module.position;
+            let requested_course_id = data.course_id.unwrap_or(current_course_id);
+            let requested_position = data.position.unwrap_or(current_position);
+
+            if requested_course_id != current_course_id {
+                return HttpResponse::BadRequest()
+                    .body("Moving modules between courses is not supported here");
+            }
+
             let mut active :modules::ActiveModel = module.into();
 
             if let Some(module_id) = data.module_id {
@@ -89,8 +155,19 @@ pub async fn update_module(
             }
 
             match active.update(db.get_ref()).await {
-                Ok(_) => HttpResponse::Ok()
-                .body(format!("module with id {} updated!", module_id)),
+                Ok(_) => {
+                    if let Err(response) = reorder_modules_for_course(
+                        db.get_ref(),
+                        current_course_id,
+                        Some(module_id),
+                        requested_position,
+                    ).await {
+                        return response;
+                    }
+
+                    HttpResponse::Ok()
+                        .body(format!("module with id {} updated!", module_id))
+                }
                 Err(err) => HttpResponse::InternalServerError()
                 .body(format!("Update error: {}", err))
             }
@@ -101,7 +178,7 @@ pub async fn update_module(
     }
 }
 
-#[post("/api/modules")]
+#[post("/modules")]
 pub async fn create_module(
     db: web::Data<DatabaseConnection>,
     body: web::Json<CreateModules>
@@ -109,24 +186,42 @@ pub async fn create_module(
 
     let data = body.into_inner();
 
+    if data.position < 1 {
+        return HttpResponse::BadRequest().body("Module position must be 1 or higher");
+    }
+
+    let requested_position = data.position;
+    let course_id = data.course_id;
+
     let module = modules::ActiveModel {
         course_id: Set(data.course_id),
         title: Set(data.title),
-        position: Set(data.position),
+        position: Set(requested_position),
         ..Default::default()
     };
 
     match module.insert(db.get_ref()).await {
 
-        Ok(_) => HttpResponse::Ok()
-            .body("New module created successfully!"),
+        Ok(result) => {
+            if let Err(response) = reorder_modules_for_course(
+                db.get_ref(),
+                course_id,
+                Some(result.module_id),
+                requested_position,
+            ).await {
+                return response;
+            }
+
+            HttpResponse::Ok()
+                .body("New module created successfully!")
+        }
 
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Insert error: {}", err))
     }
 }
 
-#[delete("/api/module/{module_id}")]
+#[delete("/module/{module_id}")]
 pub async fn delete_module(
     db:web::Data<DatabaseConnection>, 
     path:web::Path<i32>
@@ -138,9 +233,19 @@ pub async fn delete_module(
 
     match existing {
         Ok(Some(module)) => {
+            let course_id = module.course_id;
             let active_model:modules::ActiveModel = module.into();
             match active_model.delete(db.get_ref()).await {
                 Ok(_) => {
+                    if let Err(response) = reorder_modules_for_course(
+                        db.get_ref(),
+                        course_id,
+                        None,
+                        1,
+                    ).await {
+                        return response;
+                    }
+
                     HttpResponse::Ok()
                     .body("Module deleted!")
                 }

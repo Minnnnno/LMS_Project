@@ -9,13 +9,11 @@ use crate::controller::organisation_controller::{
     list_organisations,
     list_unassigned_users,
     mass_enroll,
-    organisation_page,
     remove_org_member,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {
-    cfg.service(organisation_page)
-        .service(list_organisations)
+    cfg.service(list_organisations)
         .service(get_organisation)
         .service(create_organisation)
         .service(delete_organisation)

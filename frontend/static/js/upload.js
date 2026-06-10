@@ -1,22 +1,13 @@
 async function uploadFile(file) {
-    const sigRes = await fetch("http://127.0.0.1:8080/cloudinary/signature");
-
-    const sig = await sigRes.json();
-
     const formData = new FormData();
 
     formData.append("file", file);
-    formData.append("api_key", sig.api_key);
-    formData.append("timestamp", sig.timestamp);
-    formData.append("signature", sig.signature);
+    formData.append("folder", "lms/uploads");
 
-    const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
-        {
-            method: "POST",
-            body: formData,
-        }
-    );
+    const uploadRes = await fetch("/api/cloudinary/upload", {
+        method: "POST",
+        body: formData,
+    });
 
     const data = await uploadRes.json();
 

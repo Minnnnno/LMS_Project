@@ -10,7 +10,7 @@ use sea_orm::{
 use serde::Deserialize;
 use std::env;
 
-use crate::{build_page_context, render_page};
+use crate::ssr::pages::{build_page_context, render_page};
 use argon2::{
     Argon2, PasswordHasher,
     password_hash::{PasswordHash, PasswordVerifier},

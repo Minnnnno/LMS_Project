@@ -1,6 +1,7 @@
 use sea_orm::DerivePartialModel;
 use chrono::{DateTime, Utc, NaiveDateTime};
 use serde::{Serialize, Deserialize};
+use rust_decimal::Decimal;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateCourse {
@@ -8,7 +9,7 @@ pub struct CreateCourse {
     pub instructor_id: i32,
     pub org_id: i32,
     pub status: String,
-    pub price_cents: i32,
+    pub price: Decimal,
     pub currency: String,
     pub is_paid: bool,
     pub description: Option<String>,
@@ -29,7 +30,7 @@ pub struct UpdateCourse{
     pub instructor_id: Option<i32>,
     pub org_id: Option<i32>, 
     pub status: Option<String>, 
-    pub price_cents: Option<i32>, 
+    pub price: Option<Decimal>,
     pub currency: Option<String>, 
     pub is_paid: Option<bool>,
     pub description: Option<String>,

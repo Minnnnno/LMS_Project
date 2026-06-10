@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=2">
+<link rel="stylesheet" href="/static/css/course_details.css?v=4">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -15,7 +15,7 @@
     </div>
 </div>
 
-<div class="course-action-strip">
+<div class="course-action-strip" style="display: none;">
     <div class="course-action-info">
         <span class="course-action-icon" aria-hidden="true">
             <i class="bi bi-mortarboard"></i>
@@ -37,6 +37,7 @@
 <div class="course-layout">
     <div id="instructor-controls" class="instructor-controls" style="display: none;">
         <button id="edit-course-btn">Edit Course</button>
+        <button id="delete-course-btn" class="danger-btn">Delete Course</button>
         <button id="add-module-btn">+ Add Module</button>
         <button id="student-view-btn">View Student View</button>
     </div>
@@ -52,20 +53,74 @@
     </div>
 
 </div>
-<div id="add-module-modal" style="display: none;">
-    <div class="modal-content">
-        <h2>Add Module</h2>
+<div id="edit-course-modal" class="course-modal" style="display: none;">
+    <div class="modal-content course-edit-modal">
+        <h2>Edit Course</h2>
 
+        <label for="course-name-input">Name</label>
+        <input type="text" id="course-name-input">
+
+        <label for="course-description-input">Description</label>
+        <textarea id="course-description-input" rows="4"></textarea>
+
+        <label for="course-image-input">Background image</label>
+        <input type="file" id="course-image-input" accept="image/*">
+
+        <div class="form-row">
+            <div>
+                <label for="course-price-input">Price</label>
+                <input type="number" id="course-price-input" min="0" step="0.01">
+            </div>
+            <div>
+                <label for="course-currency-input">Currency</label>
+                <input type="text" id="course-currency-input" maxlength="3">
+            </div>
+        </div>
+
+        <label for="course-status-input">Status</label>
+        <select id="course-status-input">
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="archived">Archived</option>
+        </select>
+
+        <label class="checkbox-label">
+            <input type="checkbox" id="course-paid-input">
+            Paid course
+        </label>
+
+        <div class="modal-actions">
+            <button id="save-course-btn">Save</button>
+            <button id="close-course-modal-btn" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
+<div id="add-module-modal" style="display: none;">
+    <div class="modal-content module-edit-modal">
+        <h2 id="module-modal-title">Add Module</h2>
+
+        <label for="module-title-input">Module title</label>
         <input 
             type="text" 
             id="module-title-input" 
             placeholder="Module title, e.g. Week 1 Introduction"
         >
 
-        <button id="save-module-btn">Save</button>
-        <button id="close-module-modal-btn">Cancel</button>
+        <label for="module-position-input">Display order</label>
+        <input
+            type="number"
+            id="module-position-input"
+            min="1"
+            step="1"
+            placeholder="1"
+        >
+
+        <div class="modal-actions">
+            <button id="save-module-btn">Save</button>
+            <button id="close-module-modal-btn" type="button">Cancel</button>
+        </div>
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js"></script>
+<script src="/static/js/course_details.js?v=10"></script>
 {% endblock content %}

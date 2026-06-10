@@ -2,9 +2,12 @@ const pathParts = window.location.pathname.split("/");
 const courseId = pathParts[2];
 let currentCourse = null;
 let actionMessageTimer = null;
+let isInstructor = false;
+let currentEditingModuleId = null;
+let currentModules = [];
 
 function goToModuleContent(moduleId) {
-    window.location.href = "/module-content-page/" + moduleId;
+    window.location.href = "/module-content/" + moduleId;
 }
 
 function formatCoursePrice(course) {
@@ -24,6 +27,10 @@ function formatCoursePrice(course) {
 function showActionMessage(message, type = "info") {
     const messageElement = document.getElementById("course-action-message");
 
+    if (!messageElement) {
+        return;
+    }
+
     if (actionMessageTimer) {
         clearTimeout(actionMessageTimer);
     }
@@ -42,6 +49,11 @@ function showActionMessage(message, type = "info") {
 
 function setActionButton(content, disabled = false) {
     const button = document.getElementById("course-action-button");
+
+    if (!button) {
+        return;
+    }
+
     button.disabled = disabled;
     button.innerHTML = content;
 }
@@ -62,12 +74,30 @@ function configureCourseAction(course) {
     const price = document.getElementById("course-price");
     const params = new URLSearchParams(window.location.search);
 
-    price.textContent = formatCoursePrice(course);
+    if (price) {
+        price.textContent = formatCoursePrice(course);
+    }
+
     resetCourseActionButton();
 
     if (params.get("payment") === "cancelled") {
         showActionMessage("Payment was cancelled. You can try again whenever you are ready.", "warning");
     }
+}
+
+function refreshCourseDisplay() {
+    if (!currentCourse) {
+        return;
+    }
+
+    document.getElementById("course-title").textContent = currentCourse.name || "Untitled course";
+
+    if (currentCourse.background_image_url) {
+        document.getElementById("course-hero").style.backgroundImage =
+            `url('${currentCourse.background_image_url}')`;
+    }
+
+    configureCourseAction(currentCourse);
 }
 
 async function handleCourseAction() {
@@ -85,12 +115,12 @@ async function handleCourseAction() {
 
     try {
         if (currentCourse.is_paid) {
-            const response = await axios.post(`/courses/${courseId}/checkout`);
+            const response = await axios.post(`/api/courses/${courseId}/checkout`);
             window.location.href = response.data.checkout_url;
             return;
         }
 
-        await axios.post(`/courses/${courseId}/enroll`);
+        await axios.post(`/api/courses/${courseId}/enroll`);
         setActionButton('<i class="bi bi-check2" aria-hidden="true"></i><span>Enrolled</span>', true);
         showActionMessage("You are enrolled in this course.", "success");
     } catch (error) {
@@ -108,64 +138,65 @@ async function handleCourseAction() {
 async function loadModules() {
     try {
         const response = await axios.get("/api/modules/" + courseId);
-        const modules = response.data;
-
+        const modules = response.data.sort((first, second) => first.position - second.position);
+        currentModules = modules;
         const moduleList = document.getElementById("module-list");
+
         moduleList.innerHTML = "";
+
         if (modules.length === 0) {
             moduleList.innerHTML = "<p>No modules available.</p>";
             return;
         }
-        modules.forEach((module, index) => {
-            let instructorButtons = "";
 
-            if (isInstructor) {
-                instructorButtons = `
+        modules.forEach((module) => {
+            const instructorButtons = isInstructor
+                ? `
                     <div class="module-actions">
-                        <button class="edit-btn" onclick="editModule(event, ${module.module_id})">Edit</button>
-                        <button class="delete-btn" onclick="deleteModule(event, ${module.module_id})">Delete</button>
+                        <button class="module-action-btn edit-btn" onclick="editModule(event, ${module.module_id})">Edit</button>
+                        <button class="module-action-btn delete-btn" onclick="deleteModule(event, ${module.module_id})">Delete</button>
                     </div>
-                `;
-            }
+                `
+                : "";
+
             moduleList.innerHTML += `
                 <div class="module-row" onclick="goToModuleContent(${module.module_id})">
                     <div class="module-info">
                         <div class="module-title">${module.title}</div>
                     </div>
-
                     ${instructorButtons}
-
-                    <span class="module-arrow">›</span>
+                    <span class="module-arrow">&rsaquo;</span>
                 </div>
             `;
-        }
-    )
-
+        });
     } catch (error) {
         console.error("Failed to load modules:", error);
     }
 }
+
 async function loadAssignments() {
     try {
-        const response = await axios.get("/api/assignments/" + courseId);
+        const response = await axios.get("/api/assignment/" + courseId);
         const assignments = response.data;
-
         const assignmentList = document.getElementById("assignment-list");
+
         assignmentList.innerHTML = "";
 
-        assignments.forEach(assignment => {
+        if (!assignments.length) {
+            assignmentList.innerHTML = "<p>No assignments due.</p>";
+            return;
+        }
+
+        assignments.forEach((assignment) => {
             assignmentList.innerHTML += `
                 <div class="assignment-row">
                     <div>
                         <div class="assignment-title">${assignment.title}</div>
-                        <div class="assignment-subtitle">
-                            Due: ${assignment.due_date}
-                        </div>
+                        <div class="assignment-subtitle">Due: ${assignment.due_date}</div>
                     </div>
                 </div>
             `;
         });
-
     } catch (error) {
         const assignmentList = document.getElementById("assignment-list");
         assignmentList.innerHTML = "<p>No assignments due.</p>";
@@ -175,110 +206,259 @@ async function loadAssignments() {
 
 async function loadCourseTitle() {
     try {
-        console.log("courseId =", courseId);
-
-        const response = await axios.get("/api/courses/" + courseId);
-        console.log("course response =", response.data);
-
+        const response = await axios.get("/api/course/" + courseId);
         currentCourse = response.data;
 
-<<<<<<< HEAD
-        document.getElementById("course-title").textContent = course.name;
-
-        document.getElementById("course-hero").style.backgroundImage =
-            `url('${course.background_image_url}')`;
-=======
-        document.getElementById("course-title")
-            .textContent = currentCourse.name;
-
-        document.getElementById("course-hero").style.backgroundImage =
-    `url('${currentCourse.background_image_url}')`;
-
-        configureCourseAction(currentCourse);
->>>>>>> 88a53759a33d7c4553c643c15d0557c03ebdb1e9
-
+        refreshCourseDisplay();
     } catch (error) {
         console.error("Failed to load course title:", error);
         showActionMessage("Failed to load course details.", "error");
     }
 }
-function editCourse(courseId) {
-    event.stopPropagation();
-    window.location.href = `/api/courses/${courseId}/edit`;
+
+async function loadManageAccess() {
+    try {
+        const response = await axios.get(`/api/courses/${courseId}/manage-access`);
+        isInstructor = Boolean(response.data.can_manage);
+
+        const controls = document.getElementById("instructor-controls");
+        if (controls) {
+            controls.style.display = isInstructor ? "flex" : "none";
+        }
+
+        const actionStrip = document.querySelector(".course-action-strip");
+        if (actionStrip) {
+            actionStrip.style.display = isInstructor ? "none" : "grid";
+        }
+    } catch (error) {
+        isInstructor = false;
+        const actionStrip = document.querySelector(".course-action-strip");
+        if (actionStrip) {
+            actionStrip.style.display = "grid";
+        }
+        console.error("Failed to load course management access:", error);
+    }
 }
 
-<<<<<<< HEAD
-async function deleteCourse(courseId) {
+function editCourse(event, courseId) {
     event.stopPropagation();
-
-    if (!confirm("Delete this course?")) return;
-
-    await axios.delete(`/api/courses/${courseId}`);
-    loadModules();
+    openCourseModal();
 }
 
-document.getElementById("student-view-btn").onclick = () => {
-    document.getElementById("instructor-controls").style.display = "none";
-    isInstructor = false;
-    loadModules();
-};
+async function deleteCourse(event, courseId) {
+    event.stopPropagation();
+
+    if (!confirm("Delete this course?")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/courses/${courseId}`);
+        window.location.href = "/courses";
+    } catch (error) {
+        const message = error.response?.data || "Failed to delete course.";
+        showActionMessage(message, "error");
+    }
+}
+
+function openCourseModal() {
+    if (!currentCourse) {
+        return;
+    }
+
+    document.getElementById("course-name-input").value = currentCourse.name || "";
+    document.getElementById("course-name-input").placeholder = currentCourse.name || "Course name";
+    document.getElementById("course-description-input").value = currentCourse.description || "";
+    document.getElementById("course-description-input").placeholder = currentCourse.description || "Course description";
+    document.getElementById("course-image-input").value = "";
+    document.getElementById("course-price-input").value = ((currentCourse.price_cents || 0) / 100).toFixed(2);
+    document.getElementById("course-price-input").placeholder = ((currentCourse.price_cents || 0) / 100).toFixed(2);
+    document.getElementById("course-currency-input").value = currentCourse.currency || "SGD";
+    document.getElementById("course-currency-input").placeholder = currentCourse.currency || "SGD";
+    document.getElementById("course-status-input").value = currentCourse.status || "draft";
+    document.getElementById("course-paid-input").checked = Boolean(currentCourse.is_paid);
+    document.getElementById("edit-course-modal").style.display = "flex";
+}
+
+function closeCourseModal() {
+    document.getElementById("edit-course-modal").style.display = "none";
+}
+
+async function uploadCourseImage(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", "lms/courses");
+
+    const response = await axios.post("/api/cloudinary/upload", formData, {
+        headers: {
+            "Content-Type": "multipart/form-data",
+        },
+    });
+
+    return response.data.secure_url;
+}
+
+async function saveCourse() {
+    const name = document.getElementById("course-name-input").value.trim();
+    const description = document.getElementById("course-description-input").value.trim();
+    const backgroundImageFile = document.getElementById("course-image-input").files[0];
+    const price = Number(document.getElementById("course-price-input").value || 0);
+    const currency = document.getElementById("course-currency-input").value.trim() || "SGD";
+    const status = document.getElementById("course-status-input").value;
+    const isPaid = document.getElementById("course-paid-input").checked;
+
+    if (!name) {
+        alert("Please enter a course name");
+        return;
+    }
+
+    try {
+        const backgroundImageUrl = backgroundImageFile
+            ? await uploadCourseImage(backgroundImageFile)
+            : currentCourse.background_image_url;
+
+        await axios.put(`/api/courses/${courseId}`, {
+            name,
+            description: description || null,
+            background_image_url: backgroundImageUrl || null,
+            price,
+            currency,
+            status,
+            is_paid: isPaid,
+        });
+
+        closeCourseModal();
+        await loadCourseTitle();
+        showActionMessage("Course updated.", "success");
+    } catch (error) {
+        const message = error.response?.data || "Failed to update course.";
+        showActionMessage(message, "error");
+    }
+}
 
 function editModule(event, moduleId) {
     event.stopPropagation();
-    window.location.href = `/module/${moduleId}/edit`;
+    const module = currentModules.find((item) => item.module_id === moduleId);
+
+    if (!module) {
+        return;
+    }
+
+    openModuleModal(module);
 }
 
 async function deleteModule(event, moduleId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this module?")) return;
+    if (!confirm("Delete this module?")) {
+        return;
+    }
 
-    await axios.delete(`/api/modules/${moduleId}`);
+    await axios.delete(`/api/module/${moduleId}`);
     loadModules();
 }
 
-document.getElementById("add-module-btn").onclick = () => {
+function openModuleModal(module = null) {
+    currentEditingModuleId = module?.module_id || null;
+    document.getElementById("module-modal-title").textContent = module ? "Edit Module" : "Add Module";
+    document.getElementById("module-title-input").value = module?.title || "";
+    document.getElementById("module-title-input").placeholder = module?.title || "Module title, e.g. Week 1 Introduction";
+    document.getElementById("module-position-input").value =
+        module?.position || currentModules.length + 1;
+    document.getElementById("module-position-input").placeholder =
+        String(module?.position || currentModules.length + 1);
     document.getElementById("add-module-modal").style.display = "flex";
-};
+}
 
-document.getElementById("close-module-modal-btn").onclick = () => {
+function closeModuleModal() {
+    currentEditingModuleId = null;
+    document.getElementById("module-title-input").value = "";
+    document.getElementById("module-title-input").placeholder = "Module title, e.g. Week 1 Introduction";
+    document.getElementById("module-position-input").value = "";
+    document.getElementById("module-position-input").placeholder = "1";
     document.getElementById("add-module-modal").style.display = "none";
-};
+}
 
-document.getElementById("save-module-btn").onclick = async () => {
+async function saveModule() {
     const title = document.getElementById("module-title-input").value.trim();
+    const position = Number(document.getElementById("module-position-input").value || 0);
 
     if (!title) {
         alert("Please enter a module title");
         return;
     }
 
-    await axios.post("/api/modules", {
-        course_id: Number(courseId),
-        title: title,
-        position: 999
+    if (!Number.isInteger(position) || position < 1) {
+        alert("Please enter a display order of 1 or higher");
+        return;
+    }
+
+    if (currentEditingModuleId) {
+        const currentModule = currentModules.find((module) => module.module_id === currentEditingModuleId);
+
+        if (currentModule && currentModule.position !== position) {
+            const confirmed = confirm(`Do you want to move ${title} to order ${position}?`);
+
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        await axios.put(`/api/modules/${currentEditingModuleId}`, {
+            title,
+            position,
+        });
+    } else {
+        await axios.post("/api/modules", {
+            course_id: Number(courseId),
+            title,
+            position,
+        });
+    }
+
+    closeModuleModal();
+    loadModules();
+}
+
+function bindInstructorControls() {
+    document.getElementById("edit-course-btn")?.addEventListener("click", (event) => {
+        editCourse(event, courseId);
     });
 
-    document.getElementById("module-title-input").value = "";
-    document.getElementById("add-module-modal").style.display = "none";
+    document.getElementById("delete-course-btn")?.addEventListener("click", (event) => {
+        deleteCourse(event, courseId);
+    });
 
-    loadModules();
-};
+    document.getElementById("save-course-btn")?.addEventListener("click", saveCourse);
+    document.getElementById("close-course-modal-btn")?.addEventListener("click", closeCourseModal);
 
+    document.getElementById("student-view-btn")?.addEventListener("click", () => {
+        document.getElementById("instructor-controls").style.display = "none";
+        isInstructor = false;
+        loadModules();
+    });
+
+    document.getElementById("add-module-btn")?.addEventListener("click", () => {
+        openModuleModal();
+    });
+
+    document.getElementById("close-module-modal-btn")?.addEventListener("click", () => {
+        closeModuleModal();
+    });
+
+    document.getElementById("save-module-btn")?.addEventListener("click", saveModule);
+}
 
 async function init() {
-    await loadSession();
+    document.getElementById("course-action-button")
+        ?.addEventListener("click", handleCourseAction);
+
+    bindInstructorControls();
+
     await loadCourseTitle();
+    await loadManageAccess();
     await loadModules();
     await loadAssignments();
 }
 
 init();
-=======
-document.getElementById("course-action-button")
-    ?.addEventListener("click", handleCourseAction);
-
-loadCourseTitle();
-loadModules();
-loadAssignments();
->>>>>>> 88a53759a33d7c4553c643c15d0557c03ebdb1e9

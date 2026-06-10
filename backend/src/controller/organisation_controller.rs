@@ -7,7 +7,7 @@ use sea_orm::{
 
 use crate::entity::{organisations, roles, user_roles, users};
 use crate::models::organisation::{CreateOrganisationForm, MassEnrollForm, OrgMemberDto};
-use crate::{build_page_context, render_page};
+use crate::ssr::pages::render_page;
 
 // ── Session helpers ────────────────────────────────────────────────────────────
 
@@ -46,7 +46,7 @@ pub async fn organisation_page(session: Session) -> impl Responder {
 // ── CRUD: organisations ────────────────────────────────────────────────────────
 
 /// GET /api/organisations  –  list all organisations
-#[get("/api/organisations")]
+#[get("/organisations")]
 pub async fn list_organisations(db: web::Data<DatabaseConnection>) -> impl Responder {
     match organisations::Entity::find().all(db.get_ref()).await {
         Ok(orgs) => HttpResponse::Ok().json(orgs),
@@ -56,7 +56,7 @@ pub async fn list_organisations(db: web::Data<DatabaseConnection>) -> impl Respo
 }
 
 /// GET /api/organisations/{org_id}  –  single organisation
-#[get("/api/organisations/{org_id}")]
+#[get("/organisations/{org_id}")]
 pub async fn get_organisation(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
@@ -74,7 +74,7 @@ pub async fn get_organisation(
 }
 
 /// POST /api/organisations  –  create organisation (admin only)
-#[post("/api/organisations")]
+#[post("/organisations")]
 pub async fn create_organisation(
     db: web::Data<DatabaseConnection>,
     session: Session,
@@ -97,7 +97,7 @@ pub async fn create_organisation(
 }
 
 /// DELETE /api/organisations/{org_id}  –  delete organisation (admin only)
-#[delete("/api/organisations/{org_id}")]
+#[delete("/organisations/{org_id}")]
 pub async fn delete_organisation(
     db: web::Data<DatabaseConnection>,
     session: Session,
@@ -124,7 +124,7 @@ pub async fn delete_organisation(
 // ── Members ────────────────────────────────────────────────────────────────────
 
 /// GET /api/organisations/{org_id}/members  –  list all members with their roles
-#[get("/api/organisations/{org_id}/members")]
+#[get("/organisations/{org_id}/members")]
 pub async fn list_org_members(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
@@ -214,7 +214,7 @@ pub async fn list_org_members(
 /// For each user_id:
 ///   1. Sets users.org_id = org_id
 ///   2. Assigns the requested role (idempotent – skips if already assigned)
-#[post("/api/organisations/{org_id}/enroll")]
+#[post("/organisations/{org_id}/enroll")]
 pub async fn mass_enroll(
     db: web::Data<DatabaseConnection>,
     session: Session,
@@ -326,7 +326,7 @@ pub async fn mass_enroll(
 
 /// DELETE /api/organisations/{org_id}/members/{user_id}
 /// Removes a user from the organisation (sets org_id to NULL)
-#[delete("/api/organisations/{org_id}/members/{user_id}")]
+#[delete("/organisations/{org_id}/members/{user_id}")]
 pub async fn remove_org_member(
     db: web::Data<DatabaseConnection>,
     session: Session,
@@ -358,7 +358,7 @@ pub async fn remove_org_member(
 }
 
 /// GET /api/users/all  –  all users in the system (for CSV/Excel file matching)
-#[get("/api/users/all")]
+#[get("/users/all")]
 pub async fn list_all_users(
     db: web::Data<DatabaseConnection>,
     session: Session,
@@ -388,7 +388,7 @@ pub async fn list_all_users(
 }
 
 /// GET /api/users/unassigned  –  users not yet in any organisation (for the picker)
-#[get("/api/users/unassigned")]
+#[get("/users/unassigned")]
 pub async fn list_unassigned_users(
     db: web::Data<DatabaseConnection>,
     session: Session,

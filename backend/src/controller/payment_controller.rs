@@ -193,7 +193,7 @@ pub async fn create_checkout_session(
 
     //cancel url for payment cancellation
     let cancel_url = format!(
-        "{}/course-page/{}?payment=cancelled&payment_id={}",
+        "{}/course/{}?payment=cancelled&payment_id={}",
         frontend_url,
         course.course_id,
         inserted_payment.payment_id

@@ -216,11 +216,177 @@
     cursor: pointer;
 }
 
+.instructor-controls .danger-btn {
+    background: #b42318;
+}
+
+.course-modal,
+#add-module-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(17, 24, 39, 0.55);
+}
+
+.modal-content {
+    width: min(520px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 24px;
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.28);
+}
+
+.course-edit-modal {
+    display: grid;
+    gap: 12px;
+}
+
+.course-edit-modal h2 {
+    margin: 0 0 4px;
+    font-size: 1.35rem;
+}
+
+.course-edit-modal label {
+    color: #344054;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.course-edit-modal input,
+.course-edit-modal textarea,
+.course-edit-modal select {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+}
+
+.course-edit-modal textarea {
+    resize: vertical;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 0.45fr);
+    gap: 12px;
+}
+
+.checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checkbox-label input {
+    width: auto;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.modal-actions button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    background: #171717;
+    color: #ffffff;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.modal-actions button + button {
+    background: #eef2f6;
+    color: #344054;
+}
+
 .course-card {
     background: white;
     border-radius: 18px;
     padding: 24px;
     box-shadow:0 2px 8px rgba(0,0,0,0.08);
+}
+
+.module-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid #e4e7ec;
+    cursor: pointer;
+}
+
+.module-row:last-child {
+    border-bottom: 0;
+}
+
+.module-title {
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.module-actions {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.module-action-btn {
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.86rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.module-action-btn.edit-btn {
+    background: #eef4ff;
+    color: #1d4ed8;
+}
+
+.module-action-btn.delete-btn {
+    background: #fef3f2;
+    color: #b42318;
+}
+
+.module-arrow {
+    color: #475467;
+    font-size: 1.7rem;
+    line-height: 1;
+}
+
+.module-edit-modal {
+    display: grid;
+    gap: 12px;
+}
+
+.module-edit-modal h2 {
+    margin: 0 0 4px;
+    font-size: 1.35rem;
+}
+
+.module-edit-modal label {
+    color: #344054;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.module-edit-modal input {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
 }
 
 @media (max-width: 900px) {
