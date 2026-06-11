@@ -16,6 +16,9 @@ use crate::models::organisation::{
     CreateOrganisationForm, MassEnrollForm, OrgMemberDto, OrganisationSignupForm,
 };
 use crate::services::organisation_service;
+use crate::services::email_verification_service::{
+    create_email_verification_token, send_verification_email,
+};
 use crate::services::user_service::{assign_role_to_user, hash_password, sign_user_into_session};
 use crate::ssr::pages::{build_page_context, render_page};
 
@@ -60,6 +63,17 @@ pub async fn organisation_signup_page(
                 );
             }
 
+            if !user.email_verified {
+                return render_signup_page(
+                    &session,
+                    StatusCode::OK,
+                    Some("Please verify your email before creating an organisation."),
+                    Some(&user),
+                    None,
+                    None,
+                );
+            }
+
             render_signup_page(&session, StatusCode::OK, None, Some(&user), None, None)
         }
         Ok(None) => render_signup_page(&session, StatusCode::OK, None, None, None, None),
@@ -78,8 +92,20 @@ pub async fn organisation_signup_submit(
         Ok(user) => user,
         Err(response) => return response,
     };
+    let creates_new_admin_account = current_user.is_none();
 
     if let Some(user) = &current_user {
+        if !user.email_verified {
+            return render_signup_page(
+                &session,
+                StatusCode::BAD_REQUEST,
+                Some("Please verify your email before creating an organisation."),
+                current_user.as_ref(),
+                None,
+                Some(&form),
+            );
+        }
+
         if let Some(org_id) = user.org_id {
             let org_name = match organisations::Entity::find_by_id(org_id)
                 .one(db.get_ref())
@@ -186,6 +212,8 @@ pub async fn organisation_signup_submit(
             );
         }
     };
+
+    let mut new_admin_verification: Option<(String, String)> = None;
 
     let signed_in_user = if let Some(user) = current_user {
         let refreshed_user = match users::Entity::find_by_id(user.user_id).one(&txn).await {
@@ -335,6 +363,7 @@ pub async fn organisation_signup_submit(
             password_hash: Set(Some(password_hash)),
             auth_provider: Set("password".to_string()),
             org_id: Set(Some(inserted_org.org_id)),
+            email_verified: Set(false),
             ..Default::default()
         };
 
@@ -371,6 +400,24 @@ pub async fn organisation_signup_submit(
             );
         }
 
+        let verification_token =
+            match create_email_verification_token(&txn, inserted_user.user_id).await {
+                Ok(token) => token,
+                Err(err) => {
+                    println!("Organisation admin verification token error: {:?}", err);
+                    return render_signup_page(
+                        &session,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Some("Unable to prepare email verification right now."),
+                        Some(&inserted_user),
+                        None,
+                        Some(&form),
+                    );
+                }
+            };
+
+        new_admin_verification = Some((inserted_user.email.clone(), verification_token));
+
         inserted_user
     };
 
@@ -384,6 +431,30 @@ pub async fn organisation_signup_submit(
             None,
             Some(&form),
         );
+    }
+
+    if creates_new_admin_account {
+        if let Some((email, token)) = new_admin_verification {
+            if let Err(err) = send_verification_email(&email, &token) {
+                println!("Organisation admin verification email error: {}", err);
+                return render_signup_page(
+                    &session,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Some("Organisation created, but the verification email could not be sent."),
+                    Some(&signed_in_user),
+                    None,
+                    Some(&form),
+                );
+            }
+        }
+
+        let _ = session.insert(
+            "flash_success",
+            "Organisation created. Please check your email to verify the admin account before signing in.",
+        );
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/login"))
+            .finish();
     }
 
     if let Err(message) = sign_user_into_session(db.get_ref(), &session, &signed_in_user).await {
@@ -645,6 +716,16 @@ pub async fn create_organisation(
 ) -> impl Responder {
     if let Err(e) = organisation_service::require_org_admin(&session) {
         return e;
+    }
+
+    match current_session_user(db.get_ref(), &session).await {
+        Ok(Some(user)) if user.email_verified => {}
+        Ok(Some(_)) => {
+            return HttpResponse::Forbidden()
+                .body("Please verify your email before creating an organisation.");
+        }
+        Ok(None) => return HttpResponse::Unauthorized().body("Please log in."),
+        Err(response) => return response,
     }
 
     let new_org = organisations::ActiveModel {

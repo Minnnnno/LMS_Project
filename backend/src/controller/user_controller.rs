@@ -4,12 +4,15 @@ use actix_session::Session;
 use actix_web::http::header;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     QueryFilter, Set, TransactionTrait,
 };
 use serde::Deserialize;
 
 use crate::ssr::pages::{build_page_context, render_page};
+use crate::services::email_verification_service::{
+    create_email_verification_token, send_verification_email, verify_email_token, VerifyEmailError,
+};
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordVerifier},
@@ -39,6 +42,11 @@ pub struct GoogleAuthQuery {
     code: Option<String>,
     state: Option<String>,
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyEmailQuery {
+    token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,6 +230,7 @@ pub async fn register_submit(
         email: Set(email.clone()),
         password_hash: Set(Some(password_hash)),
         auth_provider: Set("password".to_string()),
+        email_verified: Set(false),
 
         // org_id is not set here.
         // This lets the database use its default value.
@@ -266,6 +275,20 @@ pub async fn register_submit(
         );
     }
 
+    let verification_token = match create_email_verification_token(&txn, inserted_user.user_id).await
+    {
+        Ok(token) => token,
+        Err(err) => {
+            println!("Email verification token error: {:?}", err);
+            return render_register_error(
+                "Unable to prepare email verification right now.",
+                &first_name,
+                &last_name,
+                &email,
+            );
+        }
+    };
+
     if let Err(err) = txn.commit().await {
         println!("Registration commit error: {:?}", err);
         return render_register_error(
@@ -276,10 +299,15 @@ pub async fn register_submit(
         );
     }
 
-    if let Err(err) = session.insert(
-        "flash_success",
-        "User registered successfully. Please log in.",
-    ) {
+    let flash_message = match send_verification_email(&inserted_user.email, &verification_token) {
+        Ok(_) => "User registered successfully. Please check your email to verify your account.",
+        Err(err) => {
+            println!("Verification email send error: {}", err);
+            "User registered successfully, but the verification email could not be sent. Please request a new verification email after logging in."
+        }
+    };
+
+    if let Err(err) = session.insert("flash_success", flash_message) {
         println!("Session flash insert error: {:?}", err);
     }
 
@@ -355,6 +383,9 @@ pub async fn login_submit(
         println!("Session insert error: {:?}", err);
     }
     if let Err(err) = session.insert("user_email", user.email.clone()) {
+        println!("Session insert error: {:?}", err);
+    }
+    if let Err(err) = session.insert("email_verified", user.email_verified) {
         println!("Session insert error: {:?}", err);
     }
 
@@ -551,7 +582,24 @@ pub async fn google_callback(
         .one(db.get_ref())
         .await
     {
-        Ok(Some(user)) => user,
+        Ok(Some(user)) => {
+            if user.email_verified {
+                user
+            } else {
+                let mut active_user = user.into_active_model();
+                active_user.email_verified = Set(true);
+                match active_user.update(db.get_ref()).await {
+                    Ok(user) => user,
+                    Err(err) => {
+                        println!("Google email verification update error: {:?}", err);
+                        return redirect_login_with_error(
+                            &session,
+                            "Unable to update your verified email status.",
+                        );
+                    }
+                }
+            }
+        }
         Ok(None) => {
             let fallback_name = email
                 .split('@')
@@ -578,6 +626,7 @@ pub async fn google_callback(
                 email: Set(email.clone()),
                 password_hash: Set(None),
                 auth_provider: Set("google".to_string()),
+                email_verified: Set(true),
                 ..Default::default()
             };
 
@@ -641,17 +690,140 @@ pub async fn google_callback(
     redirect_home()
 }
 
-#[get("/profile")]
-pub async fn profile(session: Session) -> impl Responder {
-    if !is_logged_in(&session) {
+#[get("/auth/verify-email")]
+pub async fn verify_email(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    query: web::Query<VerifyEmailQuery>,
+) -> impl Responder {
+    let token = query.token.trim();
+
+    if token.is_empty() {
+        return redirect_login_with_error(&session, "Verification link is missing a token.");
+    }
+
+    match verify_email_token(db.get_ref(), token).await {
+        Ok(user) => {
+            let is_current_user = session.get::<i32>("user_id").ok().flatten() == Some(user.user_id);
+            if is_current_user {
+                let _ = session.insert("email_verified", true);
+            }
+            let redirect_path = if is_current_user { "/profile" } else { "/login" };
+            if is_current_user {
+                let _ = session.insert(
+                    "profile_success",
+                    "Email verified successfully. You can now continue.",
+                );
+            } else {
+                let _ = session.insert(
+                    "flash_success",
+                    "Email verified successfully. You can now continue.",
+                );
+            }
+            HttpResponse::Found()
+                .insert_header((header::LOCATION, redirect_path))
+                .finish()
+        }
+        Err(VerifyEmailError::InvalidOrExpired) => {
+            redirect_login_with_error(&session, "Verification link is invalid or has expired.")
+        }
+        Err(VerifyEmailError::Database(err)) => {
+            println!("Email verification error: {:?}", err);
+            redirect_login_with_error(
+                &session,
+                "Unable to verify your email right now. Please try again.",
+            )
+        }
+    }
+}
+
+#[post("/auth/resend-verification")]
+pub async fn resend_verification_email(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id").ok().flatten() {
+        Some(user_id) => user_id,
+        None => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+    };
+
+    let user = match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return HttpResponse::NotFound().body("User not found"),
+        Err(err) => {
+            println!("Resend verification user lookup error: {:?}", err);
+            return HttpResponse::InternalServerError().body("Unable to load your account.");
+        }
+    };
+
+    if user.email_verified {
+        let _ = session.insert("profile_success", "Your email is already verified.");
         return HttpResponse::Found()
-            .insert_header((header::LOCATION, "/login"))
+            .insert_header((header::LOCATION, "/profile"))
             .finish();
     }
+
+    let token = match create_email_verification_token(db.get_ref(), user.user_id).await {
+        Ok(token) => token,
+        Err(err) => {
+            println!("Resend verification token error: {:?}", err);
+            let _ = session.insert("profile_error", "Unable to create a verification email.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/profile"))
+                .finish();
+        }
+    };
+
+    match send_verification_email(&user.email, &token) {
+        Ok(_) => {
+            let _ = session.insert("profile_success", "Verification email sent.");
+        }
+        Err(err) => {
+            println!("Resend verification email error: {}", err);
+            let _ = session.insert("profile_error", "Unable to send verification email.");
+        }
+    }
+
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, "/profile"))
+        .finish()
+}
+
+#[get("/profile")]
+pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id").ok().flatten() {
+        Some(user_id) => user_id,
+        None => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+    };
 
     let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
 
     let mut context = build_page_context(&session);
+    match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
+        Ok(Some(user)) => {
+            context.insert("email_verified", &user.email_verified);
+            let _ = session.insert("email_verified", user.email_verified);
+        }
+        Ok(None) => {
+            session.purge();
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+        Err(err) => {
+            println!("Profile user lookup error: {:?}", err);
+            context.insert("error", "Unable to refresh your account details right now.");
+        }
+    }
+
     let role_names = session
         .get::<Vec<String>>("role_names")
         .ok()

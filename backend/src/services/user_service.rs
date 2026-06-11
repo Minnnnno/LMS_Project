@@ -156,6 +156,9 @@ pub async fn sign_user_into_session(
     if let Err(err) = session.insert("user_email", user.email.clone()) {
         println!("Session insert error: {:?}", err);
     }
+    if let Err(err) = session.insert("email_verified", user.email_verified) {
+        println!("Session insert error: {:?}", err);
+    }
     store_roles_in_session(session, role_ids, role_names);
 
     Ok(())

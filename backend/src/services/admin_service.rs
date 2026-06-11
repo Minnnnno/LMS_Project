@@ -181,6 +181,7 @@ pub async fn create_user_service(
         email: Set(body.email.trim().to_lowercase()),
         password_hash: Set(Some(password_hash)),
         org_id: Set(body.org_id),
+        email_verified: Set(false),
         ..Default::default()
     };
 

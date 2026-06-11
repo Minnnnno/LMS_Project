@@ -13,26 +13,42 @@ pub struct MailRequest {
     pub body: String,
 }
 
-pub async fn send_mail(mail: MailRequest) -> HttpResponse {
-    let smtp_username = std::env::var("SMTP_USERNAME").expect("SMTP_USERNAME not found");
-    let smtp_password = std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD not found");
-    let smtp_host = std::env::var("SMTP_HOST").expect("SMTP_HOST not found");
+pub fn send_mail_message(mail: MailRequest) -> Result<(), String> {
+    let smtp_username =
+        std::env::var("SMTP_USERNAME").map_err(|_| "SMTP_USERNAME not found".to_string())?;
+    let smtp_password =
+        std::env::var("SMTP_PASSWORD").map_err(|_| "SMTP_PASSWORD not found".to_string())?;
+    let smtp_host = std::env::var("SMTP_HOST").map_err(|_| "SMTP_HOST not found".to_string())?;
 
     let email = Message::builder()
-        .from(smtp_username.parse::<Mailbox>().unwrap())
-        .to(mail.to.parse::<Mailbox>().unwrap())
+        .from(
+            smtp_username
+                .parse::<Mailbox>()
+                .map_err(|err| format!("Invalid SMTP sender email: {}", err))?,
+        )
+        .to(mail
+            .to
+            .parse::<Mailbox>()
+            .map_err(|err| format!("Invalid recipient email: {}", err))?)
         .subject(&mail.subject)
         .body(mail.body)
-        .unwrap();
+        .map_err(|err| format!("Failed to build email: {}", err))?;
 
     let creds = Credentials::new(smtp_username, smtp_password);
     let mailer = SmtpTransport::starttls_relay(&smtp_host)
-        .unwrap()
+        .map_err(|err| format!("Failed to connect to SMTP host: {}", err))?
         .credentials(creds)
         .build();
 
-    match mailer.send(&email) {
+    mailer
+        .send(&email)
+        .map(|_| ())
+        .map_err(|err| format!("Failed to send email: {}", err))
+}
+
+pub async fn send_mail(mail: MailRequest) -> HttpResponse {
+    match send_mail_message(mail) {
         Ok(_) => HttpResponse::Ok().body("Email sent successfully"),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to send email: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(err),
     }
 }

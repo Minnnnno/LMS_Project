@@ -212,6 +212,13 @@ pub fn build_page_context(session: &Session) -> Context {
         context.insert("user_email", &user_email);
     }
 
+    let email_verified = session
+        .get::<bool>("email_verified")
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    context.insert("email_verified", &email_verified);
+
     let role_names: Vec<String> = session
         .get::<Vec<String>>("role_names")
         .ok()

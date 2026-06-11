@@ -15,7 +15,7 @@ use stripe::{
     CreateCheckoutSessionPaymentIntentData, Currency, EventObject, EventType, Webhook,
 };
 
-use crate::entity::{courses, enrollments, payments};
+use crate::entity::{courses, enrollments, payments, users};
 
 const PENDING_PAYMENT_TTL_SECONDS: u64 = 30 * 60;
 const STRIPE_CHECKOUT_EXPIRY_SECONDS: i64 = 30 * 60;
@@ -61,6 +61,19 @@ pub async fn create_checkout_session(
         Ok(None) => return HttpResponse::Unauthorized().body("Please log in before buying a course"),
         Err(err) => return HttpResponse::InternalServerError().body(format!("Session error: {}", err)),
     };
+
+    let user = match users::Entity::find_by_id(user_id).one(db).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return HttpResponse::Unauthorized().body("User not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error checking user: {}", err));
+        }
+    };
+
+    if !user.email_verified {
+        return HttpResponse::Forbidden().body("Please verify your email before making a purchase");
+    }
 
     match enrollments::Entity::find()
         .filter(enrollments::Column::UserId.eq(user_id))

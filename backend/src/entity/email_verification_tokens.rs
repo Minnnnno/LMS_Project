@@ -1,18 +1,17 @@
+use chrono::NaiveDateTime;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "users")]
+#[sea_orm(table_name = "email_verification_tokens")]
 pub struct Model {
     #[sea_orm(primary_key)]
+    pub token_id: i32,
     pub user_id: i32,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: String,
-    pub password_hash: Option<String>,
-    pub auth_provider: String,
-    pub org_id: Option<i32>,
-    pub email_verified: bool,
+    pub token_hash: String,
+    pub expires_at: NaiveDateTime,
+    pub used_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
