@@ -1,0 +1,621 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard | LMS{% endblock title %}
+
+{% block content %}
+<section class="dashboard-header flex-column flex-lg-row align-items-lg-end justify-content-between gap-3">
+    <div>
+        <h1 class="page-heading">Admin Dashboard</h1>
+        <p class="page-subtitle mb-0">Create records, review what is in the database, and manage the LMS from one place.</p>
+    </div>
+    <a class="btn btn-dark rounded-3 px-4" href="/">User Dashboard</a>
+</section>
+
+<section class="container-fluid px-0 mt-4">
+    <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
+        <div>
+            <h2 class="section-title mb-1">Create Records</h2>
+            <p class="page-subtitle mb-0">Use these forms to insert new rows into the database.</p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-12 col-xl-6">
+            <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+                        <div>
+                            <h2 class="section-title mb-1">Organisation</h2>
+                            <p class="page-subtitle mb-0">Add a new organisation.</p>
+                        </div>
+                    </div>
+                    <form class="admin-action-form" data-endpoint="/admin/organisations" data-method="POST">
+                        <label class="form-label" for="org-name">Organisation name</label>
+                        <input id="org-name" name="org_name" class="form-control mb-3" placeholder="North Campus" required>
+                        <div class="form-text mb-3">Used to group users, courses, and admin access.</div>
+                        <button class="btn btn-dark rounded-3" type="submit">Create organisation</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+                        <div>
+                            <h2 class="section-title mb-1">User</h2>
+                            <p class="page-subtitle mb-0">Create a login and assign a role if needed.</p>
+                        </div>
+                    </div>
+                    <form class="admin-action-form" data-endpoint="/admin/users" data-method="POST">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="user-first-name">First name</label>
+                                <input id="user-first-name" name="first_name" class="form-control" placeholder="Jane" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="user-last-name">Last name</label>
+                                <input id="user-last-name" name="last_name" class="form-control" placeholder="Doe" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="user-email">Email</label>
+                                <input id="user-email" name="email" type="email" class="form-control" placeholder="jane@example.com" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="user-password">Password</label>
+                                <input id="user-password" name="password" type="password" class="form-control" minlength="8" required>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label class="form-label" for="user-org-id">Org ID</label>
+                                <input id="user-org-id" name="org_id" type="number" class="form-control" placeholder="1">
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label class="form-label" for="user-role-id">Role ID</label>
+                                <input id="user-role-id" name="role_id" type="number" class="form-control" placeholder="2">
+                            </div>
+                        </div>
+                        <div class="form-text mt-3">Leave Org ID or Role ID blank if you want to set them later.</div>
+                        <button class="btn btn-dark rounded-3 mt-3" type="submit">Create user</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+                        <div>
+                            <h2 class="section-title mb-1">Course</h2>
+                            <p class="page-subtitle mb-0">Create a course and set the publishing details.</p>
+                        </div>
+                    </div>
+                    <form class="admin-action-form" data-endpoint="/admin/courses" data-method="POST">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label" for="course-name">Course name</label>
+                                <input id="course-name" name="name" class="form-control" placeholder="Introduction to Biology" required>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="course-org-id">Org ID</label>
+                                <input id="course-org-id" name="org_id" type="number" class="form-control" placeholder="1">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="course-instructor-id">Instructor ID</label>
+                                <input id="course-instructor-id" name="instructor_id" type="number" class="form-control" placeholder="7">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="course-status">Status</label>
+                                <select id="course-status" name="status" class="form-select">
+                                    <option value="draft">Draft</option>
+                                    <option value="published">Published</option>
+                                    <option value="archived">Archived</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="course-price">Price cents</label>
+                                <input id="course-price" name="price_cents" type="number" class="form-control" placeholder="0">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="course-currency">Currency</label>
+                                <input id="course-currency" name="currency" class="form-control" value="sgd">
+                            </div>
+                            <div class="col-12 col-md-4 d-flex align-items-end">
+                                <div class="form-check mb-1">
+                                    <input id="course-paid" name="is_paid" class="form-check-input" type="checkbox">
+                                    <label class="form-check-label" for="course-paid">Paid course</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="course-description">Description</label>
+                                <textarea id="course-description" name="description" class="form-control" rows="3"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="course-image">Background image URL</label>
+                                <input id="course-image" name="background_image_url" class="form-control" placeholder="https://...">
+                            </div>
+                        </div>
+                        <div class="form-text mt-3">Status defaults to draft if you leave it unchanged.</div>
+                        <button class="btn btn-dark rounded-3 mt-3" type="submit">Create course</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+                        <div>
+                            <h2 class="section-title mb-1">Enrollment</h2>
+                            <p class="page-subtitle mb-0">Add a user to a course.</p>
+                        </div>
+                    </div>
+                    <form class="admin-action-form" data-endpoint="/admin/enrollments" data-method="POST">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="enroll-user-id">User ID</label>
+                                <input id="enroll-user-id" name="user_id" type="number" class="form-control" placeholder="6" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="enroll-course-id">Course ID</label>
+                                <input id="enroll-course-id" name="course_id" type="number" class="form-control" placeholder="10" required>
+                            </div>
+                        </div>
+                        <div class="form-text mt-3">Use the IDs shown in the tables below.</div>
+                        <button class="btn btn-dark rounded-3 mt-3" type="submit">Enroll user</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
+                <div class="card-body p-4">
+                    <details class="admin-details">
+                        <summary class="section-title mb-0">Advanced JSON Console</summary>
+                        <p class="page-subtitle mt-2 mb-3">Use this only for endpoints that don’t have a dedicated form.</p>
+                        <form class="admin-json-console admin-action-form" data-advanced-console="true">
+                            <div class="row g-3">
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="console-method">Method</label>
+                                    <select id="console-method" name="method" class="form-select">
+                                        <option>POST</option>
+                                        <option>PUT</option>
+                                        <option>DELETE</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 col-md-8">
+                                    <label class="form-label" for="console-endpoint">Endpoint</label>
+                                    <input id="console-endpoint" name="endpoint" class="form-control" value="/api/modules" placeholder="/api/modules">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="console-body">JSON body</label>
+                                    <textarea id="console-body" name="body" class="form-control font-monospace" rows="12">{
+  "course_id": 1,
+  "title": "New module",
+  "position": 1
+}</textarea>
+                                </div>
+                            </div>
+                            <button class="btn btn-dark rounded-3 mt-3" type="submit">Send request</button>
+                        </form>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="container-fluid px-0 mt-4">
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-body p-4">
+            <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+                <div>
+                    <h2 class="section-title mb-1">Submission Status</h2>
+                    <p class="page-subtitle mb-0">The dashboard updates tables automatically after each successful save.</p>
+                </div>
+                <div id="admin-action-result" class="alert alert-light border mb-0 py-2 px-3" role="status">
+                    Ready.
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="container-fluid px-0 mt-4">
+    <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
+        <div>
+            <h2 class="section-title mb-1">Existing Records</h2>
+            <p class="page-subtitle mb-0">Quickly scan what is already in the database.</p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4 admin-table-card">
+                <div class="card-body p-4">
+                    <div class="table-responsive admin-table-wrap">
+                        <table class="table table-sm align-middle admin-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Organisation ID</th>
+                                    <th>Name</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="organisations-table-body">
+                                <tr><td colspan="3" class="text-secondary">Loading organisations...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4 admin-table-card">
+                <div class="card-body p-4">
+                    <div class="table-responsive admin-table-wrap">
+                        <table class="table table-sm align-middle admin-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>User ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Org ID</th>
+                                    <th>Auth Provider</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <tr><td colspan="6" class="text-secondary">Loading users...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4 admin-table-card">
+                <div class="card-body p-4">
+                    <div class="table-responsive admin-table-wrap">
+                        <table class="table table-sm align-middle admin-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Course ID</th>
+                                    <th>Name</th>
+                                    <th>Org ID</th>
+                                    <th>Instructor ID</th>
+                                    <th>Status</th>
+                                    <th>Paid</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="courses-table-body">
+                                <tr><td colspan="7" class="text-secondary">Loading courses...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4 admin-table-card">
+                <div class="card-body p-4">
+                    <div class="table-responsive admin-table-wrap">
+                        <table class="table table-sm align-middle admin-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>User ID</th>
+                                    <th>Course ID</th>
+                                    <th>Enrolled At</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="enrollments-table-body">
+                                <tr><td colspan="4" class="text-secondary">Loading enrollments...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+const adminActionResult = document.getElementById("admin-action-result");
+const organisationsTableBody = document.getElementById("organisations-table-body");
+const usersTableBody = document.getElementById("users-table-body");
+const coursesTableBody = document.getElementById("courses-table-body");
+const enrollmentsTableBody = document.getElementById("enrollments-table-body");
+
+function setAdminMessage(message, variant = "light") {
+    if (!adminActionResult) {
+        return;
+    }
+
+    adminActionResult.className = `alert alert-${variant} border mb-0`;
+    adminActionResult.textContent = message;
+}
+
+let refreshTimer = null;
+
+function fieldValue(formData, key) {
+    const value = formData.get(key);
+
+    if (value === null) {
+        return null;
+    }
+
+    if (typeof value === "string" && value.trim() === "") {
+        return null;
+    }
+
+    return value;
+}
+
+function numberField(formData, key) {
+    const value = fieldValue(formData, key);
+
+    if (value === null) {
+        return null;
+    }
+
+    const parsedValue = Number(value);
+    return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+async function submitJson(endpoint, method, payload) {
+    const response = await fetch(endpoint, {
+        method,
+        headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+        },
+        credentials: "same-origin",
+        body: method === "DELETE" ? undefined : JSON.stringify(payload),
+    });
+
+    const responseText = await response.text();
+    let message = responseText || `${method} ${endpoint}`;
+
+    try {
+        const parsed = JSON.parse(responseText);
+        message = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+    } catch (error) {
+        // keep plain text response
+    }
+
+    if (!response.ok) {
+        throw new Error(message);
+    }
+
+    return message;
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+function tableRow(cells) {
+    return `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+}
+
+function deleteButton(endpoint, label) {
+    return `
+        <button
+            type="button"
+            class="btn btn-outline-danger btn-sm"
+            data-delete-endpoint="${escapeHtml(endpoint)}"
+            data-delete-label="${escapeHtml(label)}"
+        >Delete</button>
+    `;
+}
+
+function renderTableBody(target, rows, emptyMessage, columns) {
+    if (!target) {
+        return;
+    }
+
+    if (!rows.length) {
+        target.innerHTML = `<tr><td colspan="${columns}" class="text-secondary">${emptyMessage}</td></tr>`;
+        return;
+    }
+
+    target.innerHTML = rows;
+}
+
+function renderYesNo(value) {
+    return value ? '<span class="badge text-bg-success">Yes</span>' : '<span class="badge text-bg-secondary">No</span>';
+}
+
+async function loadTable(url) {
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) {
+        throw new Error(`Failed to load ${url}`);
+    }
+
+    return response.json();
+}
+
+async function loadAdminTables() {
+    try {
+        const [organisations, users, courses, enrollments] = await Promise.all([
+            loadTable("/admin/organisations"),
+            loadTable("/admin/users"),
+            loadTable("/admin/courses"),
+            loadTable("/admin/enrollments"),
+        ]);
+
+        renderTableBody(
+            organisationsTableBody,
+            organisations.map((organisation) => tableRow([
+                escapeHtml(organisation.org_id),
+                escapeHtml(organisation.org_name),
+                `<div class="text-end">${deleteButton(`/admin/organisations/${organisation.org_id}`, `organisation #${organisation.org_id}`)}</div>`,
+            ])).join(""),
+            "No organisations found.",
+            3,
+        );
+
+        renderTableBody(
+            usersTableBody,
+            users.map((user) => tableRow([
+                escapeHtml(user.user_id),
+                escapeHtml(`${user.first_name} ${user.last_name}`),
+                escapeHtml(user.email),
+                escapeHtml(user.org_id ?? "-"),
+                escapeHtml(user.auth_provider),
+                `<div class="text-end">${deleteButton(`/admin/users/${user.user_id}`, `user #${user.user_id}`)}</div>`,
+            ])).join(""),
+            "No users found.",
+            6,
+        );
+
+        renderTableBody(
+            coursesTableBody,
+            courses.map((course) => tableRow([
+                escapeHtml(course.course_id),
+                escapeHtml(course.name ?? "Untitled course"),
+                escapeHtml(course.org_id ?? "-"),
+                escapeHtml(course.instructor_id ?? "-"),
+                escapeHtml(course.status ?? "-"),
+                renderYesNo(course.is_paid),
+                `<div class="text-end">${deleteButton(`/admin/courses/${course.course_id}`, `course #${course.course_id}`)}</div>`,
+            ])).join(""),
+            "No courses found.",
+            7,
+        );
+
+        renderTableBody(
+            enrollmentsTableBody,
+            enrollments.map((enrollment) => tableRow([
+                escapeHtml(enrollment.user_id),
+                escapeHtml(enrollment.course_id),
+                escapeHtml(enrollment.enrolled_at),
+                `<div class="text-end">${deleteButton(`/admin/enrollments/${enrollment.user_id}/${enrollment.course_id}`, `enrollment ${enrollment.user_id}/${enrollment.course_id}`)}</div>`,
+            ])).join(""),
+            "No enrollments found.",
+            4,
+        );
+    } catch (error) {
+        const message = error.message || "Unable to load tables";
+        if (organisationsTableBody) {
+            organisationsTableBody.innerHTML = `<tr><td colspan="3" class="text-danger">${escapeHtml(message)}</td></tr>`;
+        }
+        if (usersTableBody) {
+            usersTableBody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(message)}</td></tr>`;
+        }
+        if (coursesTableBody) {
+            coursesTableBody.innerHTML = `<tr><td colspan="7" class="text-danger">${escapeHtml(message)}</td></tr>`;
+        }
+        if (enrollmentsTableBody) {
+            enrollmentsTableBody.innerHTML = `<tr><td colspan="4" class="text-danger">${escapeHtml(message)}</td></tr>`;
+        }
+    }
+}
+
+function scheduleTableRefresh() {
+    if (refreshTimer) {
+        window.clearTimeout(refreshTimer);
+    }
+
+    refreshTimer = window.setTimeout(() => {
+        loadAdminTables();
+    }, 300);
+}
+
+document.querySelectorAll(".admin-action-form").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const formData = new FormData(form);
+        const endpoint = form.dataset.endpoint;
+        const method = form.dataset.method || form.querySelector("[name='method']")?.value || "POST";
+
+        try {
+            let payload = {};
+
+            if (form.dataset.advancedConsole === "true") {
+                const bodyField = form.querySelector("[name='body']");
+                payload = bodyField?.value ? JSON.parse(bodyField.value) : {};
+            } else if (endpoint === "/admin/organisations") {
+                payload = { org_name: fieldValue(formData, "org_name") };
+            } else if (endpoint === "/admin/users") {
+                payload = {
+                    first_name: fieldValue(formData, "first_name"),
+                    last_name: fieldValue(formData, "last_name"),
+                    email: fieldValue(formData, "email"),
+                    password: fieldValue(formData, "password"),
+                    org_id: numberField(formData, "org_id"),
+                    role_id: numberField(formData, "role_id"),
+                };
+            } else if (endpoint === "/admin/courses") {
+                payload = {
+                    name: fieldValue(formData, "name"),
+                    org_id: numberField(formData, "org_id"),
+                    instructor_id: numberField(formData, "instructor_id"),
+                    status: fieldValue(formData, "status"),
+                    price_cents: numberField(formData, "price_cents"),
+                    currency: fieldValue(formData, "currency"),
+                    is_paid: form.querySelector("[name='is_paid']")?.checked ?? false,
+                    description: fieldValue(formData, "description"),
+                    background_image_url: fieldValue(formData, "background_image_url"),
+                };
+            } else if (endpoint === "/admin/enrollments") {
+                payload = {
+                    user_id: numberField(formData, "user_id"),
+                    course_id: numberField(formData, "course_id"),
+                };
+            }
+
+            const message = await submitJson(endpoint, method, payload);
+            setAdminMessage(message, "success");
+            form.reset();
+            scheduleTableRefresh();
+        } catch (error) {
+            setAdminMessage(error.message || "Request failed", "danger");
+        }
+    });
+});
+
+document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-delete-endpoint]");
+
+    if (!button) {
+        return;
+    }
+
+    const endpoint = button.dataset.deleteEndpoint;
+    const label = button.dataset.deleteLabel || endpoint;
+
+    if (!window.confirm(`Delete ${label}?`)) {
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await submitJson(endpoint, "DELETE", {});
+        setAdminMessage(response, "success");
+        scheduleTableRefresh();
+    } catch (error) {
+        setAdminMessage(error.message || "Delete failed", "danger");
+    } finally {
+        button.disabled = false;
+    }
+});
+
+loadAdminTables();
+</script>
+{% endblock content %}

@@ -48,10 +48,11 @@ async fn main() -> std::io::Result<()> {
                     .configure(routes::quiz_questions_routes::init)
                     .configure(routes::quiz_options_routes::init)
                     .configure(routes::quiz_attempts_routes::init)
-                    .configure(routes::quiz_answers_routes::init)
+                        .configure(routes::quiz_answers_routes::init)
             )
             .configure(ssr::pages::init)
             .configure(routes::user_routes::init)
+                    .configure(routes::admin_routes::init)
             .service(controller::organisation_controller::organisation_page)
             .service(Files::new("/static", "../frontend/static").show_files_listing())
             

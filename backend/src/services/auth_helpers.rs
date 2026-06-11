@@ -42,3 +42,22 @@ pub async fn is_enrolled(
             .body(format!("Database error checking enrollment: {}", err))),
     }
 }
+
+
+pub fn require_admin(session: &Session) -> Result<(), HttpResponse> {
+    let role_names = session
+        .get::<Vec<String>>("role_names")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let is_admin = role_names
+        .iter()
+        .any(|role| role == "LMS Admin" || role == "Organisation Admin");
+
+    if is_admin {
+        Ok(())
+    } else {
+        Err(HttpResponse::Forbidden().body("Admin access required"))
+    }
+}

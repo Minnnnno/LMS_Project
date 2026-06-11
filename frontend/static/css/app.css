@@ -292,6 +292,45 @@ a {
     flex-wrap: wrap;
 }
 
+.admin-form-card,
+.admin-table-card {
+    overflow: hidden;
+}
+
+.admin-table-wrap {
+    max-height: 18rem;
+    overflow: auto;
+}
+
+.admin-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #ffffff;
+}
+
+.admin-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.admin-details summary {
+    cursor: pointer;
+}
+
+.admin-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.admin-details summary::after {
+    content: "+";
+    float: right;
+    color: var(--skillup-muted);
+}
+
+.admin-details[open] summary::after {
+    content: "–";
+}
+
 @media (max-width: 991.98px) {
     .main-content {
         padding: 1.25rem;

@@ -357,11 +357,22 @@ pub async fn login_submit(
     if let Err(err) = session.insert("user_email", user.email.clone()) {
         println!("Session insert error: {:?}", err);
     }
+
+    let is_admin_account = role_names
+        .iter()
+        .any(|role| role == "LMS Admin" || role == "Organisation Admin");
+
     store_roles_in_session(&session, role_ids, role_names);
 
     println!("Login successful. Stored user_id: {}", user.user_id);
 
-    redirect_home()
+    if is_admin_account {
+        HttpResponse::Found()
+            .insert_header((header::LOCATION, "/admin/dashboard"))
+            .finish()
+    } else {
+        redirect_home()
+    }
 }
 
 #[get("/auth/google")]

@@ -16,3 +16,4 @@ pub mod quiz_question_service;
 pub mod quiz_service;
 pub mod student_service;
 pub mod user_service;
+pub mod admin_service;
