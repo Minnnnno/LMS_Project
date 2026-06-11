@@ -54,6 +54,8 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::user_routes::init)
                     .configure(routes::admin_routes::init)
             .service(controller::organisation_controller::organisation_page)
+            .service(controller::organisation_controller::organisation_signup_page)
+            .service(controller::organisation_controller::organisation_signup_submit)
             .service(Files::new("/static", "../frontend/static").show_files_listing())
             
     })

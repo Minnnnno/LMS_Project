@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Organisation Signup | SkillUp LMS{% endblock title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/organisation_signup.css">
+{% endblock extra_css %}
+
+{% block content %}
+<section class="org-signup-page">
+    <div class="org-signup-layout">
+        <aside class="org-signup-side-panel">
+            <span class="org-signup-badge">SkillUp LMS</span>
+            <h2>Set up your organisation workspace</h2>
+            <p>Create the place where your team can manage courses, instructors, learners, and progress.</p>
+        </aside>
+
+        <div class="org-signup-form-panel">
+            <div class="org-signup-form-wrapper">
+                {% if already_belongs %}
+                <div class="org-signup-header">
+                    <p class="org-signup-label">Organisation</p>
+                    <h1>You already belong to an organisation.</h1>
+                    <p>{{ current_org_name | default(value="Your current organisation") }}</p>
+                </div>
+
+                <a href="{{ dashboard_path }}" class="btn btn-dark org-signup-submit-btn w-100">
+                    Go to organisation dashboard
+                </a>
+                {% else %}
+                <div class="org-signup-header">
+                    <p class="org-signup-label">Organisation signup</p>
+                    <h1>Create an organisation</h1>
+                    <p>{% if show_admin_fields %}Add the organisation and its admin account.{% else %}Add your organisation details to continue.{% endif %}</p>
+                </div>
+
+                {% if error %}
+                <div class="error-banner" role="alert">
+                    <div class="error-banner-icon">!</div>
+                    <div class="error-banner-content">
+                        <strong>Signup error</strong>
+                        <span>{{ error }}</span>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form action="/organisations/signup" method="post">
+                    <div class="org-signup-section">
+                        <h2>Organisation details</h2>
+                        <div class="row g-4">
+                            <div class="col-12 col-md-6">
+                                <label for="org_name" class="form-label">Organisation name</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    id="org_name"
+                                    name="org_name"
+                                    value="{{ org_name | default(value="") }}"
+                                    autocomplete="organization"
+                                    required
+                                >
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="org_slug" class="form-label">Organisation slug</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    id="org_slug"
+                                    name="org_slug"
+                                    value="{{ org_slug | default(value="") }}"
+                                    required
+                                >
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="org_type" class="form-label">Organisation type</label>
+                                <select class="form-select" id="org_type" name="org_type">
+                                    <option value="" {% if not org_type %}selected{% endif %}>Select type</option>
+                                    <option value="School" {% if org_type == "School" %}selected{% endif %}>School</option>
+                                    <option value="University" {% if org_type == "University" %}selected{% endif %}>University</option>
+                                    <option value="Company" {% if org_type == "Company" %}selected{% endif %}>Company</option>
+                                    <option value="Training Provider" {% if org_type == "Training Provider" %}selected{% endif %}>Training Provider</option>
+                                    <option value="Other" {% if org_type == "Other" %}selected{% endif %}>Other</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="website_url" class="form-label">Website URL</label>
+                                <input
+                                    type="url"
+                                    class="form-control"
+                                    id="website_url"
+                                    name="website_url"
+                                    value="{{ website_url | default(value="") }}"
+                                    autocomplete="url"
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if show_admin_fields %}
+                    <div class="org-signup-section">
+                        <h2>Admin account</h2>
+                        <div class="row g-4">
+                            <div class="col-12 col-md-6">
+                                <label for="admin_first_name" class="form-label">Admin first name</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    id="admin_first_name"
+                                    name="admin_first_name"
+                                    value="{{ admin_first_name | default(value="") }}"
+                                    autocomplete="given-name"
+                                    required
+                                >
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="admin_last_name" class="form-label">Admin last name</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    id="admin_last_name"
+                                    name="admin_last_name"
+                                    value="{{ admin_last_name | default(value="") }}"
+                                    autocomplete="family-name"
+                                    required
+                                >
+                            </div>
+
+                            <div class="col-12">
+                                <label for="admin_email" class="form-label">Admin email</label>
+                                <input
+                                    type="email"
+                                    class="form-control"
+                                    id="admin_email"
+                                    name="admin_email"
+                                    value="{{ admin_email | default(value="") }}"
+                                    autocomplete="email"
+                                    required
+                                >
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="admin_password" class="form-label">Admin password</label>
+                                <input
+                                    type="password"
+                                    class="form-control"
+                                    id="admin_password"
+                                    name="admin_password"
+                                    autocomplete="new-password"
+                                    minlength="8"
+                                    required
+                                >
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="confirm_password" class="form-label">Confirm password</label>
+                                <input
+                                    type="password"
+                                    class="form-control"
+                                    id="confirm_password"
+                                    name="confirm_password"
+                                    autocomplete="new-password"
+                                    minlength="8"
+                                    required
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <button type="submit" class="btn btn-dark w-100 org-signup-submit-btn">
+                        Create organisation
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock content %}
