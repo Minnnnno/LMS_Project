@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=4">
+<link rel="stylesheet" href="/static/css/course_details.css?v=8">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -39,6 +39,7 @@
         <button id="edit-course-btn">Edit Course</button>
         <button id="delete-course-btn" class="danger-btn">Delete Course</button>
         <button id="add-module-btn">+ Add Module</button>
+        <button id="add-assignment-btn">+ Add Assignment</button>
         <button id="student-view-btn">View Student View</button>
     </div>
     <div class="course-card">
@@ -48,8 +49,11 @@
     </div>
 
     <div class="course-card">
-        <h2>Assignments Due</h2>
-    <div id="assignment-list"></div>
+        <div class="course-card-heading">
+            <h2>Assignments Due</h2>
+            <button id="assignment-card-add-btn" class="course-card-action-btn" type="button" style="display: none;">+ Add Assignment</button>
+        </div>
+        <div id="assignment-list"></div>
     </div>
 
 </div>
@@ -121,6 +125,108 @@
         </div>
     </div>
 </div>
+<div id="assignment-modal" style="display: none;">
+    <div class="modal-content assignment-edit-modal">
+        <h2 id="assignment-modal-title">Add Assignment</h2>
+
+        <label for="assignment-title-input">Title</label>
+        <input type="text" id="assignment-title-input" placeholder="Assignment title">
+
+        <label for="assignment-description-input">Description</label>
+        <textarea id="assignment-description-input" rows="3" placeholder="Brief assignment description"></textarea>
+
+        <div class="form-row">
+            <div>
+                <label for="assignment-due-date-input">Due date</label>
+                <input type="date" id="assignment-due-date-input">
+            </div>
+            <div>
+                <label for="assignment-due-time-input">Due time</label>
+                <select id="assignment-due-time-input"></select>
+            </div>
+        </div>
+
+        <label for="assignment-score-input">Max score</label>
+        <input type="number" id="assignment-score-input" min="0" step="0.01" placeholder="100">
+
+        <label for="assignment-brief-file-input">Brief file</label>
+        <input type="file" id="assignment-brief-file-input">
+        <a id="assignment-brief-current-link" class="assignment-brief-link" href="#" target="_blank" rel="noopener" style="display: none;">View current brief</a>
+
+        <label for="assignment-file-type-input">Expected file type</label>
+        <select id="assignment-file-type-input">
+            <option value="">Any file type</option>
+            <option value="pdf">PDF</option>
+            <option value="docx">Word document (.docx)</option>
+            <option value="pptx">PowerPoint (.pptx)</option>
+            <option value="xlsx">Excel spreadsheet (.xlsx)</option>
+            <option value="zip">ZIP archive</option>
+            <option value="image">Image</option>
+        </select>
+
+        <div class="form-row">
+            <label class="checkbox-label">
+                <input type="checkbox" id="assignment-text-input" checked>
+                Text submission
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="assignment-file-input" checked>
+                File submission
+            </label>
+        </div>
+
+        <label for="assignment-file-size-input">Max file size MB</label>
+        <input type="number" id="assignment-file-size-input" min="1" step="1" placeholder="10">
+
+        <label for="assignment-instructions-input">Submission instructions</label>
+        <textarea id="assignment-instructions-input" rows="3" placeholder="What learners should submit"></textarea>
+
+        <p id="assignment-save-status" class="assignment-save-status" role="status" aria-live="polite"></p>
+
+        <div class="modal-actions">
+            <button id="save-assignment-btn">Save</button>
+            <button id="close-assignment-modal-btn" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
+<div id="assignment-details-modal" style="display: none;">
+    <div class="modal-content assignment-details-modal">
+        <h2 id="assignment-details-title">Assignment Details</h2>
+        <p id="assignment-details-description" class="assignment-details-description"></p>
+
+        <dl class="assignment-details-list">
+            <div>
+                <dt>Due</dt>
+                <dd id="assignment-details-due"></dd>
+            </div>
+            <div>
+                <dt>Max score</dt>
+                <dd id="assignment-details-score"></dd>
+            </div>
+            <div>
+                <dt>Expected file type</dt>
+                <dd id="assignment-details-file-type"></dd>
+            </div>
+            <div>
+                <dt>Submission</dt>
+                <dd id="assignment-details-submission"></dd>
+            </div>
+        </dl>
+
+        <div id="assignment-details-brief-wrap" class="assignment-details-brief" style="display: none;">
+            <a id="assignment-details-brief-link" href="#" target="_blank" rel="noopener">Open assignment brief</a>
+        </div>
+
+        <div id="assignment-details-instructions-wrap" class="assignment-details-instructions" style="display: none;">
+            <h3>Instructions</h3>
+            <p id="assignment-details-instructions"></p>
+        </div>
+
+        <div class="modal-actions">
+            <button id="close-assignment-details-btn" type="button">Close</button>
+        </div>
+    </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=14"></script>
+<script src="/static/js/course_details.js?v=19"></script>
 {% endblock content %}

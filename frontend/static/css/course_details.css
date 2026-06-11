@@ -221,7 +221,9 @@
 }
 
 .course-modal,
-#add-module-modal {
+#add-module-modal,
+#assignment-modal,
+#assignment-details-modal {
     position: fixed;
     inset: 0;
     z-index: 1050;
@@ -241,17 +243,22 @@
     box-shadow: 0 22px 70px rgba(15, 23, 42, 0.28);
 }
 
-.course-edit-modal {
+.course-edit-modal,
+.assignment-edit-modal,
+.assignment-details-modal {
     display: grid;
     gap: 12px;
 }
 
-.course-edit-modal h2 {
+.course-edit-modal h2,
+.assignment-edit-modal h2,
+.assignment-details-modal h2 {
     margin: 0 0 4px;
     font-size: 1.35rem;
 }
 
-.course-edit-modal label {
+.course-edit-modal label,
+.assignment-edit-modal label {
     color: #344054;
     font-size: 0.86rem;
     font-weight: 800;
@@ -259,7 +266,10 @@
 
 .course-edit-modal input,
 .course-edit-modal textarea,
-.course-edit-modal select {
+.course-edit-modal select,
+.assignment-edit-modal input,
+.assignment-edit-modal textarea,
+.assignment-edit-modal select {
     width: 100%;
     border: 1px solid #d0d5dd;
     border-radius: 8px;
@@ -267,7 +277,8 @@
     font: inherit;
 }
 
-.course-edit-modal textarea {
+.course-edit-modal textarea,
+.assignment-edit-modal textarea {
     resize: vertical;
 }
 
@@ -316,6 +327,61 @@
     box-shadow:0 2px 8px rgba(0,0,0,0.08);
 }
 
+.course-card-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.course-card-heading h2 {
+    margin: 0;
+}
+
+.course-card-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #2f5bea;
+    color: #ffffff;
+    font-size: 0.86rem;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: center;
+    white-space: normal;
+}
+
+.course-layout > .course-card:nth-of-type(2) .course-card-heading {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.course-layout > .course-card:nth-of-type(2) .course-card-action-btn {
+    width: 100%;
+}
+
+.assignment-empty {
+    margin: 0;
+    color: #667085;
+}
+
+.assignment-brief-link {
+    color: #1d4ed8;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.assignment-brief-link:hover {
+    text-decoration: underline;
+}
+
 .module-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -357,6 +423,97 @@
 .module-action-btn.delete-btn {
     background: #fef3f2;
     color: #b42318;
+}
+
+.assignment-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #e4e7ec;
+    cursor: pointer;
+    transition: background 0.16s ease;
+}
+
+.assignment-row:hover {
+    background: #f8fafc;
+}
+
+.assignment-row:last-child {
+    border-bottom: 0;
+}
+
+.assignment-title {
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.assignment-subtitle {
+    margin-top: 4px;
+    color: #667085;
+    font-size: 0.9rem;
+}
+
+.assignment-save-status {
+    min-height: 20px;
+    margin: 0;
+    color: #475467;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.assignment-details-description {
+    margin: 0;
+    color: #344054;
+    line-height: 1.55;
+}
+
+.assignment-details-list {
+    display: grid;
+    gap: 12px;
+    margin: 10px 0 0;
+}
+
+.assignment-details-list div {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 12px;
+}
+
+.assignment-details-list dt {
+    color: #667085;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.assignment-details-list dd {
+    margin: 0;
+    color: #1f2937;
+}
+
+.assignment-details-brief a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    border-radius: 8px;
+    padding: 0 14px;
+    background: #2f5bea;
+    color: #ffffff;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.assignment-details-instructions h3 {
+    margin: 8px 0 4px;
+    font-size: 1rem;
+}
+
+.assignment-details-instructions p {
+    margin: 0;
+    color: #344054;
+    line-height: 1.5;
 }
 
 .module-arrow {

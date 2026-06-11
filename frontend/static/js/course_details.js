@@ -5,6 +5,9 @@ let actionMessageTimer = null;
 let isInstructor = false;
 let currentEditingModuleId = null;
 let currentModules = [];
+let currentEditingAssignmentId = null;
+let currentAssignments = [];
+let currentAssignmentBriefUrl = null;
 
 function goToModuleContent(moduleId) {
     window.location.href = "/module-content/" + moduleId;
@@ -203,30 +206,88 @@ async function loadAssignments() {
     try {
         const response = await axios.get("/api/assignment/" + courseId);
         const assignments = response.data;
+        currentAssignments = assignments;
         const assignmentList = document.getElementById("assignment-list");
 
         assignmentList.innerHTML = "";
 
         if (!assignments.length) {
-            assignmentList.innerHTML = "<p>No tasks due.</p>";
+            assignmentList.innerHTML = isInstructor
+                ? '<p class="assignment-empty">No assignments yet. Use Add Assignment to create one.</p>'
+                : '<p class="assignment-empty">No tasks due.</p>';
             return;
         }
 
         assignments.forEach((assignment) => {
+            const adminButtons = isInstructor
+                ? `
+                    <div class="module-actions">
+                        <button class="module-action-btn edit-btn" onclick="editAssignment(event, ${assignment.assignment_id})">Edit</button>
+                        <button class="module-action-btn delete-btn" onclick="deleteAssignment(event, ${assignment.assignment_id})">Delete</button>
+                    </div>
+                `
+                : "";
+
             assignmentList.innerHTML += `
-                <div class="assignment-row">
+                <div class="assignment-row" onclick="openAssignmentDetails(${assignment.assignment_id})">
                     <div>
                         <div class="assignment-title">${assignment.title}</div>
-                        <div class="assignment-subtitle">Due: ${assignment.due_date}</div>
+                        <div class="assignment-subtitle">Due: ${formatAssignmentDate(assignment.due_date)}</div>
                     </div>
+                    ${adminButtons}
                 </div>
             `;
         });
     } catch (error) {
+        currentAssignments = [];
         const assignmentList = document.getElementById("assignment-list");
         assignmentList.innerHTML = "<p>No tasks due.</p>";
         console.error("Failed to load assignments:", error);
     }
+}
+
+function openAssignmentDetails(assignmentId) {
+    const assignment = currentAssignments.find((item) => item.assignment_id === assignmentId);
+
+    if (!assignment) {
+        return;
+    }
+
+    document.getElementById("assignment-details-title").textContent = assignment.title || "Assignment Details";
+    document.getElementById("assignment-details-description").textContent =
+        assignment.description || "No description provided.";
+    document.getElementById("assignment-details-due").textContent = formatAssignmentDate(assignment.due_date);
+    document.getElementById("assignment-details-score").textContent = assignment.max_score ?? "Not set";
+    document.getElementById("assignment-details-file-type").textContent =
+        getFileTypeLabel(assignment.expected_file_type);
+    document.getElementById("assignment-details-submission").textContent =
+        getAssignmentSubmissionLabel(assignment);
+
+    const briefWrap = document.getElementById("assignment-details-brief-wrap");
+    const briefLink = document.getElementById("assignment-details-brief-link");
+    if (assignment.assignment_brief_url) {
+        briefLink.href = assignment.assignment_brief_url;
+        briefWrap.style.display = "block";
+    } else {
+        briefLink.href = "#";
+        briefWrap.style.display = "none";
+    }
+
+    const instructionsWrap = document.getElementById("assignment-details-instructions-wrap");
+    const instructions = document.getElementById("assignment-details-instructions");
+    if (assignment.submission_instructions) {
+        instructions.textContent = assignment.submission_instructions;
+        instructionsWrap.style.display = "block";
+    } else {
+        instructions.textContent = "";
+        instructionsWrap.style.display = "none";
+    }
+
+    document.getElementById("assignment-details-modal").style.display = "flex";
+}
+
+function closeAssignmentDetails() {
+    document.getElementById("assignment-details-modal").style.display = "none";
 }
 
 async function loadCourseTitle() {
@@ -251,6 +312,8 @@ async function loadManageAccess() {
             controls.style.display = isInstructor ? "flex" : "none";
         }
 
+        setAssignmentCardAddVisible(isInstructor);
+
         const actionStrip = document.querySelector(".course-action-strip");
         if (actionStrip) {
             actionStrip.style.display = isInstructor ? "none" : "grid";
@@ -261,8 +324,123 @@ async function loadManageAccess() {
         if (actionStrip) {
             actionStrip.style.display = "grid";
         }
+        setAssignmentCardAddVisible(false);
         console.error("Failed to load course management access:", error);
     }
+}
+
+function setAssignmentCardAddVisible(visible) {
+    const assignmentCardAddButton = document.getElementById("assignment-card-add-btn");
+
+    if (assignmentCardAddButton) {
+        assignmentCardAddButton.style.display = visible ? "inline-flex" : "none";
+    }
+}
+
+function populateDueTimeOptions() {
+    const timeSelect = document.getElementById("assignment-due-time-input");
+
+    if (!timeSelect || timeSelect.options.length) {
+        return;
+    }
+
+    for (let hour = 0; hour < 24; hour += 1) {
+        for (const minute of ["00", "30"]) {
+            const value = `${String(hour).padStart(2, "0")}:${minute}`;
+            timeSelect.innerHTML += `<option value="${value}">${value}</option>`;
+        }
+    }
+}
+
+function setAssignmentSaveState(isSaving, message = "") {
+    const saveButton = document.getElementById("save-assignment-btn");
+    const closeButton = document.getElementById("close-assignment-modal-btn");
+    const status = document.getElementById("assignment-save-status");
+
+    if (saveButton) {
+        saveButton.disabled = isSaving;
+        saveButton.textContent = isSaving ? "Saving..." : "Save";
+    }
+
+    if (closeButton) {
+        closeButton.disabled = isSaving;
+    }
+
+    if (status) {
+        status.textContent = message;
+    }
+}
+
+function formatAssignmentDate(value) {
+    if (!value) {
+        return "No due date";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleString("en-SG", {
+        dateStyle: "medium",
+        timeStyle: "short",
+    });
+}
+
+function toDatetimeLocalValue(value) {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value.slice(0, 16);
+    }
+
+    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return localDate.toISOString().slice(0, 16);
+}
+
+function getDateInputValue(value) {
+    return toDatetimeLocalValue(value).slice(0, 10);
+}
+
+function getTimeInputValue(value) {
+    const localValue = toDatetimeLocalValue(value);
+    return localValue.length >= 16 ? localValue.slice(11, 16) : "00:00";
+}
+
+function toApiDateTime(value) {
+    return value ? `${value}:00` : null;
+}
+
+function getAssignmentSubmissionLabel(assignment) {
+    const methods = [];
+
+    if (assignment.allow_text_submission ?? true) {
+        methods.push("Text");
+    }
+
+    if (assignment.allow_file_submission ?? true) {
+        methods.push("File");
+    }
+
+    return methods.length ? methods.join(" and ") : "No submission method set";
+}
+
+function getFileTypeLabel(value) {
+    const labels = {
+        pdf: "PDF",
+        docx: "Word document (.docx)",
+        pptx: "PowerPoint (.pptx)",
+        xlsx: "Excel spreadsheet (.xlsx)",
+        zip: "ZIP archive",
+        image: "Image",
+    };
+
+    return labels[value] || "Any file type";
 }
 
 function editCourse(event, courseId) {
@@ -316,6 +494,20 @@ async function uploadCourseImage(file) {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("folder", "lms/courses");
+
+    const response = await axios.post("/api/cloudinary/upload", formData, {
+        headers: {
+            "Content-Type": "multipart/form-data",
+        },
+    });
+
+    return response.data.secure_url;
+}
+
+async function uploadAssignmentBrief(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", "lms/assignments");
 
     const response = await axios.post("/api/cloudinary/upload", formData, {
         headers: {
@@ -412,6 +604,136 @@ function closeModuleModal() {
     document.getElementById("add-module-modal").style.display = "none";
 }
 
+function openAssignmentModal(assignment = null) {
+    populateDueTimeOptions();
+    setAssignmentSaveState(false, "");
+    currentEditingAssignmentId = assignment?.assignment_id || null;
+    currentAssignmentBriefUrl = assignment?.assignment_brief_url || null;
+    document.getElementById("assignment-modal-title").textContent = assignment ? "Edit Assignment" : "Add Assignment";
+    document.getElementById("assignment-title-input").value = assignment?.title || "";
+    document.getElementById("assignment-description-input").value = assignment?.description || "";
+    document.getElementById("assignment-due-date-input").value = getDateInputValue(assignment?.due_date);
+    document.getElementById("assignment-due-time-input").value = getTimeInputValue(assignment?.due_date);
+    document.getElementById("assignment-score-input").value = assignment?.max_score ?? "";
+    document.getElementById("assignment-brief-file-input").value = "";
+    const briefLink = document.getElementById("assignment-brief-current-link");
+    if (briefLink) {
+        briefLink.href = currentAssignmentBriefUrl || "#";
+        briefLink.style.display = currentAssignmentBriefUrl ? "inline-flex" : "none";
+    }
+    document.getElementById("assignment-file-type-input").value = assignment?.expected_file_type || "";
+    document.getElementById("assignment-text-input").checked = assignment?.allow_text_submission ?? true;
+    document.getElementById("assignment-file-input").checked = assignment?.allow_file_submission ?? true;
+    document.getElementById("assignment-file-size-input").value = assignment?.max_file_size_mb ?? "";
+    document.getElementById("assignment-instructions-input").value = assignment?.submission_instructions || "";
+    document.getElementById("assignment-modal").style.display = "flex";
+}
+
+function closeAssignmentModal() {
+    currentEditingAssignmentId = null;
+    currentAssignmentBriefUrl = null;
+    document.getElementById("assignment-modal").style.display = "none";
+}
+
+function editAssignment(event, assignmentId) {
+    event.stopPropagation();
+    const assignment = currentAssignments.find((item) => item.assignment_id === assignmentId);
+
+    if (!assignment) {
+        return;
+    }
+
+    openAssignmentModal(assignment);
+}
+
+async function deleteAssignment(event, assignmentId) {
+    event.stopPropagation();
+
+    if (!confirm("Delete this assignment?")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/assignment/${assignmentId}`);
+        await loadAssignments();
+        showActionMessage("Assignment deleted.", "success");
+    } catch (error) {
+        const message = error.response?.data || "Failed to delete assignment.";
+        showActionMessage(message, "error");
+    }
+}
+
+async function saveAssignment() {
+    const title = document.getElementById("assignment-title-input").value.trim();
+    const description = document.getElementById("assignment-description-input").value.trim();
+    const dueDate = document.getElementById("assignment-due-date-input").value;
+    const dueTime = document.getElementById("assignment-due-time-input").value;
+    const maxScore = document.getElementById("assignment-score-input").value.trim();
+    const briefFile = document.getElementById("assignment-brief-file-input").files[0];
+    const expectedFileType = document.getElementById("assignment-file-type-input").value;
+    const maxFileSize = document.getElementById("assignment-file-size-input").value.trim();
+    const submissionInstructions = document.getElementById("assignment-instructions-input").value.trim();
+
+    if (!title) {
+        alert("Please enter an assignment title");
+        return;
+    }
+
+    if (!description) {
+        alert("Please enter an assignment description");
+        return;
+    }
+
+    if (!dueDate) {
+        alert("Please choose a due date");
+        return;
+    }
+
+    if (maxScore === "" || Number(maxScore) < 0) {
+        alert("Please enter a max score of 0 or higher");
+        return;
+    }
+
+    try {
+        setAssignmentSaveState(true, briefFile ? "Uploading assignment brief..." : "Saving assignment...");
+
+        let briefUrl = currentAssignmentBriefUrl;
+
+        if (briefFile) {
+            briefUrl = await uploadAssignmentBrief(briefFile);
+            setAssignmentSaveState(true, "Brief uploaded. Saving assignment...");
+        }
+
+        const payload = {
+            course_id: Number(courseId),
+            title,
+            description,
+            due_date: toApiDateTime(`${dueDate}T${dueTime}`),
+            max_score: Number(maxScore),
+            assignment_brief_url: briefUrl || null,
+            expected_file_type: expectedFileType || null,
+            allow_text_submission: document.getElementById("assignment-text-input").checked,
+            allow_file_submission: document.getElementById("assignment-file-input").checked,
+            max_file_size_mb: maxFileSize ? Number(maxFileSize) : null,
+            submission_instructions: submissionInstructions || null,
+        };
+
+        if (currentEditingAssignmentId) {
+            await axios.put(`/api/assignment/${currentEditingAssignmentId}`, payload);
+        } else {
+            await axios.post("/api/assignment", payload);
+        }
+
+        closeAssignmentModal();
+        await loadAssignments();
+        showActionMessage("Assignment saved.", "success");
+    } catch (error) {
+        const message = error.response?.data || "Failed to save assignment.";
+        setAssignmentSaveState(false, "");
+        showActionMessage(message, "error");
+    }
+}
+
 async function saveModule() {
     const title = document.getElementById("module-title-input").value.trim();
     const position = Number(document.getElementById("module-position-input").value || 0);
@@ -450,7 +772,7 @@ async function saveModule() {
     }
 
     closeModuleModal();
-    loadModules();
+    await loadModules();
 }
 
 function bindInstructorControls() {
@@ -468,11 +790,21 @@ function bindInstructorControls() {
     document.getElementById("student-view-btn")?.addEventListener("click", () => {
         document.getElementById("instructor-controls").style.display = "none";
         isInstructor = false;
+        setAssignmentCardAddVisible(false);
         loadModules();
+        loadAssignments();
     });
 
     document.getElementById("add-module-btn")?.addEventListener("click", () => {
         openModuleModal();
+    });
+
+    document.getElementById("add-assignment-btn")?.addEventListener("click", () => {
+        openAssignmentModal();
+    });
+
+    document.getElementById("assignment-card-add-btn")?.addEventListener("click", () => {
+        openAssignmentModal();
     });
 
     document.getElementById("close-module-modal-btn")?.addEventListener("click", () => {
@@ -480,6 +812,9 @@ function bindInstructorControls() {
     });
 
     document.getElementById("save-module-btn")?.addEventListener("click", saveModule);
+    document.getElementById("save-assignment-btn")?.addEventListener("click", saveAssignment);
+    document.getElementById("close-assignment-modal-btn")?.addEventListener("click", closeAssignmentModal);
+    document.getElementById("close-assignment-details-btn")?.addEventListener("click", closeAssignmentDetails);
 }
 
 async function init() {

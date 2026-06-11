@@ -112,7 +112,7 @@ pub async fn create_checkout_session(
     let stripe_client = Client::new(stripe_secret_key);
     let success_url = format!("{}/", frontend_url);
     let cancel_url = format!(
-        "{}/course/{}?payment=cancelled&payment_id={}",
+        "{}/courses?payment=cancelled&course_id={}&payment_id={}",
         frontend_url, course.course_id, inserted_payment.payment_id
     );
 

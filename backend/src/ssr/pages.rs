@@ -47,8 +47,52 @@ async fn downloads(session: Session) -> impl Responder {
 }
 
 #[get("/course/{course_id}")]
-async fn course_details_page(session: Session) -> impl Responder {
-    render_page("course_details.html", &session)
+async fn course_details_page(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err));
+        }
+    };
+
+    let course_id = path.into_inner();
+    let course_exists = match course_entity::Entity::find_by_id(course_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err));
+        }
+    };
+
+    if !course_exists {
+        return HttpResponse::NotFound().body("Course not found");
+    }
+
+    match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
+        Ok(true) => return render_page("course_details.html", &session),
+        Ok(false) => {}
+        Err(response) => return response,
+    }
+
+    match is_enrolled(db.get_ref(), user_id, course_id).await {
+        Ok(true) => render_page("course_details.html", &session),
+        Ok(false) => HttpResponse::Forbidden().body("You must be enrolled to view course details"),
+        Err(response) => response,
+    }
 }
 
 #[get("/pdf-viewer")]
