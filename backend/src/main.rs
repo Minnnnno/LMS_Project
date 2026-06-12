@@ -8,8 +8,9 @@ mod ssr;
 use db::connection::connect_db;
 use actix_files::Files;
 use actix_session::{SessionMiddleware, storage::CookieSessionStore};
-use actix_web::{cookie::Key, web, App, HttpServer};
+use actix_web::{cookie::Key, middleware::from_fn, web, App, HttpServer};
 use actix_cors::Cors;
+use services::remember_me_service::remember_me_middleware;
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::from_path(format!("{}/.env", env!("CARGO_MANIFEST_DIR")))
@@ -24,6 +25,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(actix_web::web::Data::new(db.clone()))
             .wrap(Cors::permissive())
+            .wrap(from_fn(remember_me_middleware))
             .wrap(
                 SessionMiddleware::builder(
                     CookieSessionStore::default(),

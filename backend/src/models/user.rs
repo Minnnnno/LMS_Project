@@ -26,4 +26,6 @@ pub struct LoginForm {
 
     #[validate(length(min = 1, message = "Password is required."))]
     pub password: String,
+
+    pub remember_me: Option<String>,
 }

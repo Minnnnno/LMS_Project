@@ -15,6 +15,7 @@ pub mod quiz_attempt_service;
 pub mod quiz_option_service;
 pub mod quiz_question_service;
 pub mod quiz_service;
+pub mod remember_me_service;
 pub mod student_service;
 pub mod user_service;
 pub mod admin_service;

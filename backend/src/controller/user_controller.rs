@@ -2,7 +2,7 @@ use crate::entity::{roles, user_roles, users};
 use crate::models::user::{LoginForm, RegisterForm};
 use actix_session::Session;
 use actix_web::http::header;
-use actix_web::{HttpResponse, Responder, get, post, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     QueryFilter, Set, TransactionTrait,
@@ -12,6 +12,10 @@ use serde::Deserialize;
 use crate::ssr::pages::{build_page_context, render_page};
 use crate::services::email_verification_service::{
     create_email_verification_token, send_verification_email, verify_email_token, VerifyEmailError,
+};
+use crate::services::remember_me_service::{
+    create_remember_me_cookie, forget_remember_me_cookie, revoke_remember_me_token,
+    REMEMBER_ME_COOKIE,
 };
 use argon2::{
     Argon2,
@@ -114,6 +118,19 @@ fn render_login_error(error_message: &str, email: &str) -> HttpResponse {
     HttpResponse::BadRequest()
         .content_type("text/html")
         .body(html)
+}
+
+fn request_user_agent(req: &HttpRequest) -> Option<String> {
+    req.headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string())
+}
+
+fn request_ip_address(req: &HttpRequest) -> Option<String> {
+    req.connection_info()
+        .realip_remote_addr()
+        .map(|value| value.to_string())
 }
 
 #[get("/login")]
@@ -319,6 +336,7 @@ pub async fn register_submit(
 #[post("/login")]
 pub async fn login_submit(
     db: web::Data<DatabaseConnection>,
+    req: HttpRequest,
     session: Session,
     form: web::Form<LoginForm>,
 ) -> impl Responder {
@@ -397,13 +415,40 @@ pub async fn login_submit(
 
     println!("Login successful. Stored user_id: {}", user.user_id);
 
-    if is_admin_account {
+    let remember_cookie = if form.remember_me.is_some() {
+        match create_remember_me_cookie(
+            db.get_ref(),
+            user.user_id,
+            request_user_agent(&req),
+            request_ip_address(&req),
+        )
+        .await
+        {
+            Ok(cookie) => Some(cookie),
+            Err(err) => {
+                println!("Remember-me token create error: {:?}", err);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let mut response = if is_admin_account {
         HttpResponse::Found()
             .insert_header((header::LOCATION, "/admin/dashboard"))
             .finish()
     } else {
         redirect_home()
+    };
+
+    if let Some(cookie) = remember_cookie {
+        if let Err(err) = response.add_cookie(&cookie) {
+            println!("Remember-me cookie add error: {:?}", err);
+        }
     }
+
+    response
 }
 
 #[get("/auth/google")]
@@ -852,12 +897,29 @@ pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> imp
 }
 
 #[post("/logout")]
-pub async fn logout(session: Session) -> impl Responder {
+pub async fn logout(
+    db: web::Data<DatabaseConnection>,
+    req: HttpRequest,
+    session: Session,
+) -> impl Responder {
+    if let Some(cookie) = req.cookie(REMEMBER_ME_COOKIE) {
+        if let Err(err) = revoke_remember_me_token(db.get_ref(), cookie.value()).await {
+            println!("Remember-me token revoke error: {:?}", err);
+        }
+    }
+
     session.purge();
 
-    HttpResponse::Found()
+    let mut response = HttpResponse::Found()
         .insert_header((header::LOCATION, "/login"))
-        .finish()
+        .finish();
+
+    let forget_cookie = forget_remember_me_cookie();
+    if let Err(err) = response.add_cookie(&forget_cookie) {
+        println!("Remember-me cookie remove error: {:?}", err);
+    }
+
+    response
 }
 
 #[post("/profile/lecturer-signup")]
