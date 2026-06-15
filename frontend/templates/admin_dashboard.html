@@ -3,24 +3,24 @@
 {% block title %}Admin Dashboard | LMS{% endblock title %}
 
 {% block content %}
-<section class="dashboard-header flex-column flex-lg-row align-items-lg-end justify-content-between gap-3">
+<section id="admin-overview" class="dashboard-header flex-column flex-lg-row align-items-lg-end justify-content-between gap-3">
     <div>
         <h1 class="page-heading">Admin Dashboard</h1>
         <p class="page-subtitle mb-0">Create records, review what is in the database, and manage the LMS from one place.</p>
     </div>
-    <a class="btn btn-dark rounded-3 px-4" href="/">User Dashboard</a>
+    <a class="btn btn-dark rounded-3 px-4" href="#create-organisation">Create record</a>
 </section>
 
 <section class="container-fluid px-0 mt-4">
     <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
         <div>
-            <h2 class="section-title mb-1">Create Records</h2>
+            <h2 class="section-title mb-1" data-admin-create-heading>Create Records</h2>
             <p class="page-subtitle mb-0">Use these forms to insert new rows into the database.</p>
         </div>
     </div>
 
     <div class="row g-4">
-        <div class="col-12 col-xl-6">
+        <div id="create-organisation" class="col-12 col-xl-6 admin-anchor" data-admin-domain="organisations">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -39,7 +39,7 @@
             </div>
         </div>
 
-        <div class="col-12 col-xl-6">
+        <div id="create-user" class="col-12 col-xl-6 admin-anchor" data-admin-domain="users">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -68,13 +68,13 @@
                             </div>
                             <div class="col-12 col-md-3">
                                 <label class="form-label" for="user-org-id">Organisation</label>
-                                <select id="user-org-id" name="org_id" class="form-select" data-admin-options="organisations">
+                                <select id="user-org-id" name="org_id" class="form-select" data-admin-options="organisations" data-admin-search="Search organisations...">
                                     <option value="">No organisation</option>
                                 </select>
                             </div>
                             <div class="col-12 col-md-3">
                                 <label class="form-label" for="user-role-id">Role</label>
-                                <select id="user-role-id" name="role_id" class="form-select" data-admin-options="roles">
+                                <select id="user-role-id" name="role_id" class="form-select" data-admin-options="roles" data-admin-search="Search roles...">
                                     <option value="">No role</option>
                                 </select>
                             </div>
@@ -86,7 +86,7 @@
             </div>
         </div>
 
-        <div class="col-12 col-xl-6">
+        <div id="create-course" class="col-12 col-xl-6 admin-anchor" data-admin-domain="courses">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -103,13 +103,13 @@
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label" for="course-org-id">Organisation</label>
-                                <select id="course-org-id" name="org_id" class="form-select" data-admin-options="organisations">
+                                <select id="course-org-id" name="org_id" class="form-select" data-admin-options="organisations" data-admin-search="Search organisations...">
                                     <option value="">No organisation</option>
                                 </select>
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label" for="course-instructor-id">Instructor</label>
-                                <select id="course-instructor-id" name="instructor_id" class="form-select" data-admin-options="users">
+                                <select id="course-instructor-id" name="instructor_id" class="form-select" data-admin-options="users" data-admin-search="Search instructors...">
                                     <option value="">No instructor</option>
                                 </select>
                             </div>
@@ -121,13 +121,15 @@
                                     <option value="archived">Archived</option>
                                 </select>
                             </div>
-                            <div class="col-12 col-md-4">
-                                <label class="form-label" for="course-price">Price cents</label>
-                                <input id="course-price" name="price_cents" type="number" class="form-control" placeholder="0">
+                            <div class="col-12 col-md-4" data-course-paid-field hidden>
+                                <label class="form-label" for="course-price">Price (dollars)</label>
+                                <input id="course-price" name="price" type="number" min="0" step="0.01" class="form-control" placeholder="0.00">
                             </div>
-                            <div class="col-12 col-md-4">
+                            <div class="col-12 col-md-4" data-course-paid-field hidden>
                                 <label class="form-label" for="course-currency">Currency</label>
-                                <input id="course-currency" name="currency" class="form-control" value="sgd">
+                                <select id="course-currency" name="currency" class="form-select">
+                                    <option value="SGD">SGD - Singapore Dollar</option>
+                                </select>
                             </div>
                             <div class="col-12 col-md-4 d-flex align-items-end">
                                 <div class="form-check mb-1">
@@ -139,9 +141,14 @@
                                 <label class="form-label" for="course-description">Description</label>
                                 <textarea id="course-description" name="description" class="form-control" rows="3"></textarea>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label" for="course-image">Background image URL</label>
-                                <input id="course-image" name="background_image_url" class="form-control" placeholder="https://...">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="course-image-url">Background image URL</label>
+                                <input id="course-image-url" name="background_image_url" class="form-control" placeholder="https://...">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="course-image-file">Upload background image</label>
+                                <input id="course-image-file" name="background_image_file" type="file" accept="image/*" class="form-control">
+                                <div class="form-text">An uploaded image overrides the URL.</div>
                             </div>
                         </div>
                         <div class="form-text mt-3">Status defaults to draft if you leave it unchanged.</div>
@@ -151,7 +158,7 @@
             </div>
         </div>
 
-        <div class="col-12 col-xl-6">
+        <div id="create-enrollment" class="col-12 col-xl-6 admin-anchor" data-admin-domain="enrollments">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -164,13 +171,13 @@
                         <div class="row g-3">
                             <div class="col-12 col-md-6">
                                 <label class="form-label" for="enroll-user-id">User</label>
-                                <select id="enroll-user-id" name="user_id" class="form-select" data-admin-options="users" required>
+                                <select id="enroll-user-id" name="user_id" class="form-select" data-admin-options="users" data-admin-search="Search users..." required>
                                     <option value="">Select a user</option>
                                 </select>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label" for="enroll-course-id">Course</label>
-                                <select id="enroll-course-id" name="course_id" class="form-select" data-admin-options="courses" required>
+                                <select id="enroll-course-id" name="course_id" class="form-select" data-admin-options="courses" data-admin-search="Search courses..." required>
                                     <option value="">Select a course</option>
                                 </select>
                             </div>
@@ -182,41 +189,6 @@
             </div>
         </div>
 
-        <div class="col-12 col-xl-6">
-            <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
-                <div class="card-body p-4">
-                    <details class="admin-details">
-                        <summary class="section-title mb-0">Advanced JSON Console</summary>
-                        <p class="page-subtitle mt-2 mb-3">Use this only for endpoints that don’t have a dedicated form.</p>
-                        <form class="admin-json-console admin-action-form" data-advanced-console="true">
-                            <div class="row g-3">
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label" for="console-method">Method</label>
-                                    <select id="console-method" name="method" class="form-select">
-                                        <option>POST</option>
-                                        <option>PUT</option>
-                                        <option>DELETE</option>
-                                    </select>
-                                </div>
-                                <div class="col-12 col-md-8">
-                                    <label class="form-label" for="console-endpoint">Endpoint</label>
-                                    <input id="console-endpoint" name="endpoint" class="form-control" value="/api/modules" placeholder="/api/modules">
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label" for="console-body">JSON body</label>
-                                    <textarea id="console-body" name="body" class="form-control font-monospace" rows="12">{
-  "course_id": 1,
-  "title": "New module",
-  "position": 1
-}</textarea>
-                                </div>
-                            </div>
-                            <button class="btn btn-dark rounded-3 mt-3" type="submit">Send request</button>
-                        </form>
-                    </details>
-                </div>
-            </div>
-        </div>
     </div>
 </section>
 
@@ -239,13 +211,13 @@
 <section class="container-fluid px-0 mt-4">
     <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
         <div>
-            <h2 class="section-title mb-1">Existing Records</h2>
+            <h2 class="section-title mb-1" data-admin-manage-heading>Existing Records</h2>
             <p class="page-subtitle mb-0">Quickly scan what is already in the database.</p>
         </div>
     </div>
 
     <div class="row g-4">
-        <div class="col-12">
+        <div id="manage-organisations" class="col-12 admin-anchor" data-admin-domain="organisations">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
                     <div class="table-responsive admin-table-wrap">
@@ -266,7 +238,7 @@
             </div>
         </div>
 
-        <div class="col-12">
+        <div id="manage-users" class="col-12 admin-anchor" data-admin-domain="users">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
                     <div class="table-responsive admin-table-wrap">
@@ -290,7 +262,7 @@
             </div>
         </div>
 
-        <div class="col-12">
+        <div id="manage-courses" class="col-12 admin-anchor" data-admin-domain="courses">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
                     <div class="table-responsive admin-table-wrap">
@@ -302,12 +274,13 @@
                                     <th>Organisation</th>
                                     <th>Instructor</th>
                                     <th>Status</th>
+                                    <th>Price</th>
                                     <th>Paid</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="courses-table-body">
-                                <tr><td colspan="7" class="text-secondary">Loading courses...</td></tr>
+                                <tr><td colspan="8" class="text-secondary">Loading courses...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -315,7 +288,7 @@
             </div>
         </div>
 
-        <div class="col-12">
+        <div id="manage-enrollments" class="col-12 admin-anchor" data-admin-domain="enrollments">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
                     <div class="table-responsive admin-table-wrap">
@@ -345,6 +318,39 @@ const organisationsTableBody = document.getElementById("organisations-table-body
 const usersTableBody = document.getElementById("users-table-body");
 const coursesTableBody = document.getElementById("courses-table-body");
 const enrollmentsTableBody = document.getElementById("enrollments-table-body");
+
+function applyAdminPageScope() {
+    const domain = window.location.pathname.split("/").pop();
+    const labels = {
+        organisations: "Organisations",
+        users: "Users",
+        courses: "Courses",
+        enrollments: "Enrollments",
+    };
+    const singularLabels = {
+        organisations: "Organisation",
+        users: "User",
+        courses: "Course",
+        enrollments: "Enrollment",
+    };
+
+    if (!labels[domain]) {
+        return;
+    }
+
+    document.querySelectorAll("[data-admin-domain]").forEach((section) => {
+        section.hidden = section.dataset.adminDomain !== domain;
+    });
+
+    document.querySelector(".page-heading").textContent = `${labels[domain]} Admin`;
+    document.querySelector(".dashboard-header .page-subtitle").textContent =
+        `Create and manage ${labels[domain].toLowerCase()} from this page.`;
+    document.querySelector("[data-admin-create-heading]").textContent = `Create ${singularLabels[domain]}`;
+    document.querySelector("[data-admin-manage-heading]").textContent = `Manage ${labels[domain]}`;
+    document.querySelector(".dashboard-header .btn").href = `#create-${singularLabels[domain].toLowerCase()}`;
+    document.querySelector(".dashboard-header .btn").textContent = `Create ${singularLabels[domain].toLowerCase()}`;
+    document.title = `${labels[domain]} Admin | LMS`;
+}
 
 function setAdminMessage(message, variant = "light") {
     if (!adminActionResult) {
@@ -382,6 +388,28 @@ function numberField(formData, key) {
     return Number.isFinite(parsedValue) ? parsedValue : null;
 }
 
+function priceInCents(formData, key) {
+    const price = numberField(formData, key);
+
+    if (price === null) {
+        return null;
+    }
+
+    if (price < 0) {
+        throw new Error("Price cannot be negative.");
+    }
+
+    return Math.round((price + Number.EPSILON) * 100);
+}
+
+function updateAdminCoursePaidFields(form) {
+    const isPaid = form.querySelector("[name='is_paid']")?.checked ?? false;
+
+    form.querySelectorAll("[data-course-paid-field]").forEach((field) => {
+        field.hidden = !isPaid;
+    });
+}
+
 async function submitJson(endpoint, method, payload) {
     const response = await fetch(endpoint, {
         method,
@@ -408,6 +436,30 @@ async function submitJson(endpoint, method, payload) {
     }
 
     return message;
+}
+
+async function uploadCourseImage(file) {
+    const uploadData = new FormData();
+    uploadData.append("file", file);
+    uploadData.append("folder", "lms/courses");
+
+    const response = await fetch("/api/cloudinary/upload", {
+        method: "POST",
+        credentials: "same-origin",
+        body: uploadData,
+    });
+
+    if (!response.ok) {
+        throw new Error(await response.text() || "Image upload failed.");
+    }
+
+    const result = await response.json();
+
+    if (!result.secure_url) {
+        throw new Error("Image upload did not return a URL.");
+    }
+
+    return result.secure_url;
 }
 
 function escapeHtml(value) {
@@ -451,6 +503,23 @@ function renderYesNo(value) {
     return value ? '<span class="badge text-bg-success">Yes</span>' : '<span class="badge text-bg-secondary">No</span>';
 }
 
+function formatPrice(priceCents, currency) {
+    const cents = Number(priceCents);
+
+    if (!Number.isFinite(cents)) {
+        return "-";
+    }
+
+    try {
+        return new Intl.NumberFormat("en-SG", {
+            style: "currency",
+            currency: currency || "SGD",
+        }).format(cents / 100);
+    } catch (error) {
+        return `${currency || "SGD"} ${(cents / 100).toFixed(2)}`;
+    }
+}
+
 async function loadTable(url) {
     const response = await fetch(url, { credentials: "same-origin" });
     if (!response.ok) {
@@ -471,6 +540,119 @@ function formatRoleName(roleName) {
     return labels[roleName] || roleName || "Unknown role";
 }
 
+function closeAdminComboboxes(except = null) {
+    document.querySelectorAll(".admin-combobox.is-open").forEach((combobox) => {
+        if (combobox !== except) {
+            combobox.classList.remove("is-open");
+        }
+    });
+}
+
+function renderAdminComboboxOptions(select, query = "") {
+    const menu = select.closest(".admin-combobox")?.querySelector(".admin-combobox-menu");
+
+    if (!menu) {
+        return;
+    }
+
+    const normalizedQuery = query.trim().toLowerCase();
+    const options = [...select.options].filter((option, index) => (
+        (index === 0 && normalizedQuery === "")
+        || (index > 0 && (normalizedQuery === "" || option.textContent.toLowerCase().includes(normalizedQuery)))
+    ));
+
+    menu.innerHTML = options.length
+        ? options.map((option) => `
+            <button
+                type="button"
+                class="admin-combobox-option${option.value === select.value ? " is-selected" : ""}"
+                data-combobox-value="${escapeHtml(option.value)}"
+            >${escapeHtml(option.textContent)}</button>
+        `).join("")
+        : '<div class="admin-combobox-empty">No matching options</div>';
+}
+
+function syncAdminCombobox(select) {
+    const input = select.closest(".admin-combobox")?.querySelector(".admin-combobox-input");
+    const selectedOption = select.options[select.selectedIndex];
+
+    if (input) {
+        input.value = selectedOption?.textContent || "";
+    }
+
+    renderAdminComboboxOptions(select);
+}
+
+function initializeAdminComboboxes() {
+    document.querySelectorAll("select[data-admin-search]").forEach((select) => {
+        if (select.closest(".admin-combobox")) {
+            return;
+        }
+
+        const combobox = document.createElement("div");
+        combobox.className = "admin-combobox";
+        const input = document.createElement("input");
+        input.type = "search";
+        input.className = "form-control admin-combobox-input";
+        input.placeholder = select.dataset.adminSearch;
+        input.setAttribute("aria-label", select.dataset.adminSearch);
+        input.setAttribute("autocomplete", "off");
+        const menu = document.createElement("div");
+        menu.className = "admin-combobox-menu";
+
+        select.before(combobox);
+        combobox.append(input, menu, select);
+        select.classList.add("admin-combobox-select");
+
+        input.addEventListener("focus", () => {
+            closeAdminComboboxes(combobox);
+            combobox.classList.add("is-open");
+            input.select();
+            renderAdminComboboxOptions(select);
+        });
+        input.addEventListener("input", () => {
+            select.value = "";
+            combobox.classList.add("is-open");
+            renderAdminComboboxOptions(select, input.value);
+        });
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                combobox.classList.remove("is-open");
+                syncAdminCombobox(select);
+            }
+
+            if (event.key === "Enter") {
+                const firstOption = menu.querySelector("[data-combobox-value]");
+
+                if (firstOption) {
+                    event.preventDefault();
+                    firstOption.click();
+                }
+            }
+        });
+        menu.addEventListener("click", (event) => {
+            const option = event.target.closest("[data-combobox-value]");
+
+            if (!option) {
+                return;
+            }
+
+            select.value = option.dataset.comboboxValue;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            syncAdminCombobox(select);
+            combobox.classList.remove("is-open");
+        });
+
+        syncAdminCombobox(select);
+    });
+}
+
+function resetAdminComboboxes(form) {
+    form.querySelectorAll("select[data-admin-search]").forEach((select) => {
+        syncAdminCombobox(select);
+    });
+}
+
 function populateSelects(type, records, valueKey, labelForRecord) {
     document.querySelectorAll(`[data-admin-options="${type}"]`).forEach((select) => {
         const currentValue = select.value;
@@ -486,6 +668,8 @@ function populateSelects(type, records, valueKey, labelForRecord) {
         if ([...select.options].some((option) => option.value === currentValue)) {
             select.value = currentValue;
         }
+
+        syncAdminCombobox(select);
     });
 }
 
@@ -552,11 +736,12 @@ async function loadAdminTables() {
                 escapeHtml(course.org_id ? organisationNames.get(course.org_id) || `Organisation #${course.org_id}` : "-"),
                 escapeHtml(course.instructor_id ? userNames.get(course.instructor_id) || `User #${course.instructor_id}` : "-"),
                 escapeHtml(course.status ?? "-"),
+                escapeHtml(formatPrice(course.price_cents, course.currency)),
                 renderYesNo(course.is_paid),
                 `<div class="text-end">${deleteButton(`/admin/courses/${course.course_id}`, `course #${course.course_id}`)}</div>`,
             ])).join(""),
             "No courses found.",
-            7,
+            8,
         );
 
         renderTableBody(
@@ -579,7 +764,7 @@ async function loadAdminTables() {
             usersTableBody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(message)}</td></tr>`;
         }
         if (coursesTableBody) {
-            coursesTableBody.innerHTML = `<tr><td colspan="7" class="text-danger">${escapeHtml(message)}</td></tr>`;
+            coursesTableBody.innerHTML = `<tr><td colspan="8" class="text-danger">${escapeHtml(message)}</td></tr>`;
         }
         if (enrollmentsTableBody) {
             enrollmentsTableBody.innerHTML = `<tr><td colspan="4" class="text-danger">${escapeHtml(message)}</td></tr>`;
@@ -608,10 +793,7 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
         try {
             let payload = {};
 
-            if (form.dataset.advancedConsole === "true") {
-                const bodyField = form.querySelector("[name='body']");
-                payload = bodyField?.value ? JSON.parse(bodyField.value) : {};
-            } else if (endpoint === "/admin/organisations") {
+            if (endpoint === "/admin/organisations") {
                 payload = { org_name: fieldValue(formData, "org_name") };
             } else if (endpoint === "/admin/users") {
                 payload = {
@@ -623,16 +805,25 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
                     role_id: numberField(formData, "role_id"),
                 };
             } else if (endpoint === "/admin/courses") {
+                const isPaid = form.querySelector("[name='is_paid']")?.checked ?? false;
+                const imageFile = form.querySelector("[name='background_image_file']")?.files[0];
+                let backgroundImageUrl = fieldValue(formData, "background_image_url");
+
+                if (imageFile) {
+                    setAdminMessage("Uploading course background image...", "info");
+                    backgroundImageUrl = await uploadCourseImage(imageFile);
+                }
+
                 payload = {
                     name: fieldValue(formData, "name"),
                     org_id: numberField(formData, "org_id"),
                     instructor_id: numberField(formData, "instructor_id"),
                     status: fieldValue(formData, "status"),
-                    price_cents: numberField(formData, "price_cents"),
-                    currency: fieldValue(formData, "currency"),
-                    is_paid: form.querySelector("[name='is_paid']")?.checked ?? false,
+                    price_cents: isPaid ? priceInCents(formData, "price") : 0,
+                    currency: isPaid ? fieldValue(formData, "currency") : null,
+                    is_paid: isPaid,
                     description: fieldValue(formData, "description"),
-                    background_image_url: fieldValue(formData, "background_image_url"),
+                    background_image_url: backgroundImageUrl,
                 };
             } else if (endpoint === "/admin/enrollments") {
                 payload = {
@@ -644,11 +835,28 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
             const message = await submitJson(endpoint, method, payload);
             setAdminMessage(message, "success");
             form.reset();
+            resetAdminComboboxes(form);
+            updateAdminCoursePaidFields(form);
             scheduleTableRefresh();
         } catch (error) {
             setAdminMessage(error.message || "Request failed", "danger");
         }
     });
+});
+
+document.querySelectorAll(".admin-action-form[data-endpoint='/admin/courses']").forEach((form) => {
+    form.querySelector("[name='is_paid']")?.addEventListener("change", () => {
+        updateAdminCoursePaidFields(form);
+    });
+    updateAdminCoursePaidFields(form);
+});
+
+initializeAdminComboboxes();
+
+document.addEventListener("click", (event) => {
+    if (!event.target.closest(".admin-combobox")) {
+        closeAdminComboboxes();
+    }
 });
 
 document.addEventListener("click", async (event) => {
@@ -678,6 +886,7 @@ document.addEventListener("click", async (event) => {
     }
 });
 
+applyAdminPageScope();
 loadAdminTables();
 </script>
 {% endblock content %}

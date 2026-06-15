@@ -18,7 +18,7 @@
     <!-- Mobile top navbar -->
     <nav class="navbar navbar-light bg-white border-bottom sticky-top d-lg-none">
         <div class="container-fluid px-3">
-            <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="/">
+            <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="{% if role_names and "LMS Admin" in role_names %}/admin/dashboard{% else %}/{% endif %}">
                 <span class="brand-mark"><i class="bi bi-mortarboard-fill"></i></span>
                 <span>SkillUp</span>
             </a>
@@ -53,18 +53,22 @@
             </form>
 
             <nav class="nav nav-pills flex-column gap-1 sidebar-nav">
-                {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+                {% if role_names and "LMS Admin" in role_names %}
                 <a href="/admin/dashboard" class="nav-link"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+                <a href="/admin/manage/organisations" class="nav-link"><i class="bi bi-buildings"></i><span>Organisations</span></a>
+                <a href="/admin/manage/users" class="nav-link"><i class="bi bi-people"></i><span>Users</span></a>
+                <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
+                <a href="/admin/manage/enrollments" class="nav-link"><i class="bi bi-card-checklist"></i><span>Enrollments</span></a>
                 {% else %}
                 <a href="/" class="nav-link"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
-                {% endif %}
                 <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
                 <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Assessments</span></a>
                 <a href="/challenges" class="nav-link"><i class="bi bi-trophy"></i><span>Challenges</span></a>
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
                 <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Projects</span></a>
                 <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Downloads</span></a>
-                {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+                {% endif %}
+                {% if role_names and "Organisation Admin" in role_names %}
                 <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% endif %}
             </nav>
@@ -82,24 +86,28 @@
     <div class="app-shell d-lg-flex min-vh-100">
         <!-- Desktop sidebar -->
         <aside class="sidebar d-none d-lg-flex flex-column flex-shrink-0 bg-white border-end">
-            <a href="/" class="brand d-flex align-items-center gap-3 text-decoration-none text-dark">
+            <a href="{% if role_names and "LMS Admin" in role_names %}/admin/dashboard{% else %}/{% endif %}" class="brand d-flex align-items-center gap-3 text-decoration-none text-dark">
                 <span class="brand-mark brand-mark-lg"><i class="bi bi-mortarboard-fill"></i></span>
                 <span class="brand-text">SkillUp</span>
             </a>
 
             <nav class="nav nav-pills flex-column gap-1 sidebar-nav">
-                {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+                {% if role_names and "LMS Admin" in role_names %}
                 <a href="/admin/dashboard" class="nav-link"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+                <a href="/admin/manage/organisations" class="nav-link"><i class="bi bi-buildings"></i><span>Organisations</span></a>
+                <a href="/admin/manage/users" class="nav-link"><i class="bi bi-people"></i><span>Users</span></a>
+                <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
+                <a href="/admin/manage/enrollments" class="nav-link"><i class="bi bi-card-checklist"></i><span>Enrollments</span></a>
                 {% else %}
                 <a href="/" class="nav-link"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
-                {% endif %}
                 <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
                 <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Assessments</span></a>
                 <a href="/challenges" class="nav-link"><i class="bi bi-trophy"></i><span>Challenges</span></a>
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
                 <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Projects</span></a>
                 <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Downloads</span></a>
-                {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+                {% endif %}
+                {% if role_names and "Organisation Admin" in role_names %}
                 <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% endif %}
             </nav>

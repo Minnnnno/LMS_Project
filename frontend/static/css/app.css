@@ -292,9 +292,12 @@ a {
     flex-wrap: wrap;
 }
 
-.admin-form-card,
 .admin-table-card {
     overflow: hidden;
+}
+
+.admin-form-card {
+    overflow: visible;
 }
 
 .admin-table-wrap {
@@ -313,25 +316,79 @@ a {
     background: #f9fafb;
 }
 
-.admin-details summary {
-    cursor: pointer;
+.admin-combobox {
+    position: relative;
 }
 
-.admin-details summary::-webkit-details-marker {
+.admin-combobox-select {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.admin-combobox-input {
+    padding-right: 2.5rem;
+    background-image: var(--bs-form-select-bg-img);
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem 0.75rem;
+}
+
+.admin-combobox-menu {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    left: 0;
+    z-index: 20;
     display: none;
+    max-height: 15rem;
+    overflow-y: auto;
+    padding: 0.35rem;
+    border: 1px solid var(--skillup-border);
+    border-radius: 0.75rem;
+    background: #ffffff;
+    box-shadow: 0 0.75rem 2rem rgba(16, 24, 40, 0.14);
 }
 
-.admin-details summary::after {
-    content: "+";
-    float: right;
+.admin-combobox.is-open .admin-combobox-menu {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.admin-combobox-option {
+    width: 100%;
+    padding: 0.55rem 0.65rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--skillup-dark);
+    text-align: left;
+}
+
+.admin-combobox-option:hover,
+.admin-combobox-option.is-selected {
+    background: #f2f4f7;
+}
+
+.admin-combobox-empty {
+    padding: 0.55rem 0.65rem;
     color: var(--skillup-muted);
+    font-size: 0.875rem;
 }
 
-.admin-details[open] summary::after {
-    content: "–";
+.admin-anchor {
+    scroll-margin-top: 1.5rem;
 }
 
 @media (max-width: 991.98px) {
+    .admin-anchor {
+        scroll-margin-top: 5rem;
+    }
+
     .main-content {
         padding: 1.25rem;
     }
