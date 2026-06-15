@@ -11,7 +11,48 @@
     <a class="btn btn-dark rounded-3 px-4" href="#create-organisation">Create record</a>
 </section>
 
-<section class="container-fluid px-0 mt-4">
+<section class="container-fluid px-0 mt-4" data-admin-dashboard-only hidden>
+    <div class="row g-4">
+        <div class="col-12 col-md-6">
+            <a href="/admin/manage/organisations" class="card border-0 shadow-sm rounded-4 h-100 text-decoration-none text-dark">
+                <div class="card-body p-4">
+                    <i class="bi bi-buildings fs-3"></i>
+                    <h2 class="section-title mt-3 mb-1">Organisations</h2>
+                    <p class="page-subtitle">Create, review, edit, and delete organisations.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-md-6">
+            <a href="/admin/manage/users" class="card border-0 shadow-sm rounded-4 h-100 text-decoration-none text-dark">
+                <div class="card-body p-4">
+                    <i class="bi bi-people fs-3"></i>
+                    <h2 class="section-title mt-3 mb-1">Users</h2>
+                    <p class="page-subtitle">Create users and manage their database records.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-md-6">
+            <a href="/admin/manage/courses" class="card border-0 shadow-sm rounded-4 h-100 text-decoration-none text-dark">
+                <div class="card-body p-4">
+                    <i class="bi bi-journals fs-3"></i>
+                    <h2 class="section-title mt-3 mb-1">Courses</h2>
+                    <p class="page-subtitle">Create, review, edit, and delete courses.</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-md-6">
+            <a href="/admin/manage/enrollments" class="card border-0 shadow-sm rounded-4 h-100 text-decoration-none text-dark">
+                <div class="card-body p-4">
+                    <i class="bi bi-card-checklist fs-3"></i>
+                    <h2 class="section-title mt-3 mb-1">Enrollments</h2>
+                    <p class="page-subtitle">Enroll users into courses and manage existing enrollments.</p>
+                </div>
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="container-fluid px-0 mt-4" data-admin-managed-content>
     <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
         <div>
             <h2 class="section-title mb-1" data-admin-create-heading>Create Records</h2>
@@ -20,7 +61,7 @@
     </div>
 
     <div class="row g-4">
-        <div id="create-organisation" class="col-12 col-xl-6 admin-anchor" data-admin-domain="organisations">
+        <div id="create-organisation" class="col-12 admin-anchor" data-admin-domain="organisations">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -29,9 +70,9 @@
                             <p class="page-subtitle mb-0">Add a new organisation.</p>
                         </div>
                     </div>
-                    <form class="admin-action-form" data-endpoint="/admin/organisations" data-method="POST">
+                    <form class="admin-action-form" data-endpoint="/admin/organisations" data-method="POST" data-admin-form-domain="organisations">
                         <label class="form-label" for="org-name">Organisation name</label>
-                        <input id="org-name" name="org_name" class="form-control mb-3" placeholder="North Campus" required>
+                        <input id="org-name" name="org_name" class="form-control mb-3" placeholder="North Campus" maxlength="255" required>
                         <div class="form-text mb-3">Used to group users, courses, and admin access.</div>
                         <button class="btn btn-dark rounded-3" type="submit">Create organisation</button>
                     </form>
@@ -39,7 +80,7 @@
             </div>
         </div>
 
-        <div id="create-user" class="col-12 col-xl-6 admin-anchor" data-admin-domain="users">
+        <div id="create-user" class="col-12 admin-anchor" data-admin-domain="users">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -52,15 +93,15 @@
                         <div class="row g-3">
                             <div class="col-12 col-md-6">
                                 <label class="form-label" for="user-first-name">First name</label>
-                                <input id="user-first-name" name="first_name" class="form-control" placeholder="Jane" required>
+                                <input id="user-first-name" name="first_name" class="form-control" placeholder="Jane" maxlength="100" required>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label" for="user-last-name">Last name</label>
-                                <input id="user-last-name" name="last_name" class="form-control" placeholder="Doe" required>
+                                <input id="user-last-name" name="last_name" class="form-control" placeholder="Doe" maxlength="100" required>
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="user-email">Email</label>
-                                <input id="user-email" name="email" type="email" class="form-control" placeholder="jane@example.com" required>
+                                <input id="user-email" name="email" type="email" class="form-control" placeholder="jane@example.com" maxlength="255" required>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label" for="user-password">Password</label>
@@ -86,7 +127,7 @@
             </div>
         </div>
 
-        <div id="create-course" class="col-12 col-xl-6 admin-anchor" data-admin-domain="courses">
+        <div id="create-course" class="col-12 admin-anchor" data-admin-domain="courses">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -95,11 +136,11 @@
                             <p class="page-subtitle mb-0">Create a course and set the publishing details.</p>
                         </div>
                     </div>
-                    <form class="admin-action-form" data-endpoint="/admin/courses" data-method="POST">
+                    <form class="admin-action-form" data-endpoint="/admin/courses" data-method="POST" data-admin-form-domain="courses">
                         <div class="row g-3">
                             <div class="col-12">
                                 <label class="form-label" for="course-name">Course name</label>
-                                <input id="course-name" name="name" class="form-control" placeholder="Introduction to Biology" required>
+                                <input id="course-name" name="name" class="form-control" placeholder="Introduction to Biology" maxlength="255" required>
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label" for="course-org-id">Organisation</label>
@@ -158,7 +199,7 @@
             </div>
         </div>
 
-        <div id="create-enrollment" class="col-12 col-xl-6 admin-anchor" data-admin-domain="enrollments">
+        <div id="create-enrollment" class="col-12 admin-anchor" data-admin-domain="enrollments">
             <div class="card border-0 shadow-sm h-100 rounded-4 admin-form-card">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
@@ -192,7 +233,7 @@
     </div>
 </section>
 
-<section class="container-fluid px-0 mt-4">
+<section class="container-fluid px-0 mt-4" data-admin-managed-content>
     <div class="card border-0 shadow-sm rounded-4">
         <div class="card-body p-4">
             <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
@@ -208,7 +249,7 @@
     </div>
 </section>
 
-<section class="container-fluid px-0 mt-4">
+<section class="container-fluid px-0 mt-4" data-admin-managed-content>
     <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
         <div>
             <h2 class="section-title mb-1" data-admin-manage-heading>Existing Records</h2>
@@ -220,17 +261,28 @@
         <div id="manage-organisations" class="col-12 admin-anchor" data-admin-domain="organisations">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                        <h3 class="section-title mb-0">Organisation records</h3>
+                        <div class="input-group admin-table-search">
+                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                            <input class="form-control" type="search" data-table-search="organisations" placeholder="Search organisations..." aria-label="Search organisations">
+                        </div>
+                    </div>
+                    <p class="small text-secondary mb-2" data-table-search-count="organisations"></p>
                     <div class="table-responsive admin-table-wrap">
                         <table class="table table-sm align-middle admin-table mb-0">
                             <thead>
                                 <tr>
                                     <th>Organisation ID</th>
                                     <th>Name</th>
+                                    <th>Slug</th>
+                                    <th>Type</th>
+                                    <th>Website</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="organisations-table-body">
-                                <tr><td colspan="3" class="text-secondary">Loading organisations...</td></tr>
+                                <tr><td colspan="6" class="text-secondary">Loading organisations...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -241,6 +293,14 @@
         <div id="manage-users" class="col-12 admin-anchor" data-admin-domain="users">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                        <h3 class="section-title mb-0">User records</h3>
+                        <div class="input-group admin-table-search">
+                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                            <input class="form-control" type="search" data-table-search="users" placeholder="Search users by name, email, or organisation..." aria-label="Search users">
+                        </div>
+                    </div>
+                    <p class="small text-secondary mb-2" data-table-search-count="users"></p>
                     <div class="table-responsive admin-table-wrap">
                         <table class="table table-sm align-middle admin-table mb-0">
                             <thead>
@@ -265,6 +325,14 @@
         <div id="manage-courses" class="col-12 admin-anchor" data-admin-domain="courses">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                        <h3 class="section-title mb-0">Course records</h3>
+                        <div class="input-group admin-table-search">
+                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                            <input class="form-control" type="search" data-table-search="courses" placeholder="Search courses..." aria-label="Search courses">
+                        </div>
+                    </div>
+                    <p class="small text-secondary mb-2" data-table-search-count="courses"></p>
                     <div class="table-responsive admin-table-wrap">
                         <table class="table table-sm align-middle admin-table mb-0">
                             <thead>
@@ -291,6 +359,14 @@
         <div id="manage-enrollments" class="col-12 admin-anchor" data-admin-domain="enrollments">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                        <h3 class="section-title mb-0">Enrollment records</h3>
+                        <div class="input-group admin-table-search">
+                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                            <input class="form-control" type="search" data-table-search="enrollments" placeholder="Search users or courses..." aria-label="Search enrollments">
+                        </div>
+                    </div>
+                    <p class="small text-secondary mb-2" data-table-search-count="enrollments"></p>
                     <div class="table-responsive admin-table-wrap">
                         <table class="table table-sm align-middle admin-table mb-0">
                             <thead>
@@ -318,9 +394,53 @@ const organisationsTableBody = document.getElementById("organisations-table-body
 const usersTableBody = document.getElementById("users-table-body");
 const coursesTableBody = document.getElementById("courses-table-body");
 const enrollmentsTableBody = document.getElementById("enrollments-table-body");
+const adminTableBodies = {
+    organisations: organisationsTableBody,
+    users: usersTableBody,
+    courses: coursesTableBody,
+    enrollments: enrollmentsTableBody,
+};
+const adminRecords = {
+    organisations: [],
+    users: [],
+    courses: [],
+    enrollments: [],
+};
+
+function currentAdminDomain() {
+    return window.location.pathname.split("/").pop();
+}
+
+function filterAdminTable(domain) {
+    const tableBody = adminTableBodies[domain];
+    const searchInput = document.querySelector(`[data-table-search="${domain}"]`);
+    const count = document.querySelector(`[data-table-search-count="${domain}"]`);
+
+    if (!tableBody || !searchInput || !count) {
+        return;
+    }
+
+    const query = searchInput.value.trim().toLocaleLowerCase();
+    const rows = [...tableBody.querySelectorAll("tr")].filter((row) => !row.querySelector("[colspan]"));
+    let visibleRows = 0;
+
+    rows.forEach((row) => {
+        const matches = !query || row.textContent.toLocaleLowerCase().includes(query);
+        row.hidden = !matches;
+        visibleRows += matches ? 1 : 0;
+    });
+
+    count.textContent = query
+        ? `${visibleRows} of ${rows.length} records match`
+        : `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+}
+
+document.querySelectorAll("[data-table-search]").forEach((input) => {
+    input.addEventListener("input", () => filterAdminTable(input.dataset.tableSearch));
+});
 
 function applyAdminPageScope() {
-    const domain = window.location.pathname.split("/").pop();
+    const domain = currentAdminDomain();
     const labels = {
         organisations: "Organisations",
         users: "Users",
@@ -333,6 +453,20 @@ function applyAdminPageScope() {
         courses: "Course",
         enrollments: "Enrollment",
     };
+
+    const isDashboard = domain === "dashboard";
+
+    document.querySelectorAll("[data-admin-dashboard-only]").forEach((section) => {
+        section.hidden = !isDashboard;
+    });
+    document.querySelectorAll("[data-admin-managed-content]").forEach((section) => {
+        section.hidden = isDashboard;
+    });
+
+    if (isDashboard) {
+        document.querySelector(".dashboard-header .btn").hidden = true;
+        return;
+    }
 
     if (!labels[domain]) {
         return;
@@ -501,6 +635,41 @@ function renderTableBody(target, rows, emptyMessage, columns) {
 
 function renderYesNo(value) {
     return value ? '<span class="badge text-bg-success">Yes</span>' : '<span class="badge text-bg-secondary">No</span>';
+}
+
+function editButton(domain, id, label) {
+    return `
+        <button
+            type="button"
+            class="btn btn-outline-dark btn-sm"
+            data-inline-edit-domain="${escapeHtml(domain)}"
+            data-inline-edit-id="${escapeHtml(id)}"
+        >Edit ${escapeHtml(label)}</button>
+    `;
+}
+
+function actionButtons(buttons) {
+    return `<div class="d-flex justify-content-end gap-2">${buttons.join("")}</div>`;
+}
+
+function selectOptions(records, valueKey, labelForRecord, selectedValue, emptyLabel) {
+    const options = [
+        `<option value="">${escapeHtml(emptyLabel)}</option>`,
+        ...records.map((record) => {
+            const value = String(record[valueKey]);
+            const selected = value === String(selectedValue ?? "") ? " selected" : "";
+            return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(labelForRecord(record))}</option>`;
+        }),
+    ];
+
+    return options.join("");
+}
+
+function inlineActions(domain, id) {
+    return actionButtons([
+        `<button type="button" class="btn btn-dark btn-sm" data-save-inline-domain="${escapeHtml(domain)}" data-save-inline-id="${escapeHtml(id)}">Save</button>`,
+        '<button type="button" class="btn btn-outline-secondary btn-sm" data-cancel-inline-edit>Cancel</button>',
+    ]);
 }
 
 function formatPrice(priceCents, currency) {
@@ -675,13 +844,25 @@ function populateSelects(type, records, valueKey, labelForRecord) {
 
 async function loadAdminTables() {
     try {
+        const domain = currentAdminDomain();
+        const needsOrganisations = ["organisations", "users", "courses"].includes(domain);
+        const needsRoles = domain === "users";
+        const needsUsers = ["users", "courses", "enrollments"].includes(domain);
+        const needsCourses = ["courses", "enrollments"].includes(domain);
+        const needsEnrollments = domain === "enrollments";
+
         const [organisations, roles, users, courses, enrollments] = await Promise.all([
-            loadTable("/admin/organisations"),
-            loadTable("/admin/roles"),
-            loadTable("/admin/users"),
-            loadTable("/admin/courses"),
-            loadTable("/admin/enrollments"),
+            needsOrganisations ? loadTable("/admin/organisations") : Promise.resolve([]),
+            needsRoles ? loadTable("/admin/roles") : Promise.resolve([]),
+            needsUsers ? loadTable("/admin/users") : Promise.resolve([]),
+            needsCourses ? loadTable("/admin/courses") : Promise.resolve([]),
+            needsEnrollments ? loadTable("/admin/enrollments") : Promise.resolve([]),
         ]);
+
+        adminRecords.organisations = organisations;
+        adminRecords.users = users;
+        adminRecords.courses = courses;
+        adminRecords.enrollments = enrollments;
 
         const organisationNames = new Map(
             organisations.map((organisation) => [organisation.org_id, organisation.org_name]),
@@ -708,10 +889,16 @@ async function loadAdminTables() {
             organisations.map((organisation) => tableRow([
                 escapeHtml(organisation.org_id),
                 escapeHtml(organisation.org_name),
-                `<div class="text-end">${deleteButton(`/admin/organisations/${organisation.org_id}`, `organisation #${organisation.org_id}`)}</div>`,
+                escapeHtml(organisation.org_slug || "-"),
+                escapeHtml(organisation.org_type || "-"),
+                escapeHtml(organisation.website_url || "-"),
+                actionButtons([
+                    editButton("organisations", organisation.org_id, "organisation"),
+                    deleteButton(`/admin/organisations/${organisation.org_id}`, `organisation #${organisation.org_id}`),
+                ]),
             ])).join(""),
             "No organisations found.",
-            3,
+            6,
         );
 
         renderTableBody(
@@ -722,7 +909,10 @@ async function loadAdminTables() {
                 escapeHtml(user.email),
                 escapeHtml(user.org_id ? organisationNames.get(user.org_id) || `Organisation #${user.org_id}` : "-"),
                 escapeHtml(user.auth_provider),
-                `<div class="text-end">${deleteButton(`/admin/users/${user.user_id}`, `user #${user.user_id}`)}</div>`,
+                actionButtons([
+                    editButton("users", user.user_id, "user"),
+                    deleteButton(`/admin/users/${user.user_id}`, `user #${user.user_id}`),
+                ]),
             ])).join(""),
             "No users found.",
             6,
@@ -738,7 +928,10 @@ async function loadAdminTables() {
                 escapeHtml(course.status ?? "-"),
                 escapeHtml(formatPrice(course.price_cents, course.currency)),
                 renderYesNo(course.is_paid),
-                `<div class="text-end">${deleteButton(`/admin/courses/${course.course_id}`, `course #${course.course_id}`)}</div>`,
+                actionButtons([
+                    editButton("courses", course.course_id, "course"),
+                    deleteButton(`/admin/courses/${course.course_id}`, `course #${course.course_id}`),
+                ]),
             ])).join(""),
             "No courses found.",
             8,
@@ -750,15 +943,20 @@ async function loadAdminTables() {
                 escapeHtml(userNames.get(enrollment.user_id) || `User #${enrollment.user_id}`),
                 escapeHtml(courseNames.get(enrollment.course_id) || `Course #${enrollment.course_id}`),
                 escapeHtml(enrollment.enrolled_at),
-                `<div class="text-end">${deleteButton(`/admin/enrollments/${enrollment.user_id}/${enrollment.course_id}`, `enrollment ${enrollment.user_id}/${enrollment.course_id}`)}</div>`,
+                actionButtons([
+                    deleteButton(`/admin/enrollments/${enrollment.user_id}/${enrollment.course_id}`, `enrollment ${enrollment.user_id}/${enrollment.course_id}`)
+                        .replace(">Delete</button>", ">Unenroll</button>"),
+                ]),
             ])).join(""),
             "No enrollments found.",
             4,
         );
+
+        Object.keys(adminTableBodies).forEach(filterAdminTable);
     } catch (error) {
         const message = error.message || "Unable to load tables";
         if (organisationsTableBody) {
-            organisationsTableBody.innerHTML = `<tr><td colspan="3" class="text-danger">${escapeHtml(message)}</td></tr>`;
+            organisationsTableBody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(message)}</td></tr>`;
         }
         if (usersTableBody) {
             usersTableBody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(message)}</td></tr>`;
@@ -782,6 +980,172 @@ function scheduleTableRefresh() {
     }, 300);
 }
 
+function resetAdminEditForm(form) {
+    const domain = form.dataset.adminFormDomain;
+
+    if (!domain) {
+        return;
+    }
+
+    form.dataset.endpoint = `/admin/${domain}`;
+    form.dataset.method = "POST";
+    form.querySelector("[type='submit']").textContent =
+        domain === "organisations" ? "Create organisation" : "Create course";
+    form.reset();
+    resetAdminComboboxes(form);
+    updateAdminCoursePaidFields(form);
+}
+
+function beginInlineEdit(domain, id, row) {
+    const idKeys = {
+        organisations: "org_id",
+        users: "user_id",
+        courses: "course_id",
+    };
+    const idKey = idKeys[domain];
+    const record = adminRecords[domain].find((item) => String(item[idKey]) === String(id));
+
+    if (!row || !record) {
+        setAdminMessage("Unable to load this record for editing.", "danger");
+        return;
+    }
+
+    if (domain === "organisations") {
+        row.innerHTML = `
+            <td>${escapeHtml(record.org_id)}</td>
+            <td><input class="form-control form-control-sm" name="org_name" value="${escapeHtml(record.org_name)}" maxlength="255" required></td>
+            <td><input class="form-control form-control-sm" name="org_slug" value="${escapeHtml(record.org_slug || "")}"></td>
+            <td><input class="form-control form-control-sm" name="org_type" value="${escapeHtml(record.org_type || "")}"></td>
+            <td><input class="form-control form-control-sm" name="website_url" type="url" value="${escapeHtml(record.website_url || "")}"></td>
+            <td>${inlineActions(domain, id)}</td>
+        `;
+    } else if (domain === "users") {
+        row.innerHTML = `
+            <td>${escapeHtml(record.user_id)}</td>
+            <td>
+                <div class="d-flex gap-2">
+                    <input class="form-control form-control-sm" name="first_name" value="${escapeHtml(record.first_name)}" aria-label="First name" maxlength="100" required>
+                    <input class="form-control form-control-sm" name="last_name" value="${escapeHtml(record.last_name)}" aria-label="Last name" maxlength="100" required>
+                </div>
+            </td>
+            <td><input class="form-control form-control-sm" name="email" type="email" value="${escapeHtml(record.email)}" maxlength="255" required></td>
+            <td><select class="form-select form-select-sm" name="org_id">${selectOptions(adminRecords.organisations, "org_id", (organisation) => organisation.org_name, record.org_id, "No organisation")}</select></td>
+            <td>${escapeHtml(record.auth_provider)}</td>
+            <td>${inlineActions(domain, id)}</td>
+        `;
+    } else if (domain === "courses") {
+        const status = String(record.status || "draft").toLowerCase();
+        const price = Number.isFinite(Number(record.price_cents)) ? (Number(record.price_cents) / 100).toFixed(2) : "";
+        row.innerHTML = `
+            <td>${escapeHtml(record.course_id)}</td>
+            <td><input class="form-control form-control-sm" name="name" value="${escapeHtml(record.name || "")}" maxlength="255" required></td>
+            <td><select class="form-select form-select-sm" name="org_id">${selectOptions(adminRecords.organisations, "org_id", (organisation) => organisation.org_name, record.org_id, "No organisation")}</select></td>
+            <td><select class="form-select form-select-sm" name="instructor_id">${selectOptions(adminRecords.users, "user_id", (user) => `${user.first_name} ${user.last_name}`, record.instructor_id, "No instructor")}</select></td>
+            <td>
+                <select class="form-select form-select-sm" name="status">
+                    <option value="draft"${status === "draft" ? " selected" : ""}>Draft</option>
+                    <option value="published"${status === "published" ? " selected" : ""}>Published</option>
+                    <option value="archived"${status === "archived" ? " selected" : ""}>Archived</option>
+                </select>
+            </td>
+            <td>
+                <div class="d-flex gap-2">
+                    <input class="form-control form-control-sm" name="price" type="number" min="0" step="0.01" value="${escapeHtml(price)}" aria-label="Price">
+                    <select class="form-select form-select-sm" name="currency" aria-label="Currency">
+                        <option value="SGD">SGD</option>
+                    </select>
+                </div>
+            </td>
+            <td class="text-center"><input class="form-check-input" name="is_paid" type="checkbox"${record.is_paid ? " checked" : ""}></td>
+            <td>${inlineActions(domain, id)}</td>
+        `;
+    }
+
+    row.dataset.inlineEditing = domain;
+    row.querySelector("input, select")?.focus();
+    setAdminMessage(`Editing ${domain === "organisations" ? "organisation" : "course"} in the table.`, "info");
+}
+
+async function saveInlineEdit(domain, id, row) {
+    const idKeys = {
+        organisations: "org_id",
+        users: "user_id",
+        courses: "course_id",
+    };
+    const idKey = idKeys[domain];
+    const record = adminRecords[domain].find((item) => String(item[idKey]) === String(id));
+
+    if (!row || !record) {
+        throw new Error("Unable to save this record.");
+    }
+
+    const invalidField = [...row.querySelectorAll("input, select")]
+        .find((field) => !field.checkValidity());
+
+    if (invalidField) {
+        invalidField.reportValidity();
+        throw new Error(invalidField.validationMessage || "Check the highlighted field.");
+    }
+
+    let payload;
+
+    if (domain === "organisations") {
+        const orgName = row.querySelector("[name='org_name']").value.trim();
+
+        if (!orgName) {
+            throw new Error("Organisation name is required.");
+        }
+
+        payload = {
+            org_name: orgName,
+            org_slug: row.querySelector("[name='org_slug']").value.trim(),
+            org_type: row.querySelector("[name='org_type']").value.trim(),
+            website_url: row.querySelector("[name='website_url']").value.trim(),
+        };
+    } else if (domain === "users") {
+        const firstName = row.querySelector("[name='first_name']").value.trim();
+        const lastName = row.querySelector("[name='last_name']").value.trim();
+        const email = row.querySelector("[name='email']").value.trim();
+
+        if (!firstName || !lastName || !email) {
+            throw new Error("First name, last name, and email are required.");
+        }
+
+        payload = {
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            org_id: Number(row.querySelector("[name='org_id']").value) || null,
+        };
+    } else {
+        const isPaid = row.querySelector("[name='is_paid']").checked;
+        const price = Number.parseFloat(row.querySelector("[name='price']").value || "0");
+        const name = row.querySelector("[name='name']").value.trim();
+
+        if (!name) {
+            throw new Error("Course name is required.");
+        }
+
+        if (isPaid && (!Number.isFinite(price) || price < 0)) {
+            throw new Error("Enter a valid course price.");
+        }
+
+        payload = {
+            name,
+            org_id: Number(row.querySelector("[name='org_id']").value) || null,
+            instructor_id: Number(row.querySelector("[name='instructor_id']").value) || null,
+            status: row.querySelector("[name='status']").value,
+            price_cents: isPaid ? Math.round(price * 100) : 0,
+            currency: isPaid ? row.querySelector("[name='currency']").value : null,
+            is_paid: isPaid,
+            description: record.description || null,
+            background_image_url: record.background_image_url || null,
+        };
+    }
+
+    return submitJson(`/admin/${domain}/${id}`, "PUT", payload);
+}
+
 document.querySelectorAll(".admin-action-form").forEach((form) => {
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -789,11 +1153,12 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
         const formData = new FormData(form);
         const endpoint = form.dataset.endpoint;
         const method = form.dataset.method || form.querySelector("[name='method']")?.value || "POST";
+        const formDomain = form.dataset.adminFormDomain;
 
         try {
             let payload = {};
 
-            if (endpoint === "/admin/organisations") {
+            if (formDomain === "organisations" || endpoint === "/admin/organisations") {
                 payload = { org_name: fieldValue(formData, "org_name") };
             } else if (endpoint === "/admin/users") {
                 payload = {
@@ -804,7 +1169,7 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
                     org_id: numberField(formData, "org_id"),
                     role_id: numberField(formData, "role_id"),
                 };
-            } else if (endpoint === "/admin/courses") {
+            } else if (formDomain === "courses" || endpoint === "/admin/courses") {
                 const isPaid = form.querySelector("[name='is_paid']")?.checked ?? false;
                 const imageFile = form.querySelector("[name='background_image_file']")?.files[0];
                 let backgroundImageUrl = fieldValue(formData, "background_image_url");
@@ -834,9 +1199,13 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
 
             const message = await submitJson(endpoint, method, payload);
             setAdminMessage(message, "success");
-            form.reset();
-            resetAdminComboboxes(form);
-            updateAdminCoursePaidFields(form);
+            if (formDomain) {
+                resetAdminEditForm(form);
+            } else {
+                form.reset();
+                resetAdminComboboxes(form);
+                updateAdminCoursePaidFields(form);
+            }
             scheduleTableRefresh();
         } catch (error) {
             setAdminMessage(error.message || "Request failed", "danger");
@@ -860,6 +1229,43 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+    const editButtonTarget = event.target.closest("[data-inline-edit-domain]");
+
+    if (editButtonTarget) {
+        beginInlineEdit(
+            editButtonTarget.dataset.inlineEditDomain,
+            editButtonTarget.dataset.inlineEditId,
+            editButtonTarget.closest("tr"),
+        );
+        return;
+    }
+
+    if (event.target.closest("[data-cancel-inline-edit]")) {
+        await loadAdminTables();
+        setAdminMessage("Edit cancelled.", "light");
+        return;
+    }
+
+    const saveButton = event.target.closest("[data-save-inline-domain]");
+
+    if (saveButton) {
+        saveButton.disabled = true;
+
+        try {
+            const message = await saveInlineEdit(
+                saveButton.dataset.saveInlineDomain,
+                saveButton.dataset.saveInlineId,
+                saveButton.closest("tr"),
+            );
+            setAdminMessage(message, "success");
+            await loadAdminTables();
+        } catch (error) {
+            setAdminMessage(error.message || "Update failed", "danger");
+            saveButton.disabled = false;
+        }
+        return;
+    }
+
     const button = event.target.closest("[data-delete-endpoint]");
 
     if (!button) {

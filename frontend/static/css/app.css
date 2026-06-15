@@ -305,6 +305,10 @@ a {
     overflow: auto;
 }
 
+.admin-table-search {
+    width: min(100%, 24rem);
+}
+
 .admin-table thead th {
     position: sticky;
     top: 0;

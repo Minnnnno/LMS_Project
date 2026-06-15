@@ -1,6 +1,7 @@
 use actix_web::HttpResponse;
+use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{
-    ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, Set,
 };
 use validator::Validate;
 
@@ -36,6 +37,69 @@ fn hash_password(password: &str) -> Result<String, String> {
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
         .map_err(|err| err.to_string())
+}
+
+fn singapore_now() -> DateTime<FixedOffset> {
+    let singapore_offset = FixedOffset::east_opt(8 * 60 * 60)
+        .expect("Singapore UTC offset must be valid");
+
+    Utc::now().with_timezone(&singapore_offset)
+}
+
+fn required_trimmed(value: &str, field_name: &str) -> Result<String, HttpResponse> {
+    let value = value.trim();
+
+    if value.is_empty() {
+        Err(HttpResponse::BadRequest().body(format!("{} is required", field_name)))
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+async fn email_is_used_by_another_user(
+    db: &DatabaseConnection,
+    email: &str,
+    excluded_user_id: Option<i32>,
+) -> Result<bool, HttpResponse> {
+    let mut query = users::Entity::find().filter(users::Column::Email.eq(email));
+
+    if let Some(user_id) = excluded_user_id {
+        query = query.filter(users::Column::UserId.ne(user_id));
+    }
+
+    query
+        .one(db)
+        .await
+        .map(|user| user.is_some())
+        .map_err(|err| HttpResponse::InternalServerError().body(format!("Email lookup error: {}", err)))
+}
+
+fn validate_optional_website_url(website_url: Option<&str>) -> Result<(), HttpResponse> {
+    let Some(website_url) = website_url.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+
+    if website_url.starts_with("https://") || website_url.starts_with("http://") {
+        Ok(())
+    } else {
+        Err(HttpResponse::BadRequest().body("Website URL must start with http:// or https://"))
+    }
+}
+
+fn validate_course_payment(
+    is_paid: Option<bool>,
+    price_cents: Option<i32>,
+    currency: Option<&str>,
+) -> Result<(), HttpResponse> {
+    if price_cents.is_some_and(|price| price < 0) {
+        return Err(HttpResponse::BadRequest().body("Course price cannot be negative"));
+    }
+
+    if is_paid.unwrap_or(false) && !currency.is_some_and(|value| value.eq_ignore_ascii_case("SGD")) {
+        return Err(HttpResponse::BadRequest().body("Paid courses currently support SGD only"));
+    }
+
+    Ok(())
 }
 
 
@@ -86,8 +150,15 @@ pub async fn create_organisation_service(
             .body(format!("Validation error: {}", errors));
     }
 
+    let org_name = match required_trimmed(&body.org_name, "Organisation name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let now = singapore_now();
     let new_org = organisations::ActiveModel {
-        org_name: Set(body.org_name.trim().to_string()),
+        org_name: Set(org_name),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
         ..Default::default()
     };
 
@@ -117,8 +188,34 @@ pub async fn update_organisation_service(
         }
     };
 
+    let org_name = match required_trimmed(&body.org_name, "Organisation name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
     let mut active_org = org.into_active_model();
-    active_org.org_name = Set(body.org_name.trim().to_string());
+    active_org.org_name = Set(org_name);
+    if let Some(org_slug) = body.org_slug {
+        active_org.org_slug = Set({
+            let value = org_slug.trim().to_lowercase();
+            (!value.is_empty()).then_some(value)
+        });
+    }
+    if let Err(response) = validate_optional_website_url(body.website_url.as_deref()) {
+        return response;
+    }
+    if let Some(org_type) = body.org_type {
+        active_org.org_type = Set({
+            let value = org_type.trim().to_string();
+            (!value.is_empty()).then_some(value)
+        });
+    }
+    if let Some(website_url) = body.website_url {
+        active_org.website_url = Set({
+            let value = website_url.trim().to_string();
+            (!value.is_empty()).then_some(value)
+        });
+    }
+    active_org.updated_at = Set(Some(singapore_now()));
 
     match active_org.update(db).await {
         Ok(updated_org) => HttpResponse::Ok().json(updated_org),
@@ -176,6 +273,22 @@ pub async fn create_user_service(
             .body(format!("Validation error: {}", errors));
     }
 
+    let first_name = match required_trimmed(&body.first_name, "First name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let last_name = match required_trimmed(&body.last_name, "Last name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let email = body.email.trim().to_lowercase();
+
+    match email_is_used_by_another_user(db, &email, None).await {
+        Ok(true) => return HttpResponse::Conflict().body("A user with this email already exists"),
+        Ok(false) => {}
+        Err(response) => return response,
+    }
+
     let password_hash = match hash_password(&body.password) {
         Ok(hash) => hash,
         Err(err) => {
@@ -185,15 +298,18 @@ pub async fn create_user_service(
     };
 
     let role_id = body.role_id;
+    let now = singapore_now();
 
     let new_user = users::ActiveModel {
-        first_name: Set(body.first_name.trim().to_string()),
-        last_name: Set(body.last_name.trim().to_string()),
-        email: Set(body.email.trim().to_lowercase()),
+        first_name: Set(first_name),
+        last_name: Set(last_name),
+        email: Set(email),
         password_hash: Set(Some(password_hash)),
         org_id: Set(body.org_id),
         email_verified: Set(false),
         must_change_password: Set(false),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
         ..Default::default()
     };
 
@@ -231,6 +347,22 @@ pub async fn update_user_service(
             .body(format!("Validation error: {}", errors));
     }
 
+    let first_name = match required_trimmed(&body.first_name, "First name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let last_name = match required_trimmed(&body.last_name, "Last name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let email = body.email.trim().to_lowercase();
+
+    match email_is_used_by_another_user(db, &email, Some(user_id)).await {
+        Ok(true) => return HttpResponse::Conflict().body("A user with this email already exists"),
+        Ok(false) => {}
+        Err(response) => return response,
+    }
+
     let user = match users::Entity::find_by_id(user_id).one(db).await {
         Ok(Some(user)) => user,
         Ok(None) => return HttpResponse::NotFound().body("User not found"),
@@ -242,10 +374,11 @@ pub async fn update_user_service(
 
     let mut active_user = user.into_active_model();
 
-    active_user.first_name = Set(body.first_name.trim().to_string());
-    active_user.last_name = Set(body.last_name.trim().to_string());
-    active_user.email = Set(body.email.trim().to_lowercase());
+    active_user.first_name = Set(first_name);
+    active_user.last_name = Set(last_name);
+    active_user.email = Set(email);
     active_user.org_id = Set(body.org_id);
+    active_user.updated_at = Set(Some(singapore_now()));
 
     match active_user.update(db).await {
         Ok(updated_user) => HttpResponse::Ok().json(updated_user),
@@ -303,14 +436,22 @@ pub async fn create_course_service(
         return HttpResponse::BadRequest()
             .body(format!("Validation error: {}", errors));
     }
+    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, body.currency.as_deref()) {
+        return response;
+    }
 
     let status = match parse_course_status(body.status) {
         Ok(status) => status,
         Err(response) => return response,
     };
+    let course_name = match required_trimmed(&body.name, "Course name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let now = singapore_now();
 
     let new_course = courses::ActiveModel {
-        name: Set(Some(body.name.trim().to_string())),
+        name: Set(Some(course_name)),
         org_id: Set(body.org_id),
         instructor_id: Set(body.instructor_id),
         status: Set(status),
@@ -319,6 +460,8 @@ pub async fn create_course_service(
         is_paid: Set(Some(body.is_paid.unwrap_or(false))),
         description: Set(body.description),
         background_image_url: Set(body.background_image_url),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
         ..Default::default()
     };
 
@@ -337,6 +480,9 @@ pub async fn update_course_service(
         return HttpResponse::BadRequest()
             .body(format!("Validation error: {}", errors));
     }
+    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, body.currency.as_deref()) {
+        return response;
+    }
 
     let course = match courses::Entity::find_by_id(course_id).one(db).await {
         Ok(Some(course)) => course,
@@ -347,9 +493,13 @@ pub async fn update_course_service(
         }
     };
 
+    let course_name = match required_trimmed(&body.name, "Course name") {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
     let mut active_course = course.into_active_model();
 
-    active_course.name = Set(Some(body.name.trim().to_string()));
+    active_course.name = Set(Some(course_name));
     active_course.org_id = Set(body.org_id);
     active_course.instructor_id = Set(body.instructor_id);
 
@@ -376,6 +526,7 @@ pub async fn update_course_service(
 
     active_course.description = Set(body.description);
     active_course.background_image_url = Set(body.background_image_url);
+    active_course.updated_at = Set(Some(singapore_now()));
 
     match active_course.update(db).await {
         Ok(updated_course) => HttpResponse::Ok().json(updated_course),
@@ -470,9 +621,12 @@ pub async fn admin_enroll_user_service(
     }
 
     // 4. Create enrollment
+    let now = singapore_now();
     let new_enrollment = enrollments::ActiveModel {
         user_id: Set(body.user_id),
         course_id: Set(body.course_id),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
         ..Default::default()
     };
 

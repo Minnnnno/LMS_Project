@@ -117,6 +117,11 @@
         <main class="main-content flex-grow-1">
             <!-- Desktop top navigation -->
             <header class="topbar d-none d-lg-flex align-items-center justify-content-between gap-4 bg-white rounded-4 shadow-sm border">
+                {% if role_names and "LMS Admin" in role_names %}
+                <div class="ms-auto">
+                    <a href="/profile" class="btn btn-dark rounded-3 px-4">Profile</a>
+                </div>
+                {% else %}
                 <nav class="top-links nav gap-2">
                     <a class="nav-link" href="/courses">Courses</a>
                     <a class="nav-link" href="/blog">Blog</a>
@@ -136,6 +141,7 @@
                     <a href="/login" class="btn btn-dark rounded-3 px-4">Sign In</a>
                     {% endif %}
                 </div>
+                {% endif %}
             </header>
 
             <!-- Page area -->

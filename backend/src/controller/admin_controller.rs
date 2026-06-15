@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{delete, get, http::header, post, put, web, HttpResponse, Responder};
+use actix_web::{delete, get, post, put, web, Responder};
 use sea_orm::DatabaseConnection;
 
 use crate::models::admin::{
@@ -55,9 +55,7 @@ pub async fn admin_dashboard(
     session: Session,
 ) -> impl Responder {
     match require_admin(&session) {
-        Ok(_) => HttpResponse::Found()
-            .insert_header((header::LOCATION, "/admin/manage/organisations"))
-            .finish(),
+        Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }
 }
