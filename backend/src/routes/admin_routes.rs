@@ -2,6 +2,7 @@ use actix_web::web;
 
 use crate::controller::admin_controller::{
     admin_dashboard,
+    admin_get_roles,
 
     get_organisations,
     create_organisation,
@@ -27,6 +28,7 @@ use crate::controller::admin_controller::{
 
 pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(admin_dashboard);
+    cfg.service(admin_get_roles);
 
     cfg.service(get_organisations);
     cfg.service(create_organisation);

@@ -67,15 +67,19 @@
                                 <input id="user-password" name="password" type="password" class="form-control" minlength="8" required>
                             </div>
                             <div class="col-12 col-md-3">
-                                <label class="form-label" for="user-org-id">Org ID</label>
-                                <input id="user-org-id" name="org_id" type="number" class="form-control" placeholder="1">
+                                <label class="form-label" for="user-org-id">Organisation</label>
+                                <select id="user-org-id" name="org_id" class="form-select" data-admin-options="organisations">
+                                    <option value="">No organisation</option>
+                                </select>
                             </div>
                             <div class="col-12 col-md-3">
-                                <label class="form-label" for="user-role-id">Role ID</label>
-                                <input id="user-role-id" name="role_id" type="number" class="form-control" placeholder="2">
+                                <label class="form-label" for="user-role-id">Role</label>
+                                <select id="user-role-id" name="role_id" class="form-select" data-admin-options="roles">
+                                    <option value="">No role</option>
+                                </select>
                             </div>
                         </div>
-                        <div class="form-text mt-3">Leave Org ID or Role ID blank if you want to set them later.</div>
+                        <div class="form-text mt-3">Organisation and role can be assigned later.</div>
                         <button class="btn btn-dark rounded-3 mt-3" type="submit">Create user</button>
                     </form>
                 </div>
@@ -98,12 +102,16 @@
                                 <input id="course-name" name="name" class="form-control" placeholder="Introduction to Biology" required>
                             </div>
                             <div class="col-12 col-md-4">
-                                <label class="form-label" for="course-org-id">Org ID</label>
-                                <input id="course-org-id" name="org_id" type="number" class="form-control" placeholder="1">
+                                <label class="form-label" for="course-org-id">Organisation</label>
+                                <select id="course-org-id" name="org_id" class="form-select" data-admin-options="organisations">
+                                    <option value="">No organisation</option>
+                                </select>
                             </div>
                             <div class="col-12 col-md-4">
-                                <label class="form-label" for="course-instructor-id">Instructor ID</label>
-                                <input id="course-instructor-id" name="instructor_id" type="number" class="form-control" placeholder="7">
+                                <label class="form-label" for="course-instructor-id">Instructor</label>
+                                <select id="course-instructor-id" name="instructor_id" class="form-select" data-admin-options="users">
+                                    <option value="">No instructor</option>
+                                </select>
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label" for="course-status">Status</label>
@@ -155,15 +163,19 @@
                     <form class="admin-action-form" data-endpoint="/admin/enrollments" data-method="POST">
                         <div class="row g-3">
                             <div class="col-12 col-md-6">
-                                <label class="form-label" for="enroll-user-id">User ID</label>
-                                <input id="enroll-user-id" name="user_id" type="number" class="form-control" placeholder="6" required>
+                                <label class="form-label" for="enroll-user-id">User</label>
+                                <select id="enroll-user-id" name="user_id" class="form-select" data-admin-options="users" required>
+                                    <option value="">Select a user</option>
+                                </select>
                             </div>
                             <div class="col-12 col-md-6">
-                                <label class="form-label" for="enroll-course-id">Course ID</label>
-                                <input id="enroll-course-id" name="course_id" type="number" class="form-control" placeholder="10" required>
+                                <label class="form-label" for="enroll-course-id">Course</label>
+                                <select id="enroll-course-id" name="course_id" class="form-select" data-admin-options="courses" required>
+                                    <option value="">Select a course</option>
+                                </select>
                             </div>
                         </div>
-                        <div class="form-text mt-3">Use the IDs shown in the tables below.</div>
+                        <div class="form-text mt-3">Choose the user and course by name.</div>
                         <button class="btn btn-dark rounded-3 mt-3" type="submit">Enroll user</button>
                     </form>
                 </div>
@@ -264,7 +276,7 @@
                                     <th>User ID</th>
                                     <th>Name</th>
                                     <th>Email</th>
-                                    <th>Org ID</th>
+                                    <th>Organisation</th>
                                     <th>Auth Provider</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
@@ -287,8 +299,8 @@
                                 <tr>
                                     <th>Course ID</th>
                                     <th>Name</th>
-                                    <th>Org ID</th>
-                                    <th>Instructor ID</th>
+                                    <th>Organisation</th>
+                                    <th>Instructor</th>
                                     <th>Status</th>
                                     <th>Paid</th>
                                     <th class="text-end">Actions</th>
@@ -310,8 +322,8 @@
                         <table class="table table-sm align-middle admin-table mb-0">
                             <thead>
                                 <tr>
-                                    <th>User ID</th>
-                                    <th>Course ID</th>
+                                    <th>User</th>
+                                    <th>Course</th>
                                     <th>Enrolled At</th>
                                     <th class="text-end">Actions</th>
                                 </tr>
@@ -448,14 +460,64 @@ async function loadTable(url) {
     return response.json();
 }
 
+function formatRoleName(roleName) {
+    const labels = {
+        LmsAdmin: "LMS Admin",
+        OrganisationAdmin: "Organisation Admin",
+        Instructor: "Instructor",
+        Student: "Student",
+    };
+
+    return labels[roleName] || roleName || "Unknown role";
+}
+
+function populateSelects(type, records, valueKey, labelForRecord) {
+    document.querySelectorAll(`[data-admin-options="${type}"]`).forEach((select) => {
+        const currentValue = select.value;
+        const emptyOption = select.options[0];
+        const emptyLabel = emptyOption?.textContent || "Select an option";
+
+        select.innerHTML = `<option value="">${escapeHtml(emptyLabel)}</option>` + records
+            .map((record) => (
+                `<option value="${escapeHtml(record[valueKey])}">${escapeHtml(labelForRecord(record))}</option>`
+            ))
+            .join("");
+
+        if ([...select.options].some((option) => option.value === currentValue)) {
+            select.value = currentValue;
+        }
+    });
+}
+
 async function loadAdminTables() {
     try {
-        const [organisations, users, courses, enrollments] = await Promise.all([
+        const [organisations, roles, users, courses, enrollments] = await Promise.all([
             loadTable("/admin/organisations"),
+            loadTable("/admin/roles"),
             loadTable("/admin/users"),
             loadTable("/admin/courses"),
             loadTable("/admin/enrollments"),
         ]);
+
+        const organisationNames = new Map(
+            organisations.map((organisation) => [organisation.org_id, organisation.org_name]),
+        );
+        const userNames = new Map(
+            users.map((user) => [user.user_id, `${user.first_name} ${user.last_name}`]),
+        );
+        const courseNames = new Map(
+            courses.map((course) => [course.course_id, course.name || "Untitled course"]),
+        );
+
+        populateSelects("organisations", organisations, "org_id", (organisation) => organisation.org_name);
+        populateSelects("roles", roles, "role_id", (role) => formatRoleName(role.role_name));
+        populateSelects(
+            "users",
+            users,
+            "user_id",
+            (user) => `${user.first_name} ${user.last_name} (${user.email})`,
+        );
+        populateSelects("courses", courses, "course_id", (course) => course.name || "Untitled course");
 
         renderTableBody(
             organisationsTableBody,
@@ -474,7 +536,7 @@ async function loadAdminTables() {
                 escapeHtml(user.user_id),
                 escapeHtml(`${user.first_name} ${user.last_name}`),
                 escapeHtml(user.email),
-                escapeHtml(user.org_id ?? "-"),
+                escapeHtml(user.org_id ? organisationNames.get(user.org_id) || `Organisation #${user.org_id}` : "-"),
                 escapeHtml(user.auth_provider),
                 `<div class="text-end">${deleteButton(`/admin/users/${user.user_id}`, `user #${user.user_id}`)}</div>`,
             ])).join(""),
@@ -487,8 +549,8 @@ async function loadAdminTables() {
             courses.map((course) => tableRow([
                 escapeHtml(course.course_id),
                 escapeHtml(course.name ?? "Untitled course"),
-                escapeHtml(course.org_id ?? "-"),
-                escapeHtml(course.instructor_id ?? "-"),
+                escapeHtml(course.org_id ? organisationNames.get(course.org_id) || `Organisation #${course.org_id}` : "-"),
+                escapeHtml(course.instructor_id ? userNames.get(course.instructor_id) || `User #${course.instructor_id}` : "-"),
                 escapeHtml(course.status ?? "-"),
                 renderYesNo(course.is_paid),
                 `<div class="text-end">${deleteButton(`/admin/courses/${course.course_id}`, `course #${course.course_id}`)}</div>`,
@@ -500,8 +562,8 @@ async function loadAdminTables() {
         renderTableBody(
             enrollmentsTableBody,
             enrollments.map((enrollment) => tableRow([
-                escapeHtml(enrollment.user_id),
-                escapeHtml(enrollment.course_id),
+                escapeHtml(userNames.get(enrollment.user_id) || `User #${enrollment.user_id}`),
+                escapeHtml(courseNames.get(enrollment.course_id) || `Course #${enrollment.course_id}`),
                 escapeHtml(enrollment.enrolled_at),
                 `<div class="text-end">${deleteButton(`/admin/enrollments/${enrollment.user_id}/${enrollment.course_id}`, `enrollment ${enrollment.user_id}/${enrollment.course_id}`)}</div>`,
             ])).join(""),

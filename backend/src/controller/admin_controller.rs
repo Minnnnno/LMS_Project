@@ -17,6 +17,7 @@ use crate::ssr::pages::render_page;
 
 use crate::services::admin_service::{
     get_all_organisations,
+    get_all_roles,
     create_organisation_service,
     update_organisation_service,
     delete_organisation_service,
@@ -37,6 +38,18 @@ use crate::services::admin_service::{
     admin_enroll_user_service,
     admin_unenroll_user_service,
 };
+
+#[get("/admin/roles")]
+pub async fn admin_get_roles(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => get_all_roles(db.get_ref()).await,
+        Err(response) => response,
+    }
+}
+
 #[get("/admin/dashboard")]
 pub async fn admin_dashboard(
     session: Session,

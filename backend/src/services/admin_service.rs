@@ -14,6 +14,7 @@ use crate::entity::{
     users,
     courses,
     enrollments,
+    roles,
     user_roles,
 };
 use crate::entity::courses::CourseStatus;
@@ -61,6 +62,16 @@ pub async fn get_all_organisations(
 ) -> HttpResponse {
     match organisations::Entity::find().all(db).await {
         Ok(orgs) => HttpResponse::Ok().json(orgs),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error: {}", err)),
+    }
+}
+
+pub async fn get_all_roles(
+    db: &DatabaseConnection,
+) -> HttpResponse {
+    match roles::Entity::find().all(db).await {
+        Ok(role_list) => HttpResponse::Ok().json(role_list),
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Database error: {}", err)),
     }
