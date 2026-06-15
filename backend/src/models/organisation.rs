@@ -44,6 +44,32 @@ pub struct InviteInstructorForm {
     pub email: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AssignCourseInstructorForm {
+    pub instructor_id: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CourseInstructorDto {
+    pub user_id: i32,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CourseInstructorCourseDto {
+    pub course_id: i32,
+    pub name: String,
+    pub instructors: Vec<CourseInstructorDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CourseInstructorSummaryDto {
+    pub courses: Vec<CourseInstructorCourseDto>,
+    pub instructors: Vec<CourseInstructorDto>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OrgMemberDto {
     pub user_id: i32,

@@ -74,6 +74,32 @@
   .result-summary.success { background: #eaf7ee; color: #1a7a3a; }
   .result-summary.partial { background: #fff8e0; color: #7a5500; }
   .result-summary.error   { background: #fff0f0; color: #aa0000; }
+
+  .course-instructor-card {
+    border: 1px solid #eef0f4;
+    border-radius: .85rem;
+    padding: .85rem;
+    background: #fbfcfe;
+  }
+  .course-instructor-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border: 1px solid #d9e4f5;
+    border-radius: 999px;
+    padding: .25rem .45rem .25rem .6rem;
+    background: #f3f8ff;
+    color: #184b7a;
+    font-size: .78rem;
+    font-weight: 600;
+  }
+  .course-instructor-chip button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    line-height: 1;
+  }
 </style>
 {% endblock extra_css %}
 
@@ -236,6 +262,36 @@
 
         <div id="enroll-feedback" class="mt-3"></div>
       </div><!-- /enroll-panel -->
+
+      <div class="section-panel mt-3" id="course-instructor-panel" style="display:none">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="fw-bold mb-0">Course Instructors</h6>
+          <button class="btn btn-sm btn-outline-secondary rounded-3" id="btn-refresh-course-instructors">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+
+        <form id="assign-course-instructor-form" class="row g-2 align-items-end mb-3">
+          <div class="col-12 col-md-5">
+            <label class="form-label fw-semibold small" for="course-instructor-course">Course</label>
+            <select class="form-select form-select-sm" id="course-instructor-course" required></select>
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label fw-semibold small" for="course-instructor-user">Instructor</label>
+            <select class="form-select form-select-sm" id="course-instructor-user" required></select>
+          </div>
+          <div class="col-12 col-md-2 d-grid">
+            <button class="btn btn-dark btn-sm rounded-3" id="btn-assign-course-instructor" type="submit">
+              <i class="bi bi-person-plus me-1"></i>Assign
+            </button>
+          </div>
+        </form>
+
+        <div id="course-instructor-feedback" class="mb-3"></div>
+        <div id="course-instructor-list">
+          <p class="text-muted small mb-0">Loading course instructors...</p>
+        </div>
+      </div>
 
     </div>
   </div>

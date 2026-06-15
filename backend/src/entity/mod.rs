@@ -3,6 +3,7 @@ pub mod users;
 pub mod roles;
 pub mod user_roles;
 pub mod courses;
+pub mod course_instructors;
 pub mod email_verification_tokens;
 pub mod remember_me_tokens;
 pub mod enrollments;

@@ -3,7 +3,7 @@ use actix_web::HttpResponse;
 use rust_decimal::prelude::ToPrimitive;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use crate::entity::{courses, users};
+use crate::entity::{course_instructors, courses, users};
 
 pub fn get_role_names(session: &Session) -> Vec<String> {
     session
@@ -15,6 +15,12 @@ pub fn get_role_names(session: &Session) -> Vec<String> {
 
 pub fn has_role(session: &Session, role_name: &str) -> bool {
     get_role_names(session).iter().any(|role| role == role_name)
+}
+
+pub fn is_instructor_course_limited(session: &Session) -> bool {
+    has_role(session, "Instructor")
+        && !has_role(session, "Organisation Admin")
+        && !has_role(session, "LMS Admin")
 }
 
 pub fn price_to_cents(price: rust_decimal::Decimal) -> Result<i32, HttpResponse> {
@@ -91,21 +97,64 @@ pub async fn can_manage_course(
         return Ok(true);
     }
 
-    if has_role(session, "Instructor") && course.instructor_id == Some(user.user_id) {
-        return Ok(true);
+    if has_role(session, "Instructor") {
+        return course_instructors::Entity::find_by_id((course.course_id, user.user_id))
+            .one(db)
+            .await
+            .map(|assignment| assignment.is_some())
+            .map_err(|err| {
+                HttpResponse::InternalServerError()
+                    .body(format!("Database error finding course instructor: {}", err))
+            });
     }
 
     Ok(false)
+}
+
+pub async fn get_instructor_course_ids_for_session(
+    db: &DatabaseConnection,
+    session: &Session,
+) -> Result<Vec<i32>, HttpResponse> {
+    let user = get_session_user(db, session).await?;
+    let assignments = course_instructors::Entity::find()
+        .filter(course_instructors::Column::InstructorId.eq(user.user_id))
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding assigned courses: {}", err))
+        })?;
+
+    Ok(assignments
+        .into_iter()
+        .map(|assignment| assignment.course_id)
+        .collect())
+}
+
+pub async fn get_instructor_courses_for_session(
+    db: &DatabaseConnection,
+    session: &Session,
+) -> Result<Vec<courses::Model>, HttpResponse> {
+    let course_ids = get_instructor_course_ids_for_session(db, session).await?;
+
+    if course_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    courses::Entity::find()
+        .filter(courses::Column::CourseId.is_in(course_ids))
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding assigned courses: {}", err))
+        })
 }
 
 pub async fn get_organisation_courses_for_session(
     db: &DatabaseConnection,
     session: &Session,
 ) -> Result<Vec<courses::Model>, HttpResponse> {
-    if !has_role(session, "Organisation Admin") && !has_role(session, "LMS Admin") {
-        return Err(HttpResponse::Forbidden().body("Organisation Admin role required"));
-    }
-
     if has_role(session, "LMS Admin") {
         return courses::Entity::find().all(db).await.map_err(|err| {
             HttpResponse::InternalServerError()
@@ -113,18 +162,26 @@ pub async fn get_organisation_courses_for_session(
         });
     }
 
-    let org_id = get_session_user_org_id(db, session).await?.ok_or_else(|| {
-        HttpResponse::Forbidden().body("Organisation Admin is not assigned to an organisation")
-    })?;
+    if has_role(session, "Organisation Admin") {
+        let org_id = get_session_user_org_id(db, session).await?.ok_or_else(|| {
+            HttpResponse::Forbidden().body("Organisation Admin is not assigned to an organisation")
+        })?;
 
-    courses::Entity::find()
-        .filter(courses::Column::OrgId.eq(org_id))
-        .all(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!(
-                "Database error finding organisation courses: {}",
-                err
-            ))
-        })
+        return courses::Entity::find()
+            .filter(courses::Column::OrgId.eq(org_id))
+            .all(db)
+            .await
+            .map_err(|err| {
+                HttpResponse::InternalServerError().body(format!(
+                    "Database error finding organisation courses: {}",
+                    err
+                ))
+            });
+    }
+
+    if has_role(session, "Instructor") {
+        return get_instructor_courses_for_session(db, session).await;
+    }
+
+    Err(HttpResponse::Forbidden().body("Course management role required"))
 }

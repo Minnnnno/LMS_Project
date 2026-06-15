@@ -5,6 +5,7 @@ let allUnassignedUsers = [];       // users with no org yet (for manual tab)
 let allSystemUsers = [];           // all users (for file matching)
 let selectedEnrollUserIds = new Set();
 let fileMatchedRows = [];          // parsed rows from CSV/Excel with matched user_id
+let courseInstructorState = { courses: [], instructors: [] };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,8 @@ async function selectOrg(orgId, orgName) {
         document.getElementById('members-list').innerHTML =
             '<p class="text-danger small">Failed to load members.</p>';
     }
+
+    await loadCourseInstructorManager(orgId);
 }
 
 function renderMembers(members, orgId) {
@@ -134,6 +137,112 @@ async function removeMember(orgId, userId) {
 }
 
 // ── Enrol panel open/close ────────────────────────────────────────────────────
+
+async function loadCourseInstructorManager(orgId, options = {}) {
+    const panel = document.getElementById('course-instructor-panel');
+    const list = document.getElementById('course-instructor-list');
+    panel.style.display = '';
+    if (!options.keepFeedback) {
+        document.getElementById('course-instructor-feedback').innerHTML = '';
+    }
+    list.innerHTML = '<p class="text-muted small mb-0">Loading course instructors...</p>';
+
+    try {
+        const { data } = await axios.get(`/api/organisations/${orgId}/course-instructors`);
+        courseInstructorState = data;
+        renderCourseInstructorManager();
+    } catch (err) {
+        list.innerHTML = `<p class="text-danger small mb-0">${escHtml(err.response?.data || 'Failed to load course instructors.')}</p>`;
+    }
+}
+
+function renderCourseInstructorManager() {
+    const courseSelect = document.getElementById('course-instructor-course');
+    const instructorSelect = document.getElementById('course-instructor-user');
+    const list = document.getElementById('course-instructor-list');
+    const assignButton = document.getElementById('btn-assign-course-instructor');
+    const courses = courseInstructorState.courses || [];
+    const instructors = courseInstructorState.instructors || [];
+
+    courseSelect.innerHTML = courses.length
+        ? courses.map(course => `<option value="${course.course_id}">${escHtml(course.name)}</option>`).join('')
+        : '<option value="">No courses found</option>';
+
+    instructorSelect.innerHTML = instructors.length
+        ? instructors.map(instructor => `<option value="${instructor.user_id}">${escHtml(instructor.first_name)} ${escHtml(instructor.last_name)} (${escHtml(instructor.email)})</option>`).join('')
+        : '<option value="">No instructors found</option>';
+
+    assignButton.disabled = !courses.length || !instructors.length;
+
+    if (!courses.length) {
+        list.innerHTML = '<p class="text-muted small mb-0">No courses found in this organisation.</p>';
+        return;
+    }
+
+    list.innerHTML = courses.map(course => {
+        const chips = (course.instructors || []).length
+            ? course.instructors.map(instructor => `
+                <span class="course-instructor-chip">
+                    ${escHtml(instructor.first_name)} ${escHtml(instructor.last_name)}
+                    <button type="button" title="Remove instructor"
+                            onclick="removeCourseInstructor(${course.course_id}, ${instructor.user_id})">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </span>
+            `).join('')
+            : '<span class="text-muted small">No instructors assigned</span>';
+
+        return `
+            <div class="course-instructor-card mb-2">
+                <div class="fw-semibold mb-2">${escHtml(course.name)}</div>
+                <div class="d-flex flex-wrap gap-2">${chips}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+document.getElementById('btn-refresh-course-instructors')?.addEventListener('click', () => {
+    if (currentOrgId) loadCourseInstructorManager(currentOrgId);
+});
+
+document.getElementById('assign-course-instructor-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!currentOrgId) return;
+
+    const courseId = Number(document.getElementById('course-instructor-course').value);
+    const instructorId = Number(document.getElementById('course-instructor-user').value);
+    if (!courseId || !instructorId) return;
+
+    const button = document.getElementById('btn-assign-course-instructor');
+    showCourseInstructorFeedback('Assigning instructor...', 'info');
+    button.disabled = true;
+
+    try {
+        const { data } = await axios.post(
+            `/api/organisations/${currentOrgId}/courses/${courseId}/instructors`,
+            { instructor_id: instructorId },
+        );
+        showCourseInstructorFeedback(`<i class="bi bi-check2-circle me-1"></i>${escHtml(data.message || 'Instructor assigned')}`, 'success');
+        await loadCourseInstructorManager(currentOrgId, { keepFeedback: true });
+    } catch (err) {
+        showCourseInstructorFeedback('Error: ' + escHtml(err.response?.data || err.message), 'error');
+    } finally {
+        button.disabled = false;
+    }
+});
+
+async function removeCourseInstructor(courseId, instructorId) {
+    if (!currentOrgId) return;
+    if (!confirm('Remove this instructor from the course?')) return;
+
+    try {
+        await axios.delete(`/api/organisations/${currentOrgId}/courses/${courseId}/instructors/${instructorId}`);
+        showCourseInstructorFeedback('<i class="bi bi-check2-circle me-1"></i>Instructor removed from course', 'success');
+        await loadCourseInstructorManager(currentOrgId, { keepFeedback: true });
+    } catch (err) {
+        showCourseInstructorFeedback('Error: ' + escHtml(err.response?.data || err.message), 'error');
+    }
+}
 
 function hideEnrolPanel() {
     document.getElementById('enroll-panel').style.display = 'none';
@@ -453,6 +562,12 @@ function showFeedback(msg, type) {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 function showInviteFeedback(msg, type) {
     const el = document.getElementById('invite-instructor-feedback');
+    const cls = type === 'success' ? 'success' : type === 'info' ? '' : 'error';
+    el.innerHTML = `<div class="result-summary ${cls}">${msg}</div>`;
+}
+
+function showCourseInstructorFeedback(msg, type) {
+    const el = document.getElementById('course-instructor-feedback');
     const cls = type === 'success' ? 'success' : type === 'info' ? '' : 'error';
     el.innerHTML = `<div class="result-summary ${cls}">${msg}</div>`;
 }

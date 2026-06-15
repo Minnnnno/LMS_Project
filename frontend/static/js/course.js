@@ -2,6 +2,10 @@ let organisationCourseIds = new Set();
 let enrolledCourseIds = new Set();
 let canManageOrganisationCourses = false;
 
+function isManagedOnlyCoursePage() {
+    return document.getElementById("organisation-courses-section")?.dataset.managedOnly === "true";
+}
+
 function goToCourse(courseId) {
     window.location.href = "/course/" + courseId;
 }
@@ -242,6 +246,10 @@ async function loadOrganisationCourses() {
 }
 
 async function loadCourses() {
+    if (isManagedOnlyCoursePage()) {
+        return;
+    }
+
     try {
         const response = await axios.get("/api/courses");
         const courseGrid = document.getElementById("course-grid");
@@ -262,6 +270,10 @@ async function loadCourses() {
 }
 
 async function loadEnrolledCourses() {
+    if (isManagedOnlyCoursePage()) {
+        return;
+    }
+
     const section = document.getElementById("enrolled-courses-section");
     const courseGrid = document.getElementById("enrolled-course-grid");
 
@@ -300,6 +312,13 @@ async function initCoursesPage() {
     document.getElementById("save-create-course-btn")?.addEventListener("click", createOrganisationCourse);
 
     await loadOrganisationCourses();
+
+    if (isManagedOnlyCoursePage()) {
+        document.getElementById("enrolled-courses-section")?.setAttribute("hidden", "");
+        document.getElementById("all-courses-section")?.setAttribute("hidden", "");
+        return;
+    }
+
     await loadEnrolledCourses();
     await loadCourses();
 }

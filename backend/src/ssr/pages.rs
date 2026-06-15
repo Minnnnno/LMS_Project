@@ -109,8 +109,7 @@ async fn quiz_creator_page(
                 .finish();
         }
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
         }
     };
 
@@ -255,6 +254,11 @@ pub fn build_page_context(session: &Session) -> Context {
         .unwrap_or_default();
 
     context.insert("role_names", &role_names);
+
+    let is_instructor_managed_only = role_names.iter().any(|role| role == "Instructor")
+        && !role_names.iter().any(|role| role == "Organisation Admin")
+        && !role_names.iter().any(|role| role == "LMS Admin");
+    context.insert("is_instructor_managed_only", &is_instructor_managed_only);
 
     let role_ids: Vec<i32> = session
         .get::<Vec<i32>>("role_ids")

@@ -4,11 +4,16 @@
 
 {% block content %}
 <link rel="stylesheet" href="/static/css/course.css?v=5">
-<section id="organisation-courses-section" class="course-section organisation-course-section" hidden>
+<section id="organisation-courses-section" class="course-section organisation-course-section" data-managed-only="{{ is_instructor_managed_only }}" hidden>
     <div class="course-section-heading">
         <div>
+            {% if is_instructor_managed_only %}
+            <h1 class="section-title">Managed Courses</h1>
+            <p class="page-subtitle">Courses assigned to you.</p>
+            {% else %}
             <h2 class="course-section-title">Organisation Courses</h2>
             <p class="page-subtitle">Courses assigned to your organisation.</p>
+            {% endif %}
         </div>
         <button
             id="open-create-course-btn"
@@ -34,7 +39,7 @@
     <div id="enrolled-course-grid" class="course-grid"></div>
 </section>
 
-<section id="all-courses-section" class="course-section">
+<section id="all-courses-section" class="course-section" {% if is_instructor_managed_only %}hidden{% endif %}>
     <div class="course-section-heading">
         <div>
             <h1 class="section-title">Available Courses</h1>
