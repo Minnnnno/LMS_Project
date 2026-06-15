@@ -123,9 +123,13 @@ pub async fn change_password(
     let mut update_user = user.into_active_model();
     update_user.password_hash = Set(Some(new_password_hash));
     update_user.auth_provider = Set("password".to_string());
+    update_user.must_change_password = Set(false);
 
     match update_user.update(db).await {
-        Ok(_) => HttpResponse::Ok().body("Password changed successfully!"),
+        Ok(_) => {
+            let _ = session.insert("must_change_password", false);
+            HttpResponse::Ok().body("Password changed successfully!")
+        }
         Err(err) => HttpResponse::InternalServerError().body(format!("Failed to update password: {}", err)),
     }
 }

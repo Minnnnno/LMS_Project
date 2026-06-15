@@ -1,4 +1,5 @@
 use crate::entity::{roles, user_roles, users};
+use crate::models::student::ChangePasswordForm;
 use crate::models::user::{LoginForm, RegisterForm};
 use actix_session::Session;
 use actix_web::http::header;
@@ -136,6 +137,17 @@ fn request_ip_address(req: &HttpRequest) -> Option<String> {
 #[get("/login")]
 pub async fn login(session: Session) -> impl Responder {
     if is_logged_in(&session) {
+        if session
+            .get::<bool>("must_change_password")
+            .ok()
+            .flatten()
+            .unwrap_or(false)
+        {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/change-password"))
+                .finish();
+        }
+
         return redirect_home();
     }
 
@@ -156,6 +168,165 @@ pub async fn login(session: Session) -> impl Responder {
         .expect("Failed to render login.html");
 
     HttpResponse::Ok().content_type("text/html").body(html)
+}
+
+fn render_change_password_page(
+    session: &Session,
+    status: actix_web::http::StatusCode,
+    error: Option<&str>,
+) -> HttpResponse {
+    let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
+    let mut context = build_page_context(session);
+    if let Some(error) = error {
+        context.insert("error", error);
+    }
+
+    let html = tera
+        .render("change_password.html", &context)
+        .expect("Failed to render change_password.html");
+
+    HttpResponse::build(status)
+        .content_type("text/html")
+        .body(html)
+}
+
+#[get("/change-password")]
+pub async fn change_password_page(session: Session) -> impl Responder {
+    if !is_logged_in(&session) {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/login"))
+            .finish();
+    }
+
+    if !session
+        .get::<bool>("must_change_password")
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+    {
+        return redirect_home();
+    }
+
+    render_change_password_page(&session, actix_web::http::StatusCode::OK, None)
+}
+
+#[post("/change-password")]
+pub async fn change_password_submit(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    form: web::Form<ChangePasswordForm>,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id").ok().flatten() {
+        Some(user_id) => user_id,
+        None => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+    };
+
+    let form = form.into_inner();
+    if let Err(errors) = form.validate() {
+        println!("Forced password change validation error: {:?}", errors);
+        return render_change_password_page(
+            &session,
+            actix_web::http::StatusCode::BAD_REQUEST,
+            Some("Please check your password details."),
+        );
+    }
+
+    if form.new_password != form.confirm_password {
+        return render_change_password_page(
+            &session,
+            actix_web::http::StatusCode::BAD_REQUEST,
+            Some("New password and confirm password do not match."),
+        );
+    }
+
+    let user = match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            session.purge();
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+        Err(err) => {
+            println!("Forced password change user lookup error: {:?}", err);
+            return render_change_password_page(
+                &session,
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Some("Unable to load your account right now."),
+            );
+        }
+    };
+
+    let password_hash = match &user.password_hash {
+        Some(password_hash) => password_hash,
+        None => {
+            return render_change_password_page(
+                &session,
+                actix_web::http::StatusCode::BAD_REQUEST,
+                Some("This account does not have a password to change."),
+            );
+        }
+    };
+
+    let parsed_hash = match PasswordHash::new(password_hash) {
+        Ok(hash) => hash,
+        Err(err) => {
+            println!("Forced password hash parse error: {:?}", err);
+            return render_change_password_page(
+                &session,
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Some("Unable to verify your current password."),
+            );
+        }
+    };
+
+    if Argon2::default()
+        .verify_password(form.current_password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
+        return render_change_password_page(
+            &session,
+            actix_web::http::StatusCode::UNAUTHORIZED,
+            Some("Current password is incorrect."),
+        );
+    }
+
+    let new_password_hash = match hash_password(form.new_password).await {
+        Ok(hash) => hash,
+        Err(message) => {
+            return render_change_password_page(
+                &session,
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Some(&message),
+            );
+        }
+    };
+
+    let mut active_user = user.into_active_model();
+    active_user.password_hash = Set(Some(new_password_hash));
+    active_user.auth_provider = Set("password".to_string());
+    active_user.must_change_password = Set(false);
+
+    match active_user.update(db.get_ref()).await {
+        Ok(_) => {
+            let _ = session.insert("must_change_password", false);
+            HttpResponse::Found()
+                .insert_header((header::LOCATION, "/"))
+                .finish()
+        }
+        Err(err) => {
+            println!("Forced password change update error: {:?}", err);
+            render_change_password_page(
+                &session,
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Some("Unable to update your password right now."),
+            )
+        }
+    }
 }
 
 #[get("/register")]
@@ -248,6 +419,7 @@ pub async fn register_submit(
         password_hash: Set(Some(password_hash)),
         auth_provider: Set("password".to_string()),
         email_verified: Set(false),
+        must_change_password: Set(false),
 
         // org_id is not set here.
         // This lets the database use its default value.
@@ -406,14 +578,18 @@ pub async fn login_submit(
     if let Err(err) = session.insert("email_verified", user.email_verified) {
         println!("Session insert error: {:?}", err);
     }
+    if let Err(err) = session.insert("must_change_password", user.must_change_password) {
+        println!("Session insert error: {:?}", err);
+    }
 
     let is_lms_admin = role_names.iter().any(|role| role == "LMS Admin");
+    let must_change_password = user.must_change_password;
 
     store_roles_in_session(&session, role_ids, role_names);
 
     println!("Login successful. Stored user_id: {}", user.user_id);
 
-    let remember_cookie = if form.remember_me.is_some() {
+    let remember_cookie = if form.remember_me.is_some() && !must_change_password {
         match create_remember_me_cookie(
             db.get_ref(),
             user.user_id,
@@ -432,7 +608,11 @@ pub async fn login_submit(
         None
     };
 
-    let mut response = if is_lms_admin {
+    let mut response = if must_change_password {
+        HttpResponse::Found()
+            .insert_header((header::LOCATION, "/change-password"))
+            .finish()
+    } else if is_lms_admin {
         HttpResponse::Found()
             .insert_header((header::LOCATION, "/admin/dashboard"))
             .finish()
@@ -670,6 +850,7 @@ pub async fn google_callback(
                 password_hash: Set(None),
                 auth_provider: Set("google".to_string()),
                 email_verified: Set(true),
+                must_change_password: Set(false),
                 ..Default::default()
             };
 
@@ -729,6 +910,12 @@ pub async fn google_callback(
     }
 
     println!("Google login successful. Stored user_id: {}", user.user_id);
+
+    if user.must_change_password {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/change-password"))
+            .finish();
+    }
 
     redirect_home()
 }
@@ -846,6 +1033,17 @@ pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> imp
                 .finish();
         }
     };
+
+    if session
+        .get::<bool>("must_change_password")
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+    {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/change-password"))
+            .finish();
+    }
 
     let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
 

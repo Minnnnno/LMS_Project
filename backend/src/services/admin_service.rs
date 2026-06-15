@@ -193,6 +193,7 @@ pub async fn create_user_service(
         password_hash: Set(Some(password_hash)),
         org_id: Set(body.org_id),
         email_verified: Set(false),
+        must_change_password: Set(false),
         ..Default::default()
     };
 

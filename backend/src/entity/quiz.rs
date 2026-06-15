@@ -13,7 +13,7 @@ pub struct Model {
     pub max_attempts: Option<i32>,
     pub time_limit: Option<i32>,
     pub starts_at: Option<NaiveDateTime>,
-    pub ends_at: NaiveDateTime,
+    pub ends_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
 }
 

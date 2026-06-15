@@ -5,22 +5,26 @@ use actix_web::{
     post, web,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbErr,
+    EntityTrait, QueryFilter, Set, TransactionTrait,
 };
 use tera::{Context, Tera};
 use validator::Validate;
 
 use crate::entity::{organisations, roles, user_roles, users};
 use crate::models::organisation::{
-    CreateOrganisationForm, MassEnrollForm, OrgMemberDto, OrganisationSignupForm,
+    CreateOrganisationForm, InviteInstructorForm, MassEnrollForm, OrgMemberDto,
+    OrganisationSignupForm,
 };
-use crate::services::organisation_service;
+use crate::services::course_service::{get_session_user_org_id, has_role};
 use crate::services::email_verification_service::{
     create_email_verification_token, send_verification_email,
 };
+use crate::services::mailer_service::{send_mail_message, MailRequest};
+use crate::services::organisation_service;
 use crate::services::user_service::{assign_role_to_user, hash_password, sign_user_into_session};
 use crate::ssr::pages::{build_page_context, render_page};
+use uuid::Uuid;
 
 const ORG_DASHBOARD_PATH: &str = "/organisation";
 
@@ -30,6 +34,10 @@ const ORG_DASHBOARD_PATH: &str = "/organisation";
 
 #[get("/organisation")]
 pub async fn organisation_page(session: Session) -> impl Responder {
+    if !has_role(&session, "Organisation Admin") {
+        return HttpResponse::Forbidden().body("Organisation Admin role required");
+    }
+
     render_page("organisation.html", &session)
 }
 
@@ -364,6 +372,7 @@ pub async fn organisation_signup_submit(
             auth_provider: Set("password".to_string()),
             org_id: Set(Some(inserted_org.org_id)),
             email_verified: Set(false),
+            must_change_password: Set(false),
             ..Default::default()
         };
 
@@ -648,6 +657,67 @@ fn optional_trimmed(value: Option<&str>) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn generate_temp_password() -> String {
+    let raw = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    format!("SkillUp-{}", &raw[..18])
+}
+
+fn title_case_ascii(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => format!(
+            "{}{}",
+            first.to_ascii_uppercase(),
+            chars.as_str().to_ascii_lowercase()
+        ),
+        None => String::new(),
+    }
+}
+
+fn name_from_email(email: &str) -> (String, String) {
+    let local_part = email.split('@').next().unwrap_or("instructor");
+    let mut parts = local_part
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(title_case_ascii)
+        .collect::<Vec<String>>();
+
+    if parts.is_empty() {
+        return ("Instructor".to_string(), "User".to_string());
+    }
+
+    let first_name = parts.remove(0);
+    let last_name = if parts.is_empty() {
+        "Instructor".to_string()
+    } else {
+        parts.join(" ")
+    };
+
+    (first_name, last_name)
+}
+
+fn login_url() -> String {
+    let base_url =
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+    format!("{}/login", base_url.trim_end_matches('/'))
+}
+
+fn send_instructor_invite_email(email: &str, temp_password: &str) -> Result<(), String> {
+    let body = format!(
+        "You have been invited as an instructor on SkillUp LMS.\n\nLogin email: {}\nTemporary password: {}\n\nSign in here: {}\n\nYou will be asked to change this temporary password after signing in.",
+        email,
+        temp_password,
+        login_url()
+    );
+
+    send_mail_message(MailRequest {
+        to: email.to_string(),
+        subject: "Your SkillUp LMS instructor account".to_string(),
+        body,
+        is_html: false,
+    })
+}
+
 async fn assign_role_if_missing<C>(
     db: &C,
     user_id: i32,
@@ -681,11 +751,51 @@ where
     Ok(())
 }
 
-/// GET /api/organisations  –  list all organisations
+/// GET /api/organisations  –  list the current organisation admin's organisation
+async fn require_session_organisation(
+    db: &DatabaseConnection,
+    session: &Session,
+) -> Result<i32, HttpResponse> {
+    organisation_service::require_org_admin(session)?;
+
+    if !has_role(session, "Organisation Admin") {
+        return Err(HttpResponse::Forbidden().body("Organisation Admin role required"));
+    }
+
+    get_session_user_org_id(db, session).await?.ok_or_else(|| {
+        HttpResponse::Forbidden().body("Organisation Admin is not assigned to an organisation")
+    })
+}
+
+async fn require_matching_session_organisation(
+    db: &DatabaseConnection,
+    session: &Session,
+    org_id: i32,
+) -> Result<(), HttpResponse> {
+    let session_org_id = require_session_organisation(db, session).await?;
+    if session_org_id == org_id {
+        Ok(())
+    } else {
+        Err(HttpResponse::Forbidden().body("You can only manage your organisation"))
+    }
+}
+
 #[get("/organisations")]
-pub async fn list_organisations(db: web::Data<DatabaseConnection>) -> impl Responder {
-    match organisations::Entity::find().all(db.get_ref()).await {
-        Ok(orgs) => HttpResponse::Ok().json(orgs),
+pub async fn list_organisations(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let org_id = match require_session_organisation(db.get_ref(), &session).await {
+        Ok(org_id) => org_id,
+        Err(response) => return response,
+    };
+
+    match organisations::Entity::find_by_id(org_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(org)) => HttpResponse::Ok().json(vec![org]),
+        Ok(None) => HttpResponse::NotFound().body("Organisation not found"),
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
@@ -694,9 +804,16 @@ pub async fn list_organisations(db: web::Data<DatabaseConnection>) -> impl Respo
 #[get("/organisations/{org_id}")]
 pub async fn get_organisation(
     db: web::Data<DatabaseConnection>,
+    session: Session,
     path: web::Path<i32>,
 ) -> impl Responder {
     let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
     match organisations::Entity::find_by_id(org_id)
         .one(db.get_ref())
         .await
@@ -714,8 +831,8 @@ pub async fn create_organisation(
     session: Session,
     body: web::Json<CreateOrganisationForm>,
 ) -> impl Responder {
-    if let Err(e) = organisation_service::require_org_admin(&session) {
-        return e;
+    if !has_role(&session, "LMS Admin") {
+        return HttpResponse::Forbidden().body("LMS Admin role required");
     }
 
     match current_session_user(db.get_ref(), &session).await {
@@ -747,8 +864,8 @@ pub async fn delete_organisation(
     session: Session,
     path: web::Path<i32>,
 ) -> impl Responder {
-    if let Err(e) = organisation_service::require_org_admin(&session) {
-        return e;
+    if !has_role(&session, "LMS Admin") {
+        return HttpResponse::Forbidden().body("LMS Admin role required");
     }
 
     let org_id = path.into_inner();
@@ -769,9 +886,15 @@ pub async fn delete_organisation(
 #[get("/organisations/{org_id}/members")]
 pub async fn list_org_members(
     db: web::Data<DatabaseConnection>,
+    session: Session,
     path: web::Path<i32>,
 ) -> impl Responder {
     let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
 
     let members = match users::Entity::find()
         .filter(users::Column::OrgId.eq(org_id))
@@ -834,6 +957,100 @@ pub async fn list_org_members(
     HttpResponse::Ok().json(dtos)
 }
 
+/// POST /api/organisations/{org_id}/instructors/invite
+#[post("/organisations/{org_id}/instructors/invite")]
+pub async fn invite_instructor(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+    body: web::Json<InviteInstructorForm>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let body = body.into_inner();
+    if let Err(errors) = body.validate() {
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
+    }
+
+    let email = body.email.trim().to_lowercase();
+    match users::Entity::find()
+        .filter(users::Column::Email.eq(email.clone()))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(_)) => return HttpResponse::Conflict().body("Email is already registered"),
+        Ok(None) => {}
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error checking email: {}", err));
+        }
+    }
+
+    let temp_password = generate_temp_password();
+    let password_hash = match hash_password(temp_password.clone()).await {
+        Ok(hash) => hash,
+        Err(message) => return HttpResponse::InternalServerError().body(message),
+    };
+    let (first_name, last_name) = name_from_email(&email);
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let new_user = users::ActiveModel {
+        first_name: Set(first_name),
+        last_name: Set(last_name),
+        email: Set(email.clone()),
+        password_hash: Set(Some(password_hash)),
+        auth_provider: Set("password".to_string()),
+        org_id: Set(Some(org_id)),
+        email_verified: Set(true),
+        must_change_password: Set(true),
+        ..Default::default()
+    };
+
+    let inserted_user = match new_user.insert(&txn).await {
+        Ok(user) => user,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to create instructor account: {}", err));
+        }
+    };
+
+    if let Err(err) =
+        assign_role_if_missing(&txn, inserted_user.user_id, roles::RoleName::Instructor).await
+    {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to assign instructor role: {}", err));
+    }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit instructor invite: {}", err));
+    }
+
+    match send_instructor_invite_email(&email, &temp_password) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "user_id": inserted_user.user_id,
+            "email": email,
+            "message": "Instructor invited successfully"
+        })),
+        Err(err) => HttpResponse::InternalServerError().body(format!(
+            "Instructor account created, but the invite email could not be sent: {}",
+            err
+        )),
+    }
+}
+
 // ── Mass enrollment ────────────────────────────────────────────────────────────
 
 /// POST /api/organisations/{org_id}/enroll
@@ -850,11 +1067,12 @@ pub async fn mass_enroll(
     path: web::Path<i32>,
     body: web::Json<MassEnrollForm>,
 ) -> impl Responder {
-    if let Err(e) = organisation_service::require_org_admin(&session) {
-        return e;
-    }
-
     let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
 
     // Resolve the target role
     let target_role_name = match body.role.as_str() {
@@ -973,11 +1191,12 @@ pub async fn remove_org_member(
     session: Session,
     path: web::Path<(i32, i32)>,
 ) -> impl Responder {
-    if let Err(e) = organisation_service::require_org_admin(&session) {
-        return e;
+    let (org_id, user_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
     }
-
-    let (_org_id, user_id) = path.into_inner();
 
     let user = match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
         Ok(Some(u)) => u,
@@ -986,6 +1205,10 @@ pub async fn remove_org_member(
             return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
         }
     };
+
+    if user.org_id != Some(org_id) {
+        return HttpResponse::Forbidden().body("Member does not belong to your organisation");
+    }
 
     let mut active_user = sea_orm::IntoActiveModel::into_active_model(user);
     active_user.org_id = Set(None);
@@ -998,14 +1221,23 @@ pub async fn remove_org_member(
     }
 }
 
-/// GET /api/users/all  –  all users in the system (for CSV/Excel file matching)
+/// GET /api/users/all  –  users visible to this organisation admin for CSV/Excel matching
 #[get("/users/all")]
 pub async fn list_all_users(db: web::Data<DatabaseConnection>, session: Session) -> impl Responder {
-    if let Err(e) = organisation_service::require_org_admin(&session) {
-        return e;
-    }
+    let org_id = match require_session_organisation(db.get_ref(), &session).await {
+        Ok(org_id) => org_id,
+        Err(response) => return response,
+    };
 
-    match users::Entity::find().all(db.get_ref()).await {
+    match users::Entity::find()
+        .filter(
+            Condition::any()
+                .add(users::Column::OrgId.is_null())
+                .add(users::Column::OrgId.eq(org_id)),
+        )
+        .all(db.get_ref())
+        .await
+    {
         Ok(users) => {
             let safe: Vec<serde_json::Value> = users
                 .iter()
@@ -1030,8 +1262,8 @@ pub async fn list_unassigned_users(
     db: web::Data<DatabaseConnection>,
     session: Session,
 ) -> impl Responder {
-    if let Err(e) = organisation_service::require_org_admin(&session) {
-        return e;
+    if let Err(response) = require_session_organisation(db.get_ref(), &session).await {
+        return response;
     }
 
     match users::Entity::find()

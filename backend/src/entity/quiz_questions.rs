@@ -20,9 +20,11 @@ pub struct Model {
     enum_name = "question_type"
 )]
 pub enum QuestionType {
+    #[serde(rename = "mcq")]
     #[sea_orm(string_value = "mcq")]
     Mcq,
 
+    #[serde(rename = "long_answer")]
     #[sea_orm(string_value = "long_answer")]
     LongAnswer,
 }

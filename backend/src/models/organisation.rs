@@ -38,6 +38,12 @@ pub struct MassEnrollForm {
     pub role: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct InviteInstructorForm {
+    #[validate(email(message = "Please enter a valid instructor email address."))]
+    pub email: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OrgMemberDto {
     pub user_id: i32,

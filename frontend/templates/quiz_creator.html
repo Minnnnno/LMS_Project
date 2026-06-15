@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Quiz Creator | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<link rel="stylesheet" href="/static/css/quiz_creator.css?v=2">
+
+<div class="quiz-creator-page">
+    <header class="quiz-creator-header">
+        <div>
+            <a id="quiz-back-link" class="quiz-back-link" href="/courses">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                <span>Back to course</span>
+            </a>
+            <h1>Quiz Creator</h1>
+        </div>
+        <div class="quiz-header-actions">
+            <button id="preview-quiz-btn" class="secondary-action" type="button">
+                <i class="bi bi-eye" aria-hidden="true"></i>
+                <span>Preview</span>
+            </button>
+            <button id="save-quiz-draft-btn" class="primary-action" type="button">
+                <i class="bi bi-save" aria-hidden="true"></i>
+                <span>Save Draft</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="quiz-creator-layout">
+        <section class="quiz-builder-main">
+            <div class="quiz-panel">
+                <h2>Quiz Details</h2>
+
+                <label for="quiz-title-input">Title</label>
+                <input id="quiz-title-input" type="text" placeholder="Quiz title">
+
+                <label for="quiz-description-input">Description</label>
+                <textarea id="quiz-description-input" rows="4" placeholder="What learners should expect"></textarea>
+
+                <div class="quiz-form-grid">
+                    <div>
+                        <label for="quiz-start-date-input">Start date</label>
+                        <input id="quiz-start-date-input" type="date">
+                    </div>
+                    <div>
+                        <label for="quiz-start-time-input">Start time</label>
+                        <select id="quiz-start-time-input"></select>
+                    </div>
+                </div>
+
+                <div class="quiz-form-grid">
+                    <div>
+                        <label for="quiz-max-attempts-input">Max attempts</label>
+                        <input id="quiz-max-attempts-input" type="number" min="1" step="1" placeholder="1">
+                    </div>
+                    <div>
+                        <label for="quiz-time-limit-input">Time limit</label>
+                        <input id="quiz-time-limit-input" type="number" min="1" step="1" placeholder="Minutes">
+                    </div>
+                </div>
+
+                <p id="quiz-save-status" class="quiz-save-status" role="status" aria-live="polite"></p>
+            </div>
+
+            <div class="quiz-panel">
+                <div class="question-list-header">
+                    <h2>Questions</h2>
+                    <button id="add-question-btn" class="secondary-action" type="button">
+                        <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                        <span>Add Question</span>
+                    </button>
+                </div>
+
+                <div id="question-list" class="question-list"></div>
+            </div>
+
+            <div id="quiz-preview-panel" class="quiz-panel quiz-preview-panel" hidden>
+                <div class="question-list-header">
+                    <h2>Preview</h2>
+                    <button id="close-preview-btn" class="icon-action" type="button" aria-label="Close preview">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div id="quiz-preview-content" class="quiz-preview-content"></div>
+            </div>
+        </section>
+
+        <aside class="quiz-builder-side">
+            <div class="quiz-panel">
+                <h2>Quiz Setup</h2>
+                <dl class="quiz-summary-list">
+                    <div>
+                        <dt>Questions</dt>
+                        <dd id="quiz-question-count">0</dd>
+                    </div>
+                    <div>
+                        <dt>MCQ</dt>
+                        <dd id="quiz-mcq-count">0</dd>
+                    </div>
+                    <div>
+                        <dt>Short answer</dt>
+                        <dd id="quiz-short-answer-count">0</dd>
+                    </div>
+                </dl>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<template id="question-template">
+    <article class="question-card">
+        <div class="question-card-header">
+            <h3></h3>
+            <button class="icon-action delete-question-btn" type="button" aria-label="Delete question">
+                <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
+        </div>
+
+        <div class="quiz-form-grid question-settings">
+            <div>
+                <label>Question type</label>
+                <select class="question-type-input">
+                    <option value="mcq">MCQ</option>
+                    <option value="long_answer">Short answer</option>
+                </select>
+            </div>
+            <div>
+                <label>Points</label>
+                <input class="question-points-input" type="number" min="1" step="1" value="1">
+            </div>
+        </div>
+
+        <label>Question text</label>
+        <textarea class="question-text-input" rows="3" placeholder="Enter the question"></textarea>
+
+        <div class="mcq-options"></div>
+
+        <button class="secondary-action add-option-btn" type="button">
+            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            <span>Add Option</span>
+        </button>
+
+        <div class="short-answer-note">
+            <i class="bi bi-input-cursor-text" aria-hidden="true"></i>
+            <span>Short answer questions will be manually reviewed later.</span>
+        </div>
+    </article>
+</template>
+
+<template id="option-template">
+    <div class="option-row">
+        <input class="correct-option-input" type="radio">
+        <input class="option-text-input" type="text" placeholder="Option text">
+        <button class="icon-action delete-option-btn" type="button" aria-label="Delete option">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+    </div>
+</template>
+
+<script src="/static/js/quiz_creator.js?v=2"></script>
+{% endblock content %}

@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=9">
+<link rel="stylesheet" href="/static/css/course_details.css?v=10">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -47,6 +47,7 @@
             <button id="delete-course-btn" class="danger-btn">Delete Course</button>
             <button id="add-module-btn">+ Add Module</button>
             <button id="add-assignment-btn">+ Add Assignment</button>
+            <button id="add-quiz-btn">+ Add Quiz</button>
             <button id="student-view-btn">View Student View</button>
         </div>
         <div class="course-card">
@@ -61,6 +62,14 @@
                 <button id="assignment-card-add-btn" class="course-card-action-btn" type="button" style="display: none;">+ Add Assignment</button>
             </div>
             <div id="assignment-list"></div>
+        </div>
+
+        <div class="course-card course-side-card">
+            <div class="course-card-heading">
+                <h2>Quizzes</h2>
+                <button id="quiz-card-add-btn" class="course-card-action-btn" type="button" style="display: none;">+ Add Quiz</button>
+            </div>
+            <div id="quiz-list"></div>
         </div>
 
     </div>
@@ -288,5 +297,5 @@
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=23"></script>
+<script src="/static/js/course_details.js?v=24"></script>
 {% endblock content %}

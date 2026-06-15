@@ -108,7 +108,7 @@ pub async fn create_option(
     };
 
     match option.insert(db).await {
-        Ok(_) => HttpResponse::Ok().body("New quiz option created successfully!"),
+        Ok(option) => HttpResponse::Ok().json(option),
         Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
     }
 }

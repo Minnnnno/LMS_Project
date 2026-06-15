@@ -56,8 +56,7 @@ async function loadOrganisations() {
             return;
         }
         el.innerHTML = orgs.map(org => `
-            <div class="org-card mb-2" id="org-card-${org.org_id}"
-                 onclick="selectOrg(${org.org_id}, '${escHtml(org.org_name)}')">
+            <div class="org-card mb-2" id="org-card-${org.org_id}" data-org-id="${org.org_id}">
                 <div class="d-flex align-items-center justify-content-between">
                     <div>
                         <div class="fw-semibold">${escHtml(org.org_name)}</div>
@@ -67,6 +66,13 @@ async function loadOrganisations() {
                 </div>
             </div>
         `).join('');
+        document.querySelectorAll('.org-card').forEach(card => {
+            const org = orgs.find(item => String(item.org_id) === card.dataset.orgId);
+            card.addEventListener('click', () => selectOrg(org.org_id, org.org_name));
+        });
+        if (orgs.length === 1) {
+            await selectOrg(orgs[0].org_id, orgs[0].org_name);
+        }
     } catch {
         document.getElementById('org-list').innerHTML =
             '<p class="text-danger small">Failed to load organisations.</p>';
@@ -134,6 +140,9 @@ function hideEnrolPanel() {
     selectedEnrollUserIds.clear();
     fileMatchedRows = [];
     document.getElementById('enroll-feedback').innerHTML = '';
+    document.getElementById('invite-instructor-feedback').innerHTML = '';
+    const inviteEmail = document.getElementById('invite-instructor-email');
+    if (inviteEmail) inviteEmail.value = '';
     clearFilePreview();
 }
 
@@ -171,6 +180,32 @@ document.getElementById('btn-open-enroll')?.addEventListener('click', async () =
 });
 
 document.getElementById('btn-cancel-enroll')?.addEventListener('click', hideEnrolPanel);
+
+document.getElementById('invite-instructor-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!currentOrgId) return;
+
+    const emailInput = document.getElementById('invite-instructor-email');
+    const button = document.getElementById('btn-invite-instructor');
+    const email = emailInput.value.trim();
+    if (!email) return;
+
+    showInviteFeedback('Sending invite...', 'info');
+    button.disabled = true;
+
+    try {
+        const { data } = await axios.post(`/api/organisations/${currentOrgId}/instructors/invite`, { email });
+        showInviteFeedback(`<i class="bi bi-check2-circle me-1"></i>${escHtml(data.message || 'Instructor invited successfully')}`, 'success');
+        emailInput.value = '';
+
+        const { data: members } = await axios.get(`/api/organisations/${currentOrgId}/members`);
+        renderMembers(members, currentOrgId);
+    } catch (err) {
+        showInviteFeedback('Error: ' + escHtml(err.response?.data || err.message), 'error');
+    } finally {
+        button.disabled = false;
+    }
+});
 
 // ── Manual tab: user list ─────────────────────────────────────────────────────
 
@@ -415,22 +450,11 @@ function showFeedback(msg, type) {
     el.innerHTML = `<div class="result-summary ${cls}">${msg}</div>`;
 }
 
-// ── Create organisation ───────────────────────────────────────────────────────
-
-document.getElementById('btn-create-org')?.addEventListener('click', async () => {
-    const name = document.getElementById('new-org-name').value.trim();
-    const errEl = document.getElementById('create-org-error');
-    if (!name) { errEl.textContent = 'Please enter an organisation name.'; return; }
-    errEl.textContent = '';
-    try {
-        await axios.post('/api/organisations', { org_name: name });
-        document.getElementById('new-org-name').value = '';
-        bootstrap.Modal.getInstance(document.getElementById('createOrgModal')).hide();
-        await loadOrganisations();
-    } catch (err) {
-        errEl.textContent = err.response?.data || 'Failed to create organisation.';
-    }
-});
-
 // ── Boot ──────────────────────────────────────────────────────────────────────
+function showInviteFeedback(msg, type) {
+    const el = document.getElementById('invite-instructor-feedback');
+    const cls = type === 'success' ? 'success' : type === 'info' ? '' : 'error';
+    el.innerHTML = `<div class="result-summary ${cls}">${msg}</div>`;
+}
+
 loadOrganisations();

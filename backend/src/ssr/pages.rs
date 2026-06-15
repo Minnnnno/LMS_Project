@@ -95,6 +95,49 @@ async fn course_details_page(
     }
 }
 
+#[get("/course/{course_id}/quiz-creator")]
+async fn quiz_creator_page(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err));
+        }
+    };
+
+    let course_id = path.into_inner();
+    let course_exists = match course_entity::Entity::find_by_id(course_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err));
+        }
+    };
+
+    if !course_exists {
+        return HttpResponse::NotFound().body("Course not found");
+    }
+
+    match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
+        Ok(true) => render_page("quiz_creator.html", &session),
+        Ok(false) => HttpResponse::Forbidden().body("You cannot manage quizzes for this course"),
+        Err(response) => response,
+    }
+}
+
 #[get("/pdf-viewer")]
 async fn pdf_viewer_page(session: Session) -> impl Responder {
     render_page("pdf_viewer.html", &session)
@@ -172,6 +215,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
         .service(projects)
         .service(downloads)
         .service(course_details_page)
+        .service(quiz_creator_page)
         .service(module_content_page)
         .service(pdf_viewer_page);
 }
@@ -197,6 +241,13 @@ pub fn build_page_context(session: &Session) -> Context {
         .unwrap_or(false);
     context.insert("email_verified", &email_verified);
 
+    let must_change_password = session
+        .get::<bool>("must_change_password")
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    context.insert("must_change_password", &must_change_password);
+
     let role_names: Vec<String> = session
         .get::<Vec<String>>("role_names")
         .ok()
@@ -217,6 +268,17 @@ pub fn build_page_context(session: &Session) -> Context {
 }
 
 pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
+    if session
+        .get::<bool>("must_change_password")
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+    {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/change-password"))
+            .finish();
+    }
+
     let tera: Tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
 
     let context = build_page_context(session);
