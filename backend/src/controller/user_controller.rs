@@ -407,9 +407,7 @@ pub async fn login_submit(
         println!("Session insert error: {:?}", err);
     }
 
-    let is_admin_account = role_names
-        .iter()
-        .any(|role| role == "LMS Admin" || role == "Organisation Admin");
+    let is_lms_admin = role_names.iter().any(|role| role == "LMS Admin");
 
     store_roles_in_session(&session, role_ids, role_names);
 
@@ -434,7 +432,7 @@ pub async fn login_submit(
         None
     };
 
-    let mut response = if is_admin_account {
+    let mut response = if is_lms_admin {
         HttpResponse::Found()
             .insert_header((header::LOCATION, "/admin/dashboard"))
             .finish()

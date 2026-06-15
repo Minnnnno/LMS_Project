@@ -70,14 +70,16 @@
         <label for="course-image-input">Background image</label>
         <input type="file" id="course-image-input" accept="image/*">
 
-        <div class="form-row">
+        <div id="course-paid-fields" class="form-row" hidden>
             <div>
-                <label for="course-price-input">Price</label>
+                <label for="course-price-input">Price (dollars)</label>
                 <input type="number" id="course-price-input" min="0" step="0.01">
             </div>
             <div>
                 <label for="course-currency-input">Currency</label>
-                <input type="text" id="course-currency-input" maxlength="3">
+                <select id="course-currency-input">
+                    <option value="SGD">SGD - Singapore Dollar</option>
+                </select>
             </div>
         </div>
 
