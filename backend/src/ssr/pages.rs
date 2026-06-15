@@ -219,6 +219,13 @@ pub fn build_page_context(session: &Session) -> Context {
         .unwrap_or(false);
     context.insert("email_verified", &email_verified);
 
+    let must_change_password = session
+        .get::<bool>("must_change_password")
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    context.insert("must_change_password", &must_change_password);
+
     let role_names: Vec<String> = session
         .get::<Vec<String>>("role_names")
         .ok()
@@ -239,6 +246,17 @@ pub fn build_page_context(session: &Session) -> Context {
 }
 
 pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
+    if session
+        .get::<bool>("must_change_password")
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+    {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/change-password"))
+            .finish();
+    }
+
     let tera: Tera = Tera::new("../frontend/templates/**/*")
         .expect("Failed to load templates");
 

@@ -13,6 +13,7 @@ pub struct Model {
     pub auth_provider: String,
     pub org_id: Option<i32>,
     pub email_verified: bool,
+    pub must_change_password: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

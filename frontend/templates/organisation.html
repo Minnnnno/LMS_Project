@@ -81,21 +81,16 @@
 <div class="px-4 py-3">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-      <h1 class="section-title mb-0">Organisations</h1>
-      <p class="page-subtitle mb-0">Manage organisations and enrol members.</p>
+      <h1 class="section-title mb-0">Organisation</h1>
+      <p class="page-subtitle mb-0">Manage members in your organisation.</p>
     </div>
-    {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
-    <button class="btn btn-dark rounded-3" data-bs-toggle="modal" data-bs-target="#createOrgModal">
-      <i class="bi bi-plus-lg me-1"></i> New Organisation
-    </button>
-    {% endif %}
   </div>
 
   <div class="row g-3">
     <!-- Left: org list -->
     <div class="col-12 col-lg-4">
       <div class="section-panel">
-        <h6 class="fw-bold mb-3">All Companies</h6>
+        <h6 class="fw-bold mb-3">Your Organisation</h6>
         <div id="org-list">
           <p class="text-muted small">Loading…</p>
         </div>
@@ -109,7 +104,7 @@
       <div class="section-panel" id="members-panel" style="display:none">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <h6 class="fw-bold mb-0" id="members-title">Members</h6>
-          {% if role_names and ("Organisation Admin" in role_names or "LMS Admin" in role_names) %}
+          {% if role_names and "Organisation Admin" in role_names %}
           <button class="btn btn-sm btn-outline-dark rounded-3" id="btn-open-enroll">
             <i class="bi bi-people-fill me-1"></i>Enrol Members
           </button>
@@ -128,6 +123,24 @@
             <i class="bi bi-x-lg"></i>
           </button>
         </div>
+
+        <form id="invite-instructor-form" class="border rounded-3 p-3 mb-3">
+          <label class="form-label fw-semibold small" for="invite-instructor-email">Instructor email</label>
+          <div class="input-group input-group-sm">
+            <input
+              class="form-control"
+              id="invite-instructor-email"
+              type="email"
+              placeholder="instructor@example.com"
+              autocomplete="email"
+              required
+            >
+            <button class="btn btn-dark" id="btn-invite-instructor" type="submit">
+              <i class="bi bi-envelope-plus me-1"></i>Invite Instructor
+            </button>
+          </div>
+          <div id="invite-instructor-feedback" class="mt-2"></div>
+        </form>
 
         <!-- Role selector (shared) -->
         <div class="mb-3">
@@ -228,25 +241,6 @@
   </div>
 </div>
 
-<!-- Create Org Modal -->
-<div class="modal fade" id="createOrgModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content rounded-4">
-      <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title fw-bold">New Organisation</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <label class="form-label fw-semibold">Organisation name</label>
-        <input type="text" class="form-control rounded-3" id="new-org-name" placeholder="e.g. Acme Corp">
-        <div id="create-org-error" class="text-danger small mt-2"></div>
-      </div>
-      <div class="modal-footer border-0 pt-0">
-        <button class="btn btn-dark rounded-3 w-100" id="btn-create-org">Create</button>
-      </div>
-    </div>
-  </div>
-</div>
 {% endblock content %}
 
 {% block extra_js %}

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
   email         VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255),
   auth_provider VARCHAR(20) NOT NULL DEFAULT 'password',
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
   org_id        INT,
   FOREIGN KEY (org_id)
     REFERENCES organisations(org_id)
@@ -466,3 +467,6 @@ ALTER COLUMN password_hash DROP NOT NULL;
 
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) NOT NULL DEFAULT 'password';
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
