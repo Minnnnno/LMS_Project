@@ -3,13 +3,23 @@
 {% block title %}Courses | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course.css?v=4">
+<link rel="stylesheet" href="/static/css/course.css?v=5">
 <section id="organisation-courses-section" class="course-section organisation-course-section" hidden>
     <div class="course-section-heading">
         <div>
             <h2 class="course-section-title">Organisation Courses</h2>
             <p class="page-subtitle">Courses assigned to your organisation.</p>
         </div>
+        <button
+            id="open-create-course-btn"
+            class="course-create-button"
+            type="button"
+            data-can-create="{% if role_names and "Organisation Admin" in role_names %}true{% else %}false{% endif %}"
+            hidden
+        >
+            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            <span>Add Course</span>
+        </button>
     </div>
     <div id="organisation-course-grid" class="course-grid"></div>
 </section>
@@ -35,6 +45,47 @@
     
 </div>
 </section>
+
+<div id="create-course-modal" class="course-modal" style="display: none;">
+    <div class="course-modal-content">
+        <h2>Add Course</h2>
+
+        <label for="create-course-name">Course name</label>
+        <input id="create-course-name" type="text" placeholder="Course name">
+
+        <label for="create-course-description">Description</label>
+        <textarea id="create-course-description" rows="3" placeholder="Brief course description"></textarea>
+
+        <label for="create-course-image">Background image URL</label>
+        <input id="create-course-image" type="url" placeholder="https://...">
+
+        <div class="course-form-row">
+            <div>
+                <label for="create-course-price">Price</label>
+                <input id="create-course-price" type="number" min="0" step="0.01" value="0">
+            </div>
+            <div>
+                <label for="create-course-currency">Currency</label>
+                <select id="create-course-currency">
+                    <option value="SGD">SGD</option>
+                </select>
+            </div>
+        </div>
+
+        <label class="course-checkbox-label">
+            <input id="create-course-paid" type="checkbox">
+            Paid course
+        </label>
+
+        <p id="create-course-status" class="course-form-status" role="status" aria-live="polite"></p>
+
+        <div class="course-modal-actions">
+            <button id="save-create-course-btn" type="button">Create</button>
+            <button id="close-create-course-btn" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course.js?v=10"></script>
+<script src="/static/js/course.js?v=11"></script>
 {% endblock content %}

@@ -5,18 +5,57 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 use crate::entity::quiz_options::{
     ActiveModel as QuizOptionActiveModel, Column as QuizOptionColumn, Entity as QuizOptionEntity,
 };
+use crate::entity::{courses, quiz, quiz_questions};
 use crate::models::quiz_options::{CreateQuizOption, UpdateQuizOption};
-use crate::services::auth_helpers::{get_role_ids, get_user_id, is_student_only};
+use crate::services::auth_helpers::get_user_id;
+use crate::services::course_service::can_manage_course;
 
-fn require_staff(session: &Session, action: &str) -> Result<(), HttpResponse> {
-    let role_ids = get_role_ids(session);
-    if role_ids.is_empty() {
-        return Err(HttpResponse::Unauthorized().body("You must be logged in"));
+async fn get_course_for_question(
+    db: &DatabaseConnection,
+    question_id: i32,
+) -> Result<courses::Model, HttpResponse> {
+    let question = quiz_questions::Entity::find_by_id(question_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding quiz question: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Quiz question not found"))?;
+
+    let quiz = quiz::Entity::find_by_id(question.quiz_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding quiz: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Quiz not found"))?;
+
+    courses::Entity::find_by_id(quiz.course_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))
+}
+
+async fn require_can_manage_question(
+    db: &DatabaseConnection,
+    session: &Session,
+    question_id: i32,
+) -> Result<(), HttpResponse> {
+    let course = get_course_for_question(db, question_id).await?;
+
+    match can_manage_course(db, session, &course).await {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            Err(HttpResponse::Forbidden().body("You cannot manage options for this question"))
+        }
+        Err(response) => Err(response),
     }
-    if is_student_only(&role_ids) {
-        return Err(HttpResponse::Forbidden().body(format!("Students cannot {}", action)));
-    }
-    Ok(())
 }
 
 pub async fn list_options(db: &DatabaseConnection, session: &Session) -> HttpResponse {
@@ -56,7 +95,7 @@ pub async fn create_option(
     session: &Session,
     data: CreateQuizOption,
 ) -> HttpResponse {
-    if let Err(response) = require_staff(session, "create options") {
+    if let Err(response) = require_can_manage_question(db, session, data.question_id).await {
         return response;
     }
 
@@ -80,12 +119,14 @@ pub async fn update_option(
     option_id: i32,
     data: UpdateQuizOption,
 ) -> HttpResponse {
-    if let Err(response) = require_staff(session, "update options") {
-        return response;
-    }
-
     match QuizOptionEntity::find_by_id(option_id).one(db).await {
         Ok(Some(option)) => {
+            if let Err(response) =
+                require_can_manage_question(db, session, option.question_id).await
+            {
+                return response;
+            }
+
             let mut active: QuizOptionActiveModel = option.into();
 
             if let Some(option_text) = data.option_text {
@@ -100,7 +141,9 @@ pub async fn update_option(
 
             match active.update(db).await {
                 Ok(_) => HttpResponse::Ok().body(format!("Option with id {} updated!", option_id)),
-                Err(err) => HttpResponse::InternalServerError().body(format!("Update error: {}", err)),
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Update error: {}", err))
+                }
             }
         }
         Ok(None) => HttpResponse::NotFound().body("Option not found"),
@@ -113,16 +156,20 @@ pub async fn delete_option(
     session: &Session,
     option_id: i32,
 ) -> HttpResponse {
-    if let Err(response) = require_staff(session, "delete options") {
-        return response;
-    }
-
     match QuizOptionEntity::find_by_id(option_id).one(db).await {
         Ok(Some(option)) => {
+            if let Err(response) =
+                require_can_manage_question(db, session, option.question_id).await
+            {
+                return response;
+            }
+
             let active_model: QuizOptionActiveModel = option.into();
             match active_model.delete(db).await {
                 Ok(_) => HttpResponse::Ok().body("Option deleted!"),
-                Err(err) => HttpResponse::InternalServerError().body(format!("Delete error: {}", err)),
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Delete error: {}", err))
+                }
             }
         }
         Ok(None) => HttpResponse::NotFound().body("Option not found!"),

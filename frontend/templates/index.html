@@ -6,17 +6,28 @@
 <section class="dashboard-header">
     <div>
         <h1 class="page-heading">Dashboard</h1>
+        {% if role_names and "Organisation Admin" in role_names %}
+        <p class="page-subtitle">Manage the courses under your organisation.</p>
+        {% else %}
         <p class="page-subtitle">Pick up where you left off.</p>
+        {% endif %}
     </div>
 </section>
 
 <section class="my-courses-panel" aria-labelledby="my-courses-title">
     <div class="my-courses-header">
         <div>
+            {% if role_names and "Organisation Admin" in role_names %}
+            <h2 id="my-courses-title" class="section-title">Organisation Courses</h2>
+            <p class="page-subtitle">Courses under your organisation</p>
+            {% else %}
             <h2 id="my-courses-title" class="section-title">My Courses</h2>
             <p class="page-subtitle">Your enrolled courses</p>
+            {% endif %}
         </div>
-        <a class="my-courses-browse" href="/courses">Browse Courses</a>
+        <a class="my-courses-browse" href="/courses">
+            {% if role_names and "Organisation Admin" in role_names %}Manage Courses{% else %}Browse Courses{% endif %}
+        </a>
     </div>
 
     <div id="my-courses-list" class="my-courses-list">
@@ -27,6 +38,7 @@
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
 const myCoursesList = document.getElementById("my-courses-list");
+const dashboardMode = `{% if role_names and "Organisation Admin" in role_names %}organisation{% else %}student{% endif %}`;
 
 function courseTitle(course) {
     return course.name || `Course #${course.course_id}`;
@@ -81,7 +93,7 @@ function renderMyCourses(courses) {
         myCoursesList.innerHTML = `
             <div class="my-courses-empty">
                 <i class="bi bi-journal-bookmark" aria-hidden="true"></i>
-                <span>You are not enrolled in any courses yet.</span>
+                <span>${dashboardMode === "organisation" ? "No courses have been created for your organisation yet." : "You are not enrolled in any courses yet."}</span>
             </div>
         `;
         return;
@@ -101,7 +113,10 @@ function renderMyCourses(courses) {
 
 async function loadMyCourses() {
     try {
-        const response = await axios.get("/api/my-courses");
+        const endpoint = dashboardMode === "organisation"
+            ? "/api/courses/organisation"
+            : "/api/my-courses";
+        const response = await axios.get(endpoint);
         renderMyCourses(response.data);
     } catch (error) {
         if (error.response?.status === 401) {

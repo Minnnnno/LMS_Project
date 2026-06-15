@@ -1,17 +1,11 @@
-use actix_session::Session;
-use actix_web::{HttpResponse, Responder, get, web, post, put, delete};
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, ActiveModelTrait};
 use crate::entity::{courses, module_contents, modules, users};
-use crate::models::module_content::{
-    UpdateModuleContent,
-    CreateModuleContent,
-};
+use crate::models::module_content::{CreateModuleContent, UpdateModuleContent};
 use crate::services::auth_helpers::get_user_id;
 use crate::services::course_service::has_role;
-use crate::services::module_content_service::{
-    can_manage_module_content,
-    can_view_module_content,
-};
+use crate::services::module_content_service::{can_manage_module_content, can_view_module_content};
+use actix_session::Session;
+use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 #[get("/module-content")]
 pub async fn get_module_contents(
@@ -25,7 +19,7 @@ pub async fn get_module_contents(
 
     let result = if has_role(&session, "LMS Admin") {
         module_contents::Entity::find().all(db.get_ref()).await
-    } else if has_role(&session, "Organisation Admin") {
+    } else if has_role(&session, "Organisation Admin") || has_role(&session, "Instructor") {
         let user = match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
             Ok(Some(user)) => user,
             Ok(None) => return HttpResponse::NotFound().body("User not found"),
@@ -35,20 +29,27 @@ pub async fn get_module_contents(
             }
         };
 
-        let org_id = match user.org_id {
-            Some(org_id) => org_id,
-            None => return HttpResponse::Forbidden().body("Organisation Admin is not assigned to an organisation"),
+        let course_query = if has_role(&session, "Organisation Admin") {
+            let org_id = match user.org_id {
+                Some(org_id) => org_id,
+                None => {
+                    return HttpResponse::Forbidden()
+                        .body("Organisation Admin is not assigned to an organisation");
+                }
+            };
+
+            courses::Entity::find().filter(courses::Column::OrgId.eq(org_id))
+        } else {
+            courses::Entity::find().filter(courses::Column::InstructorId.eq(user_id))
         };
 
-        let course_ids: Vec<i32> = match courses::Entity::find()
-            .filter(courses::Column::OrgId.eq(org_id))
-            .all(db.get_ref())
-            .await
-        {
+        let course_ids: Vec<i32> = match course_query.all(db.get_ref()).await {
             Ok(courses) => courses.into_iter().map(|course| course.course_id).collect(),
             Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error finding organisation courses: {}", err));
+                return HttpResponse::InternalServerError().body(format!(
+                    "Database error finding organisation courses: {}",
+                    err
+                ));
             }
         };
 
@@ -59,8 +60,10 @@ pub async fn get_module_contents(
         {
             Ok(modules) => modules.into_iter().map(|module| module.module_id).collect(),
             Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error finding organisation modules: {}", err));
+                return HttpResponse::InternalServerError().body(format!(
+                    "Database error finding organisation modules: {}",
+                    err
+                ));
             }
         };
 
@@ -74,15 +77,13 @@ pub async fn get_module_contents(
 
     match result {
         Ok(module_content) => {
-            if module_content.is_empty(){
-                HttpResponse::NotFound()
-                .body("No module content found")
-            }else{
+            if module_content.is_empty() {
+                HttpResponse::NotFound().body("No module content found")
+            } else {
                 HttpResponse::Ok().json(module_content)
             }
         }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -90,9 +91,9 @@ pub async fn get_module_contents(
 pub async fn get_module_content_by_id(
     db: web::Data<DatabaseConnection>,
     session: Session,
-    path: web::Path<i32>
+    path: web::Path<i32>,
 ) -> impl Responder {
-    let module_id = path.into_inner(); 
+    let module_id = path.into_inner();
 
     match get_user_id(&session) {
         Ok(_) => {}
@@ -109,21 +110,18 @@ pub async fn get_module_content_by_id(
     }
 
     let result = module_contents::Entity::find()
-    .filter(module_contents::Column::ModuleId.eq(module_id))
-    .all(db.get_ref())
-    .await;
+        .filter(module_contents::Column::ModuleId.eq(module_id))
+        .all(db.get_ref())
+        .await;
     match result {
         Ok(module_content) => {
             if module_content.is_empty() {
-                HttpResponse::NotFound()
-                .body("No module content found")
-            
-            }else{
+                HttpResponse::NotFound().body("No module content found")
+            } else {
                 HttpResponse::Ok().json(module_content)
             }
         }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -145,16 +143,16 @@ pub async fn get_module_content_manage_access(
 
 #[put("/module-content/{module_content_id}")]
 pub async fn update_module_content(
-    db:web::Data<DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
     session: Session,
     path: web::Path<i32>,
-    body: web::Json<UpdateModuleContent>
+    body: web::Json<UpdateModuleContent>,
 ) -> impl Responder {
     let module_content_id = path.into_inner();
     let data = body.into_inner();
     let existing = module_contents::Entity::find_by_id(module_content_id)
-    .one(db.get_ref())
-    .await;
+        .one(db.get_ref())
+        .await;
 
     match existing {
         Ok(Some(module_content)) => {
@@ -163,13 +161,14 @@ pub async fn update_module_content(
             match can_manage_module_content(db.get_ref(), &session, target_module_id).await {
                 Ok(true) => {}
                 Ok(false) => {
-                    return HttpResponse::Forbidden()
-                        .body("Organisation Admin can only update content under their organisation");
+                    return HttpResponse::Forbidden().body(
+                        "Organisation Admin can only update content under their organisation",
+                    );
                 }
                 Err(response) => return response,
             }
 
-            let mut active :module_contents::ActiveModel = module_content.into();
+            let mut active: module_contents::ActiveModel = module_content.into();
 
             if let Some(module_id) = data.module_id {
                 active.module_id = Set(module_id);
@@ -194,15 +193,17 @@ pub async fn update_module_content(
             }
 
             match active.update(db.get_ref()).await {
-                Ok(_) => HttpResponse::Ok()
-                .body(format!("Module content with id {} updated!", module_content_id)),
-                Err(err) => HttpResponse::InternalServerError()
-                .body(format!("Update error: {}", err))
+                Ok(_) => HttpResponse::Ok().body(format!(
+                    "Module content with id {} updated!",
+                    module_content_id
+                )),
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Update error: {}", err))
+                }
             }
         }
-        Ok(None) => HttpResponse::NotFound().body("Module content not found"), 
-        Err(err) => HttpResponse::InternalServerError()
-        .body(format!("Database error: {}", err))
+        Ok(None) => HttpResponse::NotFound().body("Module content not found"),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -212,7 +213,6 @@ pub async fn create_module_content(
     session: Session,
     body: web::Json<CreateModuleContent>,
 ) -> impl Responder {
-
     let data = body.into_inner();
 
     match can_manage_module_content(db.get_ref(), &session, data.module_id).await {
@@ -225,7 +225,6 @@ pub async fn create_module_content(
     }
 
     let module_content = module_contents::ActiveModel {
-
         module_id: Set(data.module_id),
 
         content_type: Set(data.content_type),
@@ -244,59 +243,45 @@ pub async fn create_module_content(
     };
 
     match module_content.insert(db.get_ref()).await {
+        Ok(result) => HttpResponse::Ok().json(result),
 
-        Ok(result) => {
-            HttpResponse::Ok().json(result)
-        }
-
-        Err(err) => {
-            HttpResponse::InternalServerError()
-                .body(format!("Insert error: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
     }
 }
 
 #[delete("/module-content/{module_content_id}")]
 pub async fn delete_module_content(
-    db:web::Data<DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
     session: Session,
-    path:web::Path<i32>
-)-> impl Responder {
+    path: web::Path<i32>,
+) -> impl Responder {
     let module_content_id = path.into_inner();
     let existing = module_contents::Entity::find_by_id(module_content_id)
-    .one(db.get_ref())
-    .await;
+        .one(db.get_ref())
+        .await;
 
     match existing {
         Ok(Some(module_content)) => {
-            match can_manage_module_content(db.get_ref(), &session, module_content.module_id).await {
+            match can_manage_module_content(db.get_ref(), &session, module_content.module_id).await
+            {
                 Ok(true) => {}
                 Ok(false) => {
-                    return HttpResponse::Forbidden()
-                        .body("Organisation Admin can only delete content under their organisation");
+                    return HttpResponse::Forbidden().body(
+                        "Organisation Admin can only delete content under their organisation",
+                    );
                 }
                 Err(response) => return response,
             }
 
-            let active_model:module_contents::ActiveModel = module_content.into();
+            let active_model: module_contents::ActiveModel = module_content.into();
             match active_model.delete(db.get_ref()).await {
-                Ok(_) => {
-                    HttpResponse::Ok()
-                    .body("Module content deleted!")
-                }
+                Ok(_) => HttpResponse::Ok().body("Module content deleted!"),
                 Err(err) => {
-                    HttpResponse::InternalServerError()
-                    .body(format!("Delete error: {}", err))
+                    HttpResponse::InternalServerError().body(format!("Delete error: {}", err))
                 }
             }
         }
-        Ok(None) => {
-            HttpResponse::NotFound()
-            .body("Module content not found!")
-        }
-        Err(err) => {
-            HttpResponse::InternalServerError()
-            .body(format!("Delete error {}", err))
-        }
+        Ok(None) => HttpResponse::NotFound().body("Module content not found!"),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Delete error {}", err)),
     }
 }

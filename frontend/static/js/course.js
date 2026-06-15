@@ -1,5 +1,6 @@
 let organisationCourseIds = new Set();
 let enrolledCourseIds = new Set();
+let canManageOrganisationCourses = false;
 
 function goToCourse(courseId) {
     window.location.href = "/course/" + courseId;
@@ -93,6 +94,85 @@ function renderCourseGrid(courseGrid, courses, options = {}) {
     });
 }
 
+function setCreateCourseState(isSaving, message = "", isError = false) {
+    const saveButton = document.getElementById("save-create-course-btn");
+    const closeButton = document.getElementById("close-create-course-btn");
+    const status = document.getElementById("create-course-status");
+
+    if (saveButton) {
+        saveButton.disabled = isSaving;
+        saveButton.textContent = isSaving ? "Creating..." : "Create";
+    }
+
+    if (closeButton) {
+        closeButton.disabled = isSaving;
+    }
+
+    if (status) {
+        status.textContent = message;
+        status.className = isError ? "course-form-status error" : "course-form-status";
+    }
+}
+
+function openCreateCourseModal() {
+    document.getElementById("create-course-name").value = "";
+    document.getElementById("create-course-description").value = "";
+    document.getElementById("create-course-image").value = "";
+    document.getElementById("create-course-price").value = "0";
+    document.getElementById("create-course-currency").value = "SGD";
+    document.getElementById("create-course-paid").checked = false;
+    setCreateCourseState(false, "");
+    document.getElementById("create-course-modal").style.display = "flex";
+}
+
+function closeCreateCourseModal() {
+    document.getElementById("create-course-modal").style.display = "none";
+}
+
+async function createOrganisationCourse() {
+    const name = document.getElementById("create-course-name").value.trim();
+    const description = document.getElementById("create-course-description").value.trim();
+    const backgroundImageUrl = document.getElementById("create-course-image").value.trim();
+    const price = Number(document.getElementById("create-course-price").value || 0);
+    const currency = document.getElementById("create-course-currency").value || "SGD";
+    const isPaid = document.getElementById("create-course-paid").checked;
+
+    if (!name) {
+        setCreateCourseState(false, "Please enter a course name.", true);
+        return;
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+        setCreateCourseState(false, "Please enter a valid price.", true);
+        return;
+    }
+
+    try {
+        setCreateCourseState(true, "Creating course...");
+
+        await axios.post("/api/courses", {
+            name,
+            status: "draft",
+            price,
+            currency,
+            is_paid: isPaid,
+            description: description || null,
+            background_image_url: backgroundImageUrl || null,
+        });
+
+        closeCreateCourseModal();
+        await loadOrganisationCourses();
+        await loadCourses();
+    } catch (error) {
+        if (error.response?.status === 401) {
+            window.location.href = "/login";
+            return;
+        }
+
+        setCreateCourseState(false, error.response?.data || "Failed to create course.", true);
+    }
+}
+
 async function handleCourseEnrollmentAction(event, courseId) {
     event.stopPropagation();
 
@@ -140,10 +220,20 @@ async function loadOrganisationCourses() {
         const courses = response.data;
 
         organisationCourseIds = new Set(courses.map((course) => course.course_id));
+        canManageOrganisationCourses = true;
         section.hidden = false;
+        const createButton = document.getElementById("open-create-course-btn");
+        if (createButton) {
+            createButton.hidden = createButton.dataset.canCreate !== "true";
+        }
         renderCourseGrid(courseGrid, courses, { manage: true });
     } catch (error) {
         organisationCourseIds = new Set();
+        canManageOrganisationCourses = false;
+        const createButton = document.getElementById("open-create-course-btn");
+        if (createButton) {
+            createButton.hidden = true;
+        }
 
         if (error.response?.status !== 401 && error.response?.status !== 403) {
             console.error("Failed to load organisation courses:", error);
@@ -179,6 +269,12 @@ async function loadEnrolledCourses() {
         return;
     }
 
+    if (canManageOrganisationCourses) {
+        section.hidden = true;
+        enrolledCourseIds = new Set();
+        return;
+    }
+
     try {
         const response = await axios.get("/api/my-courses");
         const courses = response.data.filter((course) => !organisationCourseIds.has(course.course_id));
@@ -199,6 +295,10 @@ async function loadEnrolledCourses() {
 }
 
 async function initCoursesPage() {
+    document.getElementById("open-create-course-btn")?.addEventListener("click", openCreateCourseModal);
+    document.getElementById("close-create-course-btn")?.addEventListener("click", closeCreateCourseModal);
+    document.getElementById("save-create-course-btn")?.addEventListener("click", createOrganisationCourse);
+
     await loadOrganisationCourses();
     await loadEnrolledCourses();
     await loadCourses();

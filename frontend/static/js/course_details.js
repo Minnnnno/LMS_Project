@@ -1,5 +1,7 @@
 const pathParts = window.location.pathname.split("/");
 const courseId = pathParts[2];
+const SG_TIME_ZONE = "Asia/Singapore";
+const TIMEZONE_OFFSET_PATTERN = /(Z|[+-]\d{2}:?\d{2})$/i;
 let currentCourse = null;
 let actionMessageTimer = null;
 let isInstructor = false;
@@ -819,7 +821,7 @@ function formatAssignmentDate(value) {
         return "No due date";
     }
 
-    const date = new Date(value);
+    const date = parseApiDateTime(value);
 
     if (Number.isNaN(date.getTime())) {
         return value;
@@ -828,7 +830,39 @@ function formatAssignmentDate(value) {
     return date.toLocaleString("en-SG", {
         dateStyle: "medium",
         timeStyle: "short",
+        timeZone: SG_TIME_ZONE,
     });
+}
+
+function getSingaporeDateTimeParts(value) {
+    const date = parseApiDateTime(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const parts = new Intl.DateTimeFormat("en-SG", {
+        timeZone: SG_TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(date);
+
+    return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+function parseApiDateTime(value) {
+    if (typeof value !== "string") {
+        return new Date(value);
+    }
+
+    const normalizedValue = value.includes("T") ? value : value.replace(" ", "T");
+    const hasTimezone = TIMEZONE_OFFSET_PATTERN.test(normalizedValue);
+
+    return new Date(hasTimezone ? normalizedValue : `${normalizedValue}Z`);
 }
 
 function toDatetimeLocalValue(value) {
@@ -836,14 +870,13 @@ function toDatetimeLocalValue(value) {
         return "";
     }
 
-    const date = new Date(value);
+    const singaporeParts = getSingaporeDateTimeParts(value);
 
-    if (Number.isNaN(date.getTime())) {
+    if (!singaporeParts) {
         return value.slice(0, 16);
     }
 
-    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    return localDate.toISOString().slice(0, 16);
+    return `${singaporeParts.year}-${singaporeParts.month}-${singaporeParts.day}T${singaporeParts.hour}:${singaporeParts.minute}`;
 }
 
 function getDateInputValue(value) {
@@ -856,7 +889,17 @@ function getTimeInputValue(value) {
 }
 
 function toApiDateTime(value) {
-    return value ? `${value}:00` : null;
+    if (!value) {
+        return null;
+    }
+
+    const date = new Date(`${value}:00+08:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        return `${value}:00`;
+    }
+
+    return date.toISOString().slice(0, 19);
 }
 
 function getAssignmentSubmissionLabel(assignment) {

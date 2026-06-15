@@ -6,18 +6,48 @@ use crate::entity::quiz_questions::{
     ActiveModel as QuizQuestionActiveModel, Column as QuizQuestionColumn,
     Entity as QuizQuestionEntity,
 };
+use crate::entity::{courses, quiz};
 use crate::models::quiz_questions::{CreateQuizQuestion, UpdateQuizQuestion};
-use crate::services::auth_helpers::{get_role_ids, get_user_id, is_student_only};
+use crate::services::auth_helpers::get_user_id;
+use crate::services::course_service::can_manage_course;
 
-fn require_staff(session: &Session, action: &str) -> Result<(), HttpResponse> {
-    let role_ids = get_role_ids(session);
-    if role_ids.is_empty() {
-        return Err(HttpResponse::Unauthorized().body("You must be logged in"));
+async fn get_course_for_quiz(
+    db: &DatabaseConnection,
+    quiz_id: i32,
+) -> Result<courses::Model, HttpResponse> {
+    let quiz = quiz::Entity::find_by_id(quiz_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding quiz: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Quiz not found"))?;
+
+    courses::Entity::find_by_id(quiz.course_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))
+}
+
+async fn require_can_manage_quiz(
+    db: &DatabaseConnection,
+    session: &Session,
+    quiz_id: i32,
+) -> Result<(), HttpResponse> {
+    let course = get_course_for_quiz(db, quiz_id).await?;
+
+    match can_manage_course(db, session, &course).await {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            Err(HttpResponse::Forbidden().body("You cannot manage questions for this quiz"))
+        }
+        Err(response) => Err(response),
     }
-    if is_student_only(&role_ids) {
-        return Err(HttpResponse::Forbidden().body(format!("Students cannot {}", action)));
-    }
-    Ok(())
 }
 
 pub async fn list_questions(db: &DatabaseConnection, session: &Session) -> HttpResponse {
@@ -26,7 +56,9 @@ pub async fn list_questions(db: &DatabaseConnection, session: &Session) -> HttpR
     }
 
     match QuizQuestionEntity::find().all(db).await {
-        Ok(questions) if questions.is_empty() => HttpResponse::NotFound().body("No quiz questions found"),
+        Ok(questions) if questions.is_empty() => {
+            HttpResponse::NotFound().body("No quiz questions found")
+        }
         Ok(questions) => HttpResponse::Ok().json(questions),
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
@@ -46,7 +78,9 @@ pub async fn list_questions_by_quiz(
         .all(db)
         .await
     {
-        Ok(questions) if questions.is_empty() => HttpResponse::NotFound().body("No questions found"),
+        Ok(questions) if questions.is_empty() => {
+            HttpResponse::NotFound().body("No questions found")
+        }
         Ok(questions) => HttpResponse::Ok().json(questions),
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
@@ -57,7 +91,7 @@ pub async fn create_question(
     session: &Session,
     data: CreateQuizQuestion,
 ) -> HttpResponse {
-    if let Err(response) = require_staff(session, "create questions") {
+    if let Err(response) = require_can_manage_quiz(db, session, data.quiz_id).await {
         return response;
     }
 
@@ -82,12 +116,12 @@ pub async fn update_question(
     question_id: i32,
     data: UpdateQuizQuestion,
 ) -> HttpResponse {
-    if let Err(response) = require_staff(session, "update questions") {
-        return response;
-    }
-
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
+            if let Err(response) = require_can_manage_quiz(db, session, question.quiz_id).await {
+                return response;
+            }
+
             let mut active: QuizQuestionActiveModel = question.into();
 
             if let Some(question_type) = data.question_type {
@@ -104,8 +138,12 @@ pub async fn update_question(
             }
 
             match active.update(db).await {
-                Ok(_) => HttpResponse::Ok().body(format!("Question with id {} updated!", question_id)),
-                Err(err) => HttpResponse::InternalServerError().body(format!("Update error: {}", err)),
+                Ok(_) => {
+                    HttpResponse::Ok().body(format!("Question with id {} updated!", question_id))
+                }
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Update error: {}", err))
+                }
             }
         }
         Ok(None) => HttpResponse::NotFound().body("Question not found"),
@@ -118,16 +156,18 @@ pub async fn delete_question(
     session: &Session,
     question_id: i32,
 ) -> HttpResponse {
-    if let Err(response) = require_staff(session, "delete questions") {
-        return response;
-    }
-
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
+            if let Err(response) = require_can_manage_quiz(db, session, question.quiz_id).await {
+                return response;
+            }
+
             let active_model: QuizQuestionActiveModel = question.into();
             match active_model.delete(db).await {
                 Ok(_) => HttpResponse::Ok().body("Question deleted!"),
-                Err(err) => HttpResponse::InternalServerError().body(format!("Delete error: {}", err)),
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Delete error: {}", err))
+                }
             }
         }
         Ok(None) => HttpResponse::NotFound().body("Question not found!"),

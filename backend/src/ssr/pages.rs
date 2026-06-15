@@ -1,10 +1,11 @@
 use actix_session::Session;
-use actix_web::{get, http::header, web, HttpResponse, Responder};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use actix_web::{HttpResponse, Responder, get, http::header, web};
+use sea_orm::{DatabaseConnection, EntityTrait};
 use tera::{Context, Tera};
 
-use crate::entity::{courses as course_entity, modules, users};
+use crate::entity::{courses as course_entity, modules};
 use crate::services::auth_helpers::is_enrolled;
+use crate::services::course_service::can_manage_course;
 
 #[get("/")]
 async fn index(session: Session) -> impl Responder {
@@ -60,8 +61,7 @@ async fn course_details_page(
                 .finish();
         }
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
         }
     };
 
@@ -114,13 +114,15 @@ async fn module_content_page(
                 .finish();
         }
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
         }
     };
 
     let module_id = path.into_inner();
-    let module = match modules::Entity::find_by_id(module_id).one(db.get_ref()).await {
+    let module = match modules::Entity::find_by_id(module_id)
+        .one(db.get_ref())
+        .await
+    {
         Ok(Some(module)) => module,
         Ok(None) => return HttpResponse::NotFound().body("Module not found"),
         Err(err) => {
@@ -146,33 +148,9 @@ async fn user_can_manage_course_content(
     db: &DatabaseConnection,
     session: &Session,
     course_id: i32,
-    user_id: i32,
+    _user_id: i32,
 ) -> Result<bool, HttpResponse> {
-    let role_names: Vec<String> = session
-        .get::<Vec<String>>("role_names")
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-
-    if role_names.iter().any(|role| role == "LMS Admin") {
-        return Ok(true);
-    }
-
-    if !role_names.iter().any(|role| role == "Organisation Admin") {
-        return Ok(false);
-    }
-
-    let user = users::Entity::find_by_id(user_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding user: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("User not found"))?;
-
-    let course = course_entity::Entity::find()
-        .filter(course_entity::Column::CourseId.eq(course_id))
+    let course = course_entity::Entity::find_by_id(course_id)
         .one(db)
         .await
         .map_err(|err| {
@@ -181,7 +159,7 @@ async fn user_can_manage_course_content(
         })?
         .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
 
-    Ok(user.org_id.is_some() && user.org_id == course.org_id)
+    can_manage_course(db, session, &course).await
 }
 
 pub fn init(cfg: &mut web::ServiceConfig) {
@@ -239,8 +217,7 @@ pub fn build_page_context(session: &Session) -> Context {
 }
 
 pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
-    let tera: Tera = Tera::new("../frontend/templates/**/*")
-        .expect("Failed to load templates");
+    let tera: Tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
 
     let context = build_page_context(session);
 
@@ -248,7 +225,5 @@ pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
         .render(template_name, &context)
         .expect("Failed to render template");
 
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(html)
+    HttpResponse::Ok().content_type("text/html").body(html)
 }

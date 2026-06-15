@@ -36,8 +36,7 @@ pub async fn get_session_user_org_id(
         Ok(Some(user_id)) => user_id,
         Ok(None) => return Err(HttpResponse::Unauthorized().body("User not logged in")),
         Err(err) => {
-            return Err(HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err)));
+            return Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)));
         }
     };
 
@@ -60,8 +59,7 @@ pub async fn get_session_user(
         Ok(Some(user_id)) => user_id,
         Ok(None) => return Err(HttpResponse::Unauthorized().body("User not logged in")),
         Err(err) => {
-            return Err(HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err)));
+            return Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)));
         }
     };
 
@@ -84,13 +82,20 @@ pub async fn can_manage_course(
         return Ok(true);
     }
 
-    if !has_role(session, "Organisation Admin") {
-        return Ok(false);
-    }
-
     let user = get_session_user(db, session).await?;
 
-    Ok(user.org_id.is_some() && user.org_id == course.org_id)
+    if has_role(session, "Organisation Admin")
+        && user.org_id.is_some()
+        && user.org_id == course.org_id
+    {
+        return Ok(true);
+    }
+
+    if has_role(session, "Instructor") && course.instructor_id == Some(user.user_id) {
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 pub async fn get_organisation_courses_for_session(
@@ -108,19 +113,18 @@ pub async fn get_organisation_courses_for_session(
         });
     }
 
-    let org_id = get_session_user_org_id(db, session)
-        .await?
-        .ok_or_else(|| {
-            HttpResponse::Forbidden()
-                .body("Organisation Admin is not assigned to an organisation")
-        })?;
+    let org_id = get_session_user_org_id(db, session).await?.ok_or_else(|| {
+        HttpResponse::Forbidden().body("Organisation Admin is not assigned to an organisation")
+    })?;
 
     courses::Entity::find()
         .filter(courses::Column::OrgId.eq(org_id))
         .all(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding organisation courses: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding organisation courses: {}",
+                err
+            ))
         })
 }

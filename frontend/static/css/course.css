@@ -14,6 +14,25 @@
     margin-bottom: 24px;
 }
 
+.course-create-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 14px;
+    background: #111827;
+    color: #ffffff;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.course-create-button:hover {
+    background: #2563eb;
+}
+
 .course-section-title {
     font-size: 30px;
     font-weight: 700;
@@ -156,7 +175,114 @@
     margin: 0;
 }
 
+.course-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(17, 24, 39, 0.55);
+}
+
+.course-modal-content {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    display: grid;
+    gap: 12px;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 24px;
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.28);
+}
+
+.course-modal-content h2 {
+    margin: 0 0 4px;
+    font-size: 1.35rem;
+}
+
+.course-modal-content label {
+    color: #344054;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.course-modal-content input,
+.course-modal-content textarea,
+.course-modal-content select {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+}
+
+.course-modal-content textarea {
+    resize: vertical;
+}
+
+.course-form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 0.45fr);
+    gap: 12px;
+}
+
+.course-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.course-checkbox-label input {
+    width: auto;
+}
+
+.course-form-status {
+    min-height: 20px;
+    margin: 0;
+    color: #475467;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.course-form-status.error {
+    color: #991b1b;
+}
+
+.course-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.course-modal-actions button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    background: #171717;
+    color: #ffffff;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.course-modal-actions button + button {
+    background: #eef2f6;
+    color: #344054;
+}
+
 @media (max-width: 420px) {
+    .course-section-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .course-create-button {
+        width: 100%;
+    }
+
     .course-card-footer {
         align-items: stretch;
         flex-direction: column;
@@ -164,5 +290,9 @@
 
     .course-card-action {
         width: 100%;
+    }
+
+    .course-form-row {
+        grid-template-columns: 1fr;
     }
 }
