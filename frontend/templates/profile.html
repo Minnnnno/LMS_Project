@@ -20,6 +20,11 @@
 
 <div class="card mt-4 p-4">
     <div class="mb-3">
+        <p class="text-secondary mb-1">Full name</p>
+        <h2 class="h5 mb-0">{{ user_full_name | default(value="") }}</h2>
+    </div>
+
+    <div class="mb-3">
         <p class="text-secondary mb-1">Email</p>
         <h2 class="h5 mb-0">{{ user_email | default(value="") }}</h2>
         {% if email_verified %}
@@ -59,21 +64,4 @@
         </button>
     </form>
 </div>
-
-{% if can_signup_as_lecturer %}
-<div class="card mt-4 p-4">
-    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-        <div>
-            <h2 class="h5 mb-1">Lecturer account</h2>
-            <p class="text-secondary mb-0">Sign up as a lecturer to create and manage course content.</p>
-        </div>
-
-        <form action="/profile/lecturer-signup" method="post">
-            <button type="submit" class="btn btn-dark">
-                <i class="bi bi-person-workspace me-2"></i>Sign up as lecturer
-            </button>
-        </form>
-    </div>
-</div>
-{% endif %}
 {% endblock content %}

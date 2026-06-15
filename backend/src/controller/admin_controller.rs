@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{delete, get, post, put, web, Responder};
+use actix_web::{delete, get, http::header, post, put, web, HttpResponse, Responder};
 use sea_orm::DatabaseConnection;
 
 use crate::models::admin::{
@@ -54,6 +54,40 @@ pub async fn admin_get_roles(
 pub async fn admin_dashboard(
     session: Session,
 ) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => HttpResponse::Found()
+            .insert_header((header::LOCATION, "/admin/manage/organisations"))
+            .finish(),
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/manage/organisations")]
+pub async fn admin_organisations_page(session: Session) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => render_page("admin_dashboard.html", &session),
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/manage/users")]
+pub async fn admin_users_page(session: Session) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => render_page("admin_dashboard.html", &session),
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/manage/courses")]
+pub async fn admin_courses_page(session: Session) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => render_page("admin_dashboard.html", &session),
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/manage/enrollments")]
+pub async fn admin_enrollments_page(session: Session) -> impl Responder {
     match require_admin(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
