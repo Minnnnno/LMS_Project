@@ -10,7 +10,7 @@ use sea_orm::{
 };
 use std::collections::{HashMap, HashSet};
 use tera::{Context, Tera};
-use validator::Validate;
+use validator::{validate_email, Validate};
 
 use crate::entity::{
     course_instructors, courses, organisation_signup_requests, organisations, roles, user_roles,
@@ -618,9 +618,32 @@ fn login_url() -> String {
     format!("{}/login", base_url.trim_end_matches('/'))
 }
 
-fn send_instructor_invite_email(email: &str, temp_password: &str) -> Result<(), String> {
+fn role_label(role_name: &roles::RoleName) -> &'static str {
+    match role_name {
+        roles::RoleName::LmsAdmin => "LMS admin",
+        roles::RoleName::OrganisationAdmin => "organisation admin",
+        roles::RoleName::Instructor => "instructor",
+        roles::RoleName::Student => "student",
+    }
+}
+
+fn role_article(role_name: &roles::RoleName) -> &'static str {
+    match role_name {
+        roles::RoleName::Instructor | roles::RoleName::OrganisationAdmin => "an",
+        _ => "a",
+    }
+}
+
+fn send_temp_password_account_email(
+    email: &str,
+    temp_password: &str,
+    role_name: &roles::RoleName,
+) -> Result<(), String> {
+    let label = role_label(role_name);
     let body = format!(
-        "You have been invited as an instructor on SkillUp LMS.\n\nLogin email: {}\nTemporary password: {}\n\nSign in here: {}\n\nYou will be asked to change this temporary password after signing in.",
+        "You have been invited as {} {} on SkillUp LMS.\n\nLogin email: {}\nTemporary password: {}\n\nSign in here: {}\n\nYou will be asked to change this temporary password after signing in.",
+        role_article(role_name),
+        label,
         email,
         temp_password,
         login_url()
@@ -628,22 +651,79 @@ fn send_instructor_invite_email(email: &str, temp_password: &str) -> Result<(), 
 
     send_mail_message(MailRequest {
         to: email.to_string(),
-        subject: "Your SkillUp LMS instructor account".to_string(),
+        subject: format!("Your SkillUp LMS {} account", label),
         body,
         is_html: false,
+    })
+}
+
+struct TempPasswordAccount {
+    user: users::Model,
+    email: String,
+    temp_password: String,
+    role_name: roles::RoleName,
+}
+
+async fn create_temp_password_org_user<C>(
+    db: &C,
+    org_id: i32,
+    email: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
+    role_name: roles::RoleName,
+) -> Result<TempPasswordAccount, String>
+where
+    C: ConnectionTrait,
+{
+    let temp_password = generate_temp_password();
+    let password_hash = hash_password(temp_password.clone()).await?;
+    let (fallback_first_name, fallback_last_name) = name_from_email(&email);
+
+    let new_user = users::ActiveModel {
+        first_name: Set(first_name
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(fallback_first_name)),
+        last_name: Set(last_name
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(fallback_last_name)),
+        email: Set(email.clone()),
+        password_hash: Set(Some(password_hash)),
+        auth_provider: Set("password".to_string()),
+        org_id: Set(Some(org_id)),
+        email_verified: Set(true),
+        must_change_password: Set(true),
+        ..Default::default()
+    };
+
+    let inserted_user = new_user
+        .insert(db)
+        .await
+        .map_err(|err| format!("Failed to create {} account: {}", role_label(&role_name), err))?;
+
+    assign_role_if_missing(db, inserted_user.user_id, &role_name)
+        .await
+        .map_err(|err| format!("Failed to assign {} role: {}", role_label(&role_name), err))?;
+
+    Ok(TempPasswordAccount {
+        user: inserted_user,
+        email,
+        temp_password,
+        role_name,
     })
 }
 
 async fn assign_role_if_missing<C>(
     db: &C,
     user_id: i32,
-    role_name: roles::RoleName,
+    role_name: &roles::RoleName,
 ) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
     let role = roles::Entity::find()
-        .filter(roles::Column::RoleName.eq(role_name))
+        .filter(roles::Column::RoleName.eq(role_name.clone()))
         .one(db)
         .await?
         .ok_or_else(|| DbErr::RecordNotFound("Role not found in database.".to_string()))?;
@@ -755,6 +835,74 @@ where
         .await?;
 
     Ok(rows.into_iter().map(|row| row.user_id).collect())
+}
+
+async fn assign_role_id_if_missing<C>(
+    db: &C,
+    user_id: i32,
+    role_id: i32,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let already_has_role = user_roles::Entity::find()
+        .filter(user_roles::Column::UserId.eq(user_id))
+        .filter(user_roles::Column::RoleId.eq(role_id))
+        .one(db)
+        .await?
+        .is_some();
+
+    if !already_has_role {
+        user_roles::ActiveModel {
+            user_id: Set(user_id),
+            role_id: Set(role_id),
+        }
+        .insert(db)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn attach_existing_user_to_organisation<C>(
+    db: &C,
+    user: users::Model,
+    org_id: i32,
+    role_id: i32,
+    lms_admins: &HashSet<i32>,
+) -> Result<i32, String>
+where
+    C: ConnectionTrait,
+{
+    let user_id = user.user_id;
+
+    if lms_admins.contains(&user_id) {
+        return Err(format!("User {} is an LMS admin and cannot be added", user_id));
+    }
+
+    if let Some(existing_org_id) = user.org_id {
+        if existing_org_id == org_id {
+            return Err(format!("User {} already belongs to this organisation", user_id));
+        }
+
+        return Err(format!(
+            "User {} already belongs to another organisation",
+            user_id
+        ));
+    }
+
+    let mut active_user = sea_orm::IntoActiveModel::into_active_model(user);
+    active_user.org_id = Set(Some(org_id));
+    active_user
+        .update(db)
+        .await
+        .map_err(|err| format!("Failed to set org for user {}: {}", user_id, err))?;
+
+    assign_role_id_if_missing(db, user_id, role_id)
+        .await
+        .map_err(|err| format!("Failed to assign role for user {}: {}", user_id, err))?;
+
+    Ok(user_id)
 }
 
 async fn require_course_in_organisation(
@@ -1015,13 +1163,6 @@ pub async fn invite_instructor(
         }
     }
 
-    let temp_password = generate_temp_password();
-    let password_hash = match hash_password(temp_password.clone()).await {
-        Ok(hash) => hash,
-        Err(message) => return HttpResponse::InternalServerError().body(message),
-    };
-    let (first_name, last_name) = name_from_email(&email);
-
     let txn = match db.get_ref().begin().await {
         Ok(txn) => txn,
         Err(err) => {
@@ -1030,42 +1171,33 @@ pub async fn invite_instructor(
         }
     };
 
-    let new_user = users::ActiveModel {
-        first_name: Set(first_name),
-        last_name: Set(last_name),
-        email: Set(email.clone()),
-        password_hash: Set(Some(password_hash)),
-        auth_provider: Set("password".to_string()),
-        org_id: Set(Some(org_id)),
-        email_verified: Set(true),
-        must_change_password: Set(true),
-        ..Default::default()
-    };
-
-    let inserted_user = match new_user.insert(&txn).await {
-        Ok(user) => user,
-        Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to create instructor account: {}", err));
-        }
-    };
-
-    if let Err(err) =
-        assign_role_if_missing(&txn, inserted_user.user_id, roles::RoleName::Instructor).await
+    let invited_account = match create_temp_password_org_user(
+        &txn,
+        org_id,
+        email.clone(),
+        None,
+        None,
+        roles::RoleName::Instructor,
+    )
+    .await
     {
-        return HttpResponse::InternalServerError()
-            .body(format!("Failed to assign instructor role: {}", err));
-    }
+        Ok(account) => account,
+        Err(message) => return HttpResponse::InternalServerError().body(message),
+    };
 
     if let Err(err) = txn.commit().await {
         return HttpResponse::InternalServerError()
             .body(format!("Failed to commit instructor invite: {}", err));
     }
 
-    match send_instructor_invite_email(&email, &temp_password) {
+    match send_temp_password_account_email(
+        &invited_account.email,
+        &invited_account.temp_password,
+        &invited_account.role_name,
+    ) {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({
-            "user_id": inserted_user.user_id,
-            "email": email,
+            "user_id": invited_account.user.user_id,
+            "email": invited_account.email,
             "message": "Instructor invited successfully"
         })),
         Err(err) => HttpResponse::InternalServerError().body(format!(
@@ -1338,7 +1470,7 @@ pub async fn mass_enroll(
     };
 
     let role_row = match roles::Entity::find()
-        .filter(roles::Column::RoleName.eq(target_role_name))
+        .filter(roles::Column::RoleName.eq(target_role_name.clone()))
         .one(db.get_ref())
         .await
     {
@@ -1360,6 +1492,8 @@ pub async fn mass_enroll(
 
     let mut enrolled: Vec<i32> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
+    let mut created_accounts: Vec<TempPasswordAccount> = Vec::new();
+    let mut seen_new_emails: HashSet<String> = HashSet::new();
     let lms_admins = match lms_admin_user_ids(&txn).await {
         Ok(user_ids) => user_ids,
         Err(err) => {
@@ -1382,58 +1516,77 @@ pub async fn mass_enroll(
             }
         };
 
-        if lms_admins.contains(&uid) {
-            errors.push(format!("User {} is an LMS admin and cannot be added", uid));
+        match attach_existing_user_to_organisation(
+            &txn,
+            user,
+            org_id,
+            role_row.role_id,
+            &lms_admins,
+        )
+        .await
+        {
+            Ok(user_id) => enrolled.push(user_id),
+            Err(message) => errors.push(message),
+        }
+    }
+
+    for new_user in &body.new_users {
+        let email = new_user.email.trim().to_lowercase();
+
+        if email.is_empty() {
+            errors.push("Skipped a new user row with a blank email".to_string());
             continue;
         }
 
-        if let Some(existing_org_id) = user.org_id {
-            if existing_org_id == org_id {
-                errors.push(format!("User {} already belongs to this organisation", uid));
-            } else {
-                errors.push(format!(
-                    "User {} already belongs to another organisation",
-                    uid
-                ));
-            }
+        if !validate_email(&email) {
+            errors.push(format!("{} is not a valid email address", email));
             continue;
         }
 
-        // 2. Set org_id on the user
-        let mut active_user = sea_orm::IntoActiveModel::into_active_model(user);
-        active_user.org_id = Set(Some(org_id));
-        if let Err(err) = active_user.update(&txn).await {
-            errors.push(format!("Failed to set org for user {}: {}", uid, err));
+        if !seen_new_emails.insert(email.clone()) {
+            errors.push(format!("{} appears more than once in the import", email));
             continue;
         }
 
-        // 3. Assign role (idempotent)
-        let already_has_role = match user_roles::Entity::find()
-            .filter(user_roles::Column::UserId.eq(uid))
-            .filter(user_roles::Column::RoleId.eq(role_row.role_id))
+        match users::Entity::find()
+            .filter(users::Column::Email.eq(email.clone()))
             .one(&txn)
             .await
         {
-            Ok(Some(_)) => true,
-            Ok(None) => false,
-            Err(err) => {
-                errors.push(format!("Role check error for user {}: {}", uid, err));
-                continue;
+            Ok(Some(existing_user)) => {
+                match attach_existing_user_to_organisation(
+                    &txn,
+                    existing_user,
+                    org_id,
+                    role_row.role_id,
+                    &lms_admins,
+                )
+                .await
+                {
+                    Ok(user_id) => enrolled.push(user_id),
+                    Err(message) => errors.push(format!("{}: {}", email, message)),
+                }
             }
-        };
-
-        if !already_has_role {
-            let new_ur = user_roles::ActiveModel {
-                user_id: Set(uid),
-                role_id: Set(role_row.role_id),
-            };
-            if let Err(err) = new_ur.insert(&txn).await {
-                errors.push(format!("Failed to assign role for user {}: {}", uid, err));
-                continue;
+            Ok(None) => {
+                match create_temp_password_org_user(
+                    &txn,
+                    org_id,
+                    email.clone(),
+                    new_user.first_name.clone(),
+                    new_user.last_name.clone(),
+                    target_role_name.clone(),
+                )
+                .await
+                {
+                    Ok(account) => {
+                        enrolled.push(account.user.user_id);
+                        created_accounts.push(account);
+                    }
+                    Err(message) => errors.push(format!("{}: {}", email, message)),
+                }
             }
+            Err(err) => errors.push(format!("Database error checking {}: {}", email, err)),
         }
-
-        enrolled.push(uid);
     }
 
     if let Err(err) = txn.commit().await {
@@ -1441,8 +1594,28 @@ pub async fn mass_enroll(
             .body(format!("Failed to commit transaction: {}", err));
     }
 
+    for account in &created_accounts {
+        if let Err(err) = send_temp_password_account_email(
+            &account.email,
+            &account.temp_password,
+            &account.role_name,
+        ) {
+            errors.push(format!(
+                "{} account created, but the invite email could not be sent: {}",
+                account.email, err
+            ));
+        }
+    }
+
     HttpResponse::Ok().json(serde_json::json!({
         "enrolled": enrolled,
+        "created": created_accounts
+            .iter()
+            .map(|account| serde_json::json!({
+                "user_id": account.user.user_id,
+                "email": account.email,
+            }))
+            .collect::<Vec<serde_json::Value>>(),
         "errors": errors,
         "message": format!("{} user(s) enrolled successfully", enrolled.len())
     }))
@@ -1501,10 +1674,7 @@ pub async fn list_all_users(db: web::Data<DatabaseConnection>, session: Session)
         }
     };
 
-    match users::Entity::find()
-        .filter(users::Column::OrgId.is_null())
-        .all(db.get_ref())
-        .await
+    match users::Entity::find().all(db.get_ref()).await
     {
         Ok(users) => {
             let safe: Vec<serde_json::Value> = users
@@ -1516,6 +1686,7 @@ pub async fn list_all_users(db: web::Data<DatabaseConnection>, session: Session)
                         "first_name": u.first_name,
                         "last_name": u.last_name,
                         "email": u.email,
+                        "org_id": u.org_id,
                     })
                 })
                 .collect();

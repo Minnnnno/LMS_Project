@@ -1,6 +1,7 @@
 // organisation.js – Organisation view with manual + CSV/Excel mass enrolment
 
 let currentOrgId = null;
+let currentOrgName = '';
 let allUnassignedUsers = [];       // users with no org yet (for manual tab)
 let allSystemUsers = [];           // all users (for file matching)
 let selectedEnrollUserIds = new Set();
@@ -47,9 +48,12 @@ async function loadOrganisations() {
         el.innerHTML = orgs.map(org => `
             <div class="org-card mb-2" id="org-card-${org.org_id}" data-org-id="${org.org_id}">
                 <div class="d-flex align-items-center justify-content-between">
-                    <div>
-                        <div class="fw-semibold">${escHtml(org.org_name)}</div>
-                        <div class="text-muted small">ID ${org.org_id}</div>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="member-avatar"><i class="bi bi-building"></i></div>
+                        <div>
+                            <div class="fw-semibold org-card-title">${escHtml(org.org_name)}</div>
+                            <div class="text-muted small">Organisation ID ${org.org_id}</div>
+                        </div>
                     </div>
                     <i class="bi bi-chevron-right text-muted"></i>
                 </div>
@@ -72,11 +76,12 @@ async function loadOrganisations() {
 
 async function selectOrg(orgId, orgName) {
     currentOrgId = orgId;
+    currentOrgName = orgName;
     document.querySelectorAll('.org-card').forEach(c => c.classList.remove('active'));
     document.getElementById(`org-card-${orgId}`)?.classList.add('active');
 
     document.getElementById('members-panel').style.display = '';
-    document.getElementById('members-title').textContent = `Members – ${orgName}`;
+    document.getElementById('members-title').textContent = 'Members';
     document.getElementById('members-list').innerHTML = '<p class="text-muted small">Loading…</p>';
     hideEnrolPanel();
 
@@ -94,7 +99,7 @@ async function selectOrg(orgId, orgName) {
 function renderMembers(members, orgId) {
     const el = document.getElementById('members-list');
     if (!members.length) {
-        el.innerHTML = '<p class="text-muted small">No members yet. Use "Enrol Members" to add some.</p>';
+        el.innerHTML = '<p class="text-muted small">No members yet. Use "Add Learners" to add some.</p>';
         return;
     }
     el.innerHTML = members.map(m => `
@@ -117,8 +122,7 @@ async function removeMember(orgId, userId) {
     if (!confirm('Remove this member from the organisation?')) return;
     try {
         await axios.delete(`/api/organisations/${orgId}/members/${userId}`);
-        const orgName = document.getElementById('members-title').textContent.replace('Members – ', '');
-        selectOrg(orgId, orgName);
+        selectOrg(orgId, currentOrgName);
     } catch (err) {
         alert('Failed to remove member: ' + (err.response?.data || err.message));
     }
@@ -187,6 +191,7 @@ function renderCourseInstructorManager() {
             </div>
         `;
     }).join('');
+
 }
 
 document.getElementById('btn-refresh-course-instructors')?.addEventListener('click', () => {
@@ -248,7 +253,7 @@ document.getElementById('btn-open-enroll')?.addEventListener('click', async () =
     const panel = document.getElementById('enroll-panel');
     if (panel.style.display !== 'none') { hideEnrolPanel(); return; }
 
-    const orgName = document.getElementById('members-title').textContent.replace('Members – ', '');
+    const orgName = currentOrgName;
     document.getElementById('enroll-org-name').textContent = orgName;
     selectedEnrollUserIds.clear();
     panel.style.display = '';
@@ -381,6 +386,10 @@ function clearFilePreview() {
 
 document.getElementById('btn-clear-file')?.addEventListener('click', clearFilePreview);
 
+function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 async function handleFile(file) {
     clearFilePreview();
     document.getElementById('enroll-feedback').innerHTML = '';
@@ -422,12 +431,37 @@ async function handleFile(file) {
         // Also try unassigned as fallback
         for (const u of allUnassignedUsers) emailMap[u.email.toLowerCase()] = u;
 
-        fileMatchedRows = normalised.map(r => ({
-            email: r.email,
-            first_name: r.first_name || r.firstname || r['first name'] || '',
-            last_name: r.last_name || r.lastname || r['last name'] || '',
-            matched: emailMap[r.email.toLowerCase()] || null,
-        }));
+        fileMatchedRows = normalised.map(r => {
+            const email = r.email.toLowerCase();
+            const matched = emailMap[email] || null;
+            const firstName = r.first_name || r.firstname || r['first name'] || '';
+            const lastName = r.last_name || r.lastname || r['last name'] || '';
+            let status = 'create';
+            let statusLabel = 'Will create account';
+
+            if (!isValidEmail(email)) {
+                status = 'invalid';
+                statusLabel = 'Invalid email';
+            } else if (matched && (matched.org_id === null || matched.org_id === undefined)) {
+                status = 'existing';
+                statusLabel = 'Ready to add';
+            } else if (matched && Number(matched.org_id) === Number(currentOrgId)) {
+                status = 'current';
+                statusLabel = 'Already in this organisation';
+            } else if (matched) {
+                status = 'other_org';
+                statusLabel = 'In another organisation';
+            }
+
+            return {
+                email,
+                first_name: firstName,
+                last_name: lastName,
+                matched,
+                status,
+                statusLabel,
+            };
+        });
 
         setProgress(true, 'Building preview…', 90);
         renderFilePreview(fileMatchedRows);
@@ -466,14 +500,18 @@ function parseExcel(file) {
 }
 
 function renderFilePreview(rows) {
-    const matched = rows.filter(r => r.matched);
+    const existing = rows.filter(r => r.status === 'existing');
+    const create = rows.filter(r => r.status === 'create');
+    const actionable = existing.length + create.length;
+    const skipped = rows.length - actionable;
     const tbody = document.getElementById('csv-preview-body');
 
     tbody.innerHTML = rows.map((r, i) => {
-        const cls = r.matched ? 'preview-match' : 'preview-nomatch';
-        const status = r.matched
-            ? `<span class="text-success"><i class="bi bi-check-circle-fill"></i> Found</span>`
-            : `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Not found</span>`;
+        const canImport = r.status === 'existing' || r.status === 'create';
+        const cls = canImport ? 'preview-match' : 'preview-nomatch';
+        const statusClass = canImport ? 'text-success' : 'text-danger';
+        const icon = canImport ? 'bi-check-circle-fill' : 'bi-x-circle-fill';
+        const status = `<span class="${statusClass}"><i class="bi ${icon}"></i> ${escHtml(r.statusLabel)}</span>`;
         return `<tr class="${cls}">
             <td>${i + 1}</td>
             <td>${escHtml(r.email)}</td>
@@ -483,25 +521,43 @@ function renderFilePreview(rows) {
         </tr>`;
     }).join('');
 
+    const matched = { length: actionable };
+
     document.getElementById('preview-summary').textContent =
         `${rows.length} row(s) found · ${matched.length} matched · ${rows.length - matched.length} will be skipped`;
 
     document.getElementById('csv-preview-wrap').style.display = '';
     document.getElementById('file-enroll-count').textContent = matched.length;
     document.getElementById('file-enroll-actions').style.display = matched.length ? '' : 'none';
+    document.getElementById('preview-summary').textContent =
+        `${rows.length} row(s) found - ${existing.length} existing - ${create.length} new - ${skipped} skipped`;
+    document.getElementById('file-enroll-count').textContent = actionable;
+    document.getElementById('file-enroll-actions').style.display = actionable ? '' : 'none';
 }
 
 document.getElementById('btn-do-file-enroll')?.addEventListener('click', () => {
-    const ids = fileMatchedRows.filter(r => r.matched).map(r => r.matched.user_id);
+    const ids = fileMatchedRows
+        .filter(r => r.status === 'existing' && r.matched)
+        .map(r => r.matched.user_id);
     doEnroll(ids, 'file');
 });
 
 // ── Shared enrol call ─────────────────────────────────────────────────────────
 
-async function doEnroll(userIds, source) {
+async function doEnroll(userIds, source, newUsers = []) {
     if (!currentOrgId) return;
 
-    if (!userIds.length) {
+    if (source === 'file' && !newUsers.length) {
+        newUsers = fileMatchedRows
+            .filter(r => r.status === 'create')
+            .map(r => ({
+                email: r.email,
+                first_name: r.first_name,
+                last_name: r.last_name,
+            }));
+    }
+
+    if (!userIds.length && !newUsers.length) {
         showFeedback('No users selected.', 'error');
         return;
     }
@@ -512,6 +568,7 @@ async function doEnroll(userIds, source) {
     try {
         const { data } = await axios.post(`/api/organisations/${currentOrgId}/enroll`, {
             user_ids: userIds,
+            new_users: newUsers,
             role,
         });
 
@@ -523,14 +580,17 @@ async function doEnroll(userIds, source) {
         showFeedback(msg, type);
 
         // Refresh members
-        const orgName = document.getElementById('members-title').textContent.replace('Members – ', '');
-        await selectOrg(currentOrgId, orgName);
+        await selectOrg(currentOrgId, currentOrgName);
 
         // Refresh user lists
         try {
             const { data: fresh } = await axios.get('/api/users/unassigned');
             allUnassignedUsers = fresh;
             if (source === 'manual') renderEnrollUserList(fresh);
+        } catch {}
+        try {
+            const { data: freshAll } = await axios.get('/api/users/all');
+            allSystemUsers = freshAll;
         } catch {}
 
         selectedEnrollUserIds.clear();

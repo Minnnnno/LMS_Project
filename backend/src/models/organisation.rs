@@ -33,9 +33,20 @@ pub struct OrganisationSignupForm {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MassEnrollForm {
     /// List of user_ids to enroll into the org and assign a role
+    #[serde(default)]
     pub user_ids: Vec<i32>,
+    /// New users to create, attach to the org, assign a role, and email a temporary password
+    #[serde(default)]
+    pub new_users: Vec<MassEnrollNewUserForm>,
     /// "Instructor" or "Student"
     pub role: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MassEnrollNewUserForm {
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
