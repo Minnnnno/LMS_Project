@@ -1,5 +1,6 @@
+use actix_session::Session;
 use actix_web::HttpResponse;
-use chrono::{Local, NaiveDateTime};
+use chrono::Local;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::entity::quiz_attempts::{
@@ -7,8 +8,24 @@ use crate::entity::quiz_attempts::{
     Entity as QuizAttemptEntity,
 };
 use crate::models::quiz_attempts::{CreateAttempt, MarkAttempt};
+use crate::services::auth_helpers::{get_role_ids, get_user_id, is_student_only};
 
-pub async fn list_attempts(db: &DatabaseConnection) -> HttpResponse {
+fn require_staff(session: &Session, action: &str) -> Result<(), HttpResponse> {
+    let role_ids = get_role_ids(session);
+    if role_ids.is_empty() {
+        return Err(HttpResponse::Unauthorized().body("You must be logged in"));
+    }
+    if is_student_only(&role_ids) {
+        return Err(HttpResponse::Forbidden().body(format!("Students cannot {}", action)));
+    }
+    Ok(())
+}
+
+pub async fn list_attempts(db: &DatabaseConnection, session: &Session) -> HttpResponse {
+    if let Err(response) = require_staff(session, "view all attempts") {
+        return response;
+    }
+
     match QuizAttemptEntity::find().all(db).await {
         Ok(attempts) if attempts.is_empty() => HttpResponse::NotFound().body("No quiz attempts found"),
         Ok(attempts) => HttpResponse::Ok().json(attempts),
@@ -16,7 +33,15 @@ pub async fn list_attempts(db: &DatabaseConnection) -> HttpResponse {
     }
 }
 
-pub async fn list_attempts_by_quiz(db: &DatabaseConnection, quiz_id: i32) -> HttpResponse {
+pub async fn list_attempts_by_quiz(
+    db: &DatabaseConnection,
+    session: &Session,
+    quiz_id: i32,
+) -> HttpResponse {
+    if let Err(response) = require_staff(session, "view attempts by quiz") {
+        return response;
+    }
+
     match QuizAttemptEntity::find()
         .filter(QuizAttemptColumn::QuizId.eq(quiz_id))
         .all(db)
@@ -28,10 +53,36 @@ pub async fn list_attempts_by_quiz(db: &DatabaseConnection, quiz_id: i32) -> Htt
     }
 }
 
-pub async fn create_attempt(db: &DatabaseConnection, data: CreateAttempt) -> HttpResponse {
+pub async fn list_my_attempts(db: &DatabaseConnection, session: &Session) -> HttpResponse {
+    let user_id = match get_user_id(session) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
+    match QuizAttemptEntity::find()
+        .filter(QuizAttemptColumn::UserId.eq(user_id))
+        .all(db)
+        .await
+    {
+        Ok(attempts) if attempts.is_empty() => HttpResponse::NotFound().body("No attempts found"),
+        Ok(attempts) => HttpResponse::Ok().json(attempts),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+    }
+}
+
+pub async fn create_attempt(
+    db: &DatabaseConnection,
+    session: &Session,
+    data: CreateAttempt,
+) -> HttpResponse {
+    let user_id = match get_user_id(session) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
     let attempt = QuizAttemptActiveModel {
         quiz_id: Set(data.quiz_id),
-        user_id: Set(data.user_id),
+        user_id: Set(user_id),
         ..Default::default()
     };
 
@@ -41,15 +92,27 @@ pub async fn create_attempt(db: &DatabaseConnection, data: CreateAttempt) -> Htt
     }
 }
 
-pub async fn submit_attempt(db: &DatabaseConnection, attempt_id: i32) -> HttpResponse {
+pub async fn submit_attempt(
+    db: &DatabaseConnection,
+    session: &Session,
+    attempt_id: i32,
+) -> HttpResponse {
+    let user_id = match get_user_id(session) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
     match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => {
+            if attempt.user_id != user_id && is_student_only(&get_role_ids(session)) {
+                return HttpResponse::Forbidden().body("You can only submit your own attempt");
+            }
+
             let mut active: QuizAttemptActiveModel = attempt.into();
-            let now: NaiveDateTime = Local::now().naive_local();
-            active.submitted_at = Set(Some(now));
+            active.submitted_at = Set(Some(Local::now().naive_local()));
 
             match active.update(db).await {
-                Ok(_) => HttpResponse::Ok().body(format!("Attempt {} marked as submitted", attempt_id)),
+                Ok(_) => HttpResponse::Ok().body(format!("Attempt {} submitted", attempt_id)),
                 Err(err) => HttpResponse::InternalServerError().body(format!("Update error: {}", err)),
             }
         }
@@ -60,9 +123,14 @@ pub async fn submit_attempt(db: &DatabaseConnection, attempt_id: i32) -> HttpRes
 
 pub async fn grade_attempt(
     db: &DatabaseConnection,
+    session: &Session,
     attempt_id: i32,
     data: MarkAttempt,
 ) -> HttpResponse {
+    if let Err(response) = require_staff(session, "grade attempts") {
+        return response;
+    }
+
     match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => {
             let mut active: QuizAttemptActiveModel = attempt.into();
@@ -81,7 +149,15 @@ pub async fn grade_attempt(
     }
 }
 
-pub async fn delete_attempt(db: &DatabaseConnection, attempt_id: i32) -> HttpResponse {
+pub async fn delete_attempt(
+    db: &DatabaseConnection,
+    session: &Session,
+    attempt_id: i32,
+) -> HttpResponse {
+    if let Err(response) = require_staff(session, "delete attempts") {
+        return response;
+    }
+
     match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => {
             let active_model: QuizAttemptActiveModel = attempt.into();

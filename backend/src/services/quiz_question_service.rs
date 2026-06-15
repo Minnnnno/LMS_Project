@@ -1,3 +1,4 @@
+use actix_session::Session;
 use actix_web::HttpResponse;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
@@ -6,8 +7,24 @@ use crate::entity::quiz_questions::{
     Entity as QuizQuestionEntity,
 };
 use crate::models::quiz_questions::{CreateQuizQuestion, UpdateQuizQuestion};
+use crate::services::auth_helpers::{get_role_ids, get_user_id, is_student_only};
 
-pub async fn list_questions(db: &DatabaseConnection) -> HttpResponse {
+fn require_staff(session: &Session, action: &str) -> Result<(), HttpResponse> {
+    let role_ids = get_role_ids(session);
+    if role_ids.is_empty() {
+        return Err(HttpResponse::Unauthorized().body("You must be logged in"));
+    }
+    if is_student_only(&role_ids) {
+        return Err(HttpResponse::Forbidden().body(format!("Students cannot {}", action)));
+    }
+    Ok(())
+}
+
+pub async fn list_questions(db: &DatabaseConnection, session: &Session) -> HttpResponse {
+    if let Err(response) = get_user_id(session) {
+        return response;
+    }
+
     match QuizQuestionEntity::find().all(db).await {
         Ok(questions) if questions.is_empty() => HttpResponse::NotFound().body("No quiz questions found"),
         Ok(questions) => HttpResponse::Ok().json(questions),
@@ -15,7 +32,15 @@ pub async fn list_questions(db: &DatabaseConnection) -> HttpResponse {
     }
 }
 
-pub async fn list_questions_by_quiz(db: &DatabaseConnection, quiz_id: i32) -> HttpResponse {
+pub async fn list_questions_by_quiz(
+    db: &DatabaseConnection,
+    session: &Session,
+    quiz_id: i32,
+) -> HttpResponse {
+    if let Err(response) = get_user_id(session) {
+        return response;
+    }
+
     match QuizQuestionEntity::find()
         .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
         .all(db)
@@ -27,7 +52,15 @@ pub async fn list_questions_by_quiz(db: &DatabaseConnection, quiz_id: i32) -> Ht
     }
 }
 
-pub async fn create_question(db: &DatabaseConnection, data: CreateQuizQuestion) -> HttpResponse {
+pub async fn create_question(
+    db: &DatabaseConnection,
+    session: &Session,
+    data: CreateQuizQuestion,
+) -> HttpResponse {
+    if let Err(response) = require_staff(session, "create questions") {
+        return response;
+    }
+
     let question = QuizQuestionActiveModel {
         quiz_id: Set(data.quiz_id),
         question_type: Set(data.question_type),
@@ -45,9 +78,14 @@ pub async fn create_question(db: &DatabaseConnection, data: CreateQuizQuestion) 
 
 pub async fn update_question(
     db: &DatabaseConnection,
+    session: &Session,
     question_id: i32,
     data: UpdateQuizQuestion,
 ) -> HttpResponse {
+    if let Err(response) = require_staff(session, "update questions") {
+        return response;
+    }
+
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
             let mut active: QuizQuestionActiveModel = question.into();
@@ -75,7 +113,15 @@ pub async fn update_question(
     }
 }
 
-pub async fn delete_question(db: &DatabaseConnection, question_id: i32) -> HttpResponse {
+pub async fn delete_question(
+    db: &DatabaseConnection,
+    session: &Session,
+    question_id: i32,
+) -> HttpResponse {
+    if let Err(response) = require_staff(session, "delete questions") {
+        return response;
+    }
+
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
             let active_model: QuizQuestionActiveModel = question.into();

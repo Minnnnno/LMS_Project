@@ -907,6 +907,11 @@ async function deleteCourse(event, courseId) {
     }
 }
 
+function updateCoursePaidFields() {
+    const isPaid = document.getElementById("course-paid-input").checked;
+    document.getElementById("course-paid-fields").hidden = !isPaid;
+}
+
 function openCourseModal() {
     if (!currentCourse) {
         return;
@@ -922,10 +927,11 @@ function openCourseModal() {
         priceCents === null ? "" : (priceCents / 100).toFixed(2);
     document.getElementById("course-price-input").placeholder =
         priceCents === null ? "0.00" : (priceCents / 100).toFixed(2);
-    document.getElementById("course-currency-input").value = currentCourse.currency || "SGD";
+    document.getElementById("course-currency-input").value = (currentCourse.currency || "SGD").toUpperCase();
     document.getElementById("course-currency-input").placeholder = currentCourse.currency || "SGD";
     document.getElementById("course-status-input").value = currentCourse.status || "draft";
     document.getElementById("course-paid-input").checked = Boolean(currentCourse.is_paid);
+    updateCoursePaidFields();
     document.getElementById("edit-course-modal").style.display = "flex";
 }
 
@@ -1068,12 +1074,14 @@ async function saveCourse() {
             name,
             description: description || null,
             background_image_url: backgroundImageUrl || null,
-            currency,
+            currency: isPaid ? currency : "SGD",
             status,
             is_paid: isPaid,
         };
 
-        if (priceInputValue !== "") {
+        if (!isPaid) {
+            payload.price = 0;
+        } else if (priceInputValue !== "") {
             payload.price = Number(priceInputValue);
         }
 
@@ -1313,6 +1321,7 @@ function bindInstructorControls() {
 
     document.getElementById("save-course-btn")?.addEventListener("click", saveCourse);
     document.getElementById("close-course-modal-btn")?.addEventListener("click", closeCourseModal);
+    document.getElementById("course-paid-input")?.addEventListener("change", updateCoursePaidFields);
 
     document.getElementById("student-view-btn")?.addEventListener("click", () => {
         document.getElementById("instructor-controls").style.display = "none";

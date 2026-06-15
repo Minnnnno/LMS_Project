@@ -4,6 +4,7 @@ use crate::{
     controller::quiz_attempts_controller::{
         get_quiz_attempts,
         get_attempts_by_quiz_id,
+        get_my_attempts,
         create_quiz_attempt,
         submit_quiz_attempt,
         grade_attempt,
@@ -14,6 +15,7 @@ use crate::{
 pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(get_quiz_attempts);
     cfg.service(get_attempts_by_quiz_id);
+    cfg.service(get_my_attempts);
     cfg.service(create_quiz_attempt);
     cfg.service(submit_quiz_attempt);
     cfg.service(grade_attempt);

@@ -1,3 +1,4 @@
+use actix_session::Session;
 use actix_web::HttpResponse;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
@@ -5,8 +6,24 @@ use crate::entity::quiz_options::{
     ActiveModel as QuizOptionActiveModel, Column as QuizOptionColumn, Entity as QuizOptionEntity,
 };
 use crate::models::quiz_options::{CreateQuizOption, UpdateQuizOption};
+use crate::services::auth_helpers::{get_role_ids, get_user_id, is_student_only};
 
-pub async fn list_options(db: &DatabaseConnection) -> HttpResponse {
+fn require_staff(session: &Session, action: &str) -> Result<(), HttpResponse> {
+    let role_ids = get_role_ids(session);
+    if role_ids.is_empty() {
+        return Err(HttpResponse::Unauthorized().body("You must be logged in"));
+    }
+    if is_student_only(&role_ids) {
+        return Err(HttpResponse::Forbidden().body(format!("Students cannot {}", action)));
+    }
+    Ok(())
+}
+
+pub async fn list_options(db: &DatabaseConnection, session: &Session) -> HttpResponse {
+    if let Err(response) = get_user_id(session) {
+        return response;
+    }
+
     match QuizOptionEntity::find().all(db).await {
         Ok(options) if options.is_empty() => HttpResponse::NotFound().body("No quiz options found"),
         Ok(options) => HttpResponse::Ok().json(options),
@@ -14,7 +31,15 @@ pub async fn list_options(db: &DatabaseConnection) -> HttpResponse {
     }
 }
 
-pub async fn list_options_by_question(db: &DatabaseConnection, question_id: i32) -> HttpResponse {
+pub async fn list_options_by_question(
+    db: &DatabaseConnection,
+    session: &Session,
+    question_id: i32,
+) -> HttpResponse {
+    if let Err(response) = get_user_id(session) {
+        return response;
+    }
+
     match QuizOptionEntity::find()
         .filter(QuizOptionColumn::QuestionId.eq(question_id))
         .all(db)
@@ -26,7 +51,15 @@ pub async fn list_options_by_question(db: &DatabaseConnection, question_id: i32)
     }
 }
 
-pub async fn create_option(db: &DatabaseConnection, data: CreateQuizOption) -> HttpResponse {
+pub async fn create_option(
+    db: &DatabaseConnection,
+    session: &Session,
+    data: CreateQuizOption,
+) -> HttpResponse {
+    if let Err(response) = require_staff(session, "create options") {
+        return response;
+    }
+
     let option = QuizOptionActiveModel {
         question_id: Set(data.question_id),
         option_text: Set(data.option_text),
@@ -43,9 +76,14 @@ pub async fn create_option(db: &DatabaseConnection, data: CreateQuizOption) -> H
 
 pub async fn update_option(
     db: &DatabaseConnection,
+    session: &Session,
     option_id: i32,
     data: UpdateQuizOption,
 ) -> HttpResponse {
+    if let Err(response) = require_staff(session, "update options") {
+        return response;
+    }
+
     match QuizOptionEntity::find_by_id(option_id).one(db).await {
         Ok(Some(option)) => {
             let mut active: QuizOptionActiveModel = option.into();
@@ -70,7 +108,15 @@ pub async fn update_option(
     }
 }
 
-pub async fn delete_option(db: &DatabaseConnection, option_id: i32) -> HttpResponse {
+pub async fn delete_option(
+    db: &DatabaseConnection,
+    session: &Session,
+    option_id: i32,
+) -> HttpResponse {
+    if let Err(response) = require_staff(session, "delete options") {
+        return response;
+    }
+
     match QuizOptionEntity::find_by_id(option_id).one(db).await {
         Ok(Some(option)) => {
             let active_model: QuizOptionActiveModel = option.into();

@@ -51,13 +51,11 @@ pub fn require_admin(session: &Session) -> Result<(), HttpResponse> {
         .flatten()
         .unwrap_or_default();
 
-    let is_admin = role_names
-        .iter()
-        .any(|role| role == "LMS Admin" || role == "Organisation Admin");
+    let is_admin = role_names.iter().any(|role| role == "LMS Admin");
 
     if is_admin {
         Ok(())
     } else {
-        Err(HttpResponse::Forbidden().body("Admin access required"))
+        Err(HttpResponse::Forbidden().body("LMS Admin access required"))
     }
 }

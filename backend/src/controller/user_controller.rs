@@ -407,9 +407,7 @@ pub async fn login_submit(
         println!("Session insert error: {:?}", err);
     }
 
-    let is_admin_account = role_names
-        .iter()
-        .any(|role| role == "LMS Admin" || role == "Organisation Admin");
+    let is_lms_admin = role_names.iter().any(|role| role == "LMS Admin");
 
     store_roles_in_session(&session, role_ids, role_names);
 
@@ -434,7 +432,7 @@ pub async fn login_submit(
         None
     };
 
-    let mut response = if is_admin_account {
+    let mut response = if is_lms_admin {
         HttpResponse::Found()
             .insert_header((header::LOCATION, "/admin/dashboard"))
             .finish()
@@ -855,6 +853,10 @@ pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> imp
     match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
         Ok(Some(user)) => {
             context.insert("email_verified", &user.email_verified);
+            let user_full_name = format!("{} {}", user.first_name.trim(), user.last_name.trim())
+                .trim()
+                .to_string();
+            context.insert("user_full_name", &user_full_name);
             let _ = session.insert("email_verified", user.email_verified);
         }
         Ok(None) => {
@@ -868,16 +870,6 @@ pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> imp
             context.insert("error", "Unable to refresh your account details right now.");
         }
     }
-
-    let role_names = session
-        .get::<Vec<String>>("role_names")
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let can_signup_as_lecturer = !role_names
-        .iter()
-        .any(|role_name| role_name == "Instructor");
-    context.insert("can_signup_as_lecturer", &can_signup_as_lecturer);
 
     if let Ok(Some(success)) = session.get::<String>("profile_success") {
         context.insert("success", &success);
