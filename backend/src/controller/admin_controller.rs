@@ -1,7 +1,10 @@
 use actix_session::Session;
 use actix_web::{delete, get, post, put, web, Responder};
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
+use serde::Serialize;
 
+use crate::app_state::AppState;
+use crate::entity::{courses, enrollments, organisations, users};
 use crate::models::admin::{
     CreateOrganisationForm,
     UpdateOrganisationForm,
@@ -38,6 +41,48 @@ use crate::services::admin_service::{
     admin_enroll_user_service,
     admin_unenroll_user_service,
 };
+
+#[derive(Serialize)]
+struct AdminStats {
+    active_viewers: usize,
+    total_accounts: u64,
+    total_users: u64,
+    total_organisations: u64,
+    total_courses: u64,
+    total_enrollments: u64,
+}
+
+#[get("/admin/stats")]
+pub async fn admin_stats(
+    db: web::Data<DatabaseConnection>,
+    state: web::Data<AppState>,
+    session: Session,
+) -> impl Responder {
+    if let Err(response) = require_admin(&session) {
+        return response;
+    }
+
+    let (users, organisations, courses, enrollments) = tokio::join!(
+        users::Entity::find().count(db.get_ref()),
+        organisations::Entity::find().count(db.get_ref()),
+        courses::Entity::find().count(db.get_ref()),
+        enrollments::Entity::find().count(db.get_ref()),
+    );
+
+    match (users, organisations, courses, enrollments) {
+        (Ok(total_users), Ok(total_organisations), Ok(total_courses), Ok(total_enrollments)) => {
+            actix_web::HttpResponse::Ok().json(AdminStats {
+                active_viewers: state.active_viewers(),
+                total_accounts: total_users,
+                total_users,
+                total_organisations,
+                total_courses,
+                total_enrollments,
+            })
+        }
+        _ => actix_web::HttpResponse::InternalServerError().body("Unable to load admin statistics"),
+    }
+}
 
 #[get("/admin/roles")]
 pub async fn admin_get_roles(

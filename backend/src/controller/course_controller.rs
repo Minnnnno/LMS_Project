@@ -250,6 +250,20 @@ pub async fn update_course(
                 Err(response) => return response,
             }
 
+            let updated_price_cents = match data.price {
+                Some(price) => match price_to_cents(price) {
+                    Ok(price_cents) => price_cents,
+                    Err(response) => return response,
+                },
+                None => course.price_cents.unwrap_or(0),
+            };
+            let updated_is_paid = data.is_paid.unwrap_or(course.is_paid.unwrap_or(false));
+
+            if updated_is_paid && updated_price_cents <= 0 {
+                return HttpResponse::BadRequest()
+                    .body("Paid courses must have a price greater than zero");
+            }
+
             let mut active: courses::ActiveModel = course.into();
 
             if let Some(name) = data.name {
@@ -290,11 +304,8 @@ pub async fn update_course(
                 active.status = Set(course_status);
             }
 
-            if let Some(price) = data.price {
-                active.price_cents = Set(Some(match price_to_cents(price) {
-                    Ok(price_cents) => price_cents,
-                    Err(response) => return response,
-                }));
+            if data.price.is_some() {
+                active.price_cents = Set(Some(updated_price_cents));
             }
             if let Some(currency) = data.currency {
                 active.currency = Set(Some(currency));
@@ -352,6 +363,16 @@ pub async fn create_course(
         Err(response) => return response,
     };
 
+    let price_cents = match price_to_cents(data.price) {
+        Ok(price_cents) => price_cents,
+        Err(response) => return response,
+    };
+
+    if data.is_paid && price_cents <= 0 {
+        return HttpResponse::BadRequest()
+            .body("Paid courses must have a price greater than zero");
+    }
+
     let course = courses::ActiveModel {
         name: Set(Some(data.name)),
         instructor_id: Set(Some(data.instructor_id.unwrap_or(session_user_id))),
@@ -367,10 +388,7 @@ pub async fn create_course(
             }
         }),
 
-        price_cents: Set(Some(match price_to_cents(data.price) {
-            Ok(price_cents) => price_cents,
-            Err(response) => return response,
-        })),
+        price_cents: Set(Some(price_cents)),
         currency: Set(Some(data.currency)),
         is_paid: Set(Some(data.is_paid)),
         description: Set(data.description),

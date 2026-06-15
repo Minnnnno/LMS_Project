@@ -17,3 +17,4 @@ pub mod quiz_answers_routes;
 pub mod admin_routes;
 pub mod grade_routes;
 pub mod submission_routes;
+pub mod viewer_routes;

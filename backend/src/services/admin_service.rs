@@ -95,8 +95,17 @@ fn validate_course_payment(
         return Err(HttpResponse::BadRequest().body("Course price cannot be negative"));
     }
 
-    if is_paid.unwrap_or(false) && !currency.is_some_and(|value| value.eq_ignore_ascii_case("SGD")) {
-        return Err(HttpResponse::BadRequest().body("Paid courses currently support SGD only"));
+    if is_paid.unwrap_or(false) {
+        if !price_cents.is_some_and(|price| price > 0) {
+            return Err(HttpResponse::BadRequest().body("Paid courses must have a price greater than zero"));
+        }
+
+        if !currency.is_some_and(|value| value.eq_ignore_ascii_case("SGD")) {
+            return Err(HttpResponse::BadRequest().body("Paid courses currently support SGD only"));
+        }
+    } else if price_cents.is_some() || currency.is_some() {
+        return Err(HttpResponse::BadRequest()
+            .body("Unpaid courses must not have a price or currency"));
     }
 
     Ok(())
@@ -455,8 +464,8 @@ pub async fn create_course_service(
         org_id: Set(body.org_id),
         instructor_id: Set(body.instructor_id),
         status: Set(status),
-        price_cents: Set(Some(body.price_cents.unwrap_or(0))),
-        currency: Set(Some(body.currency.unwrap_or_else(|| "sgd".to_string()))),
+        price_cents: Set(body.price_cents),
+        currency: Set(body.currency),
         is_paid: Set(Some(body.is_paid.unwrap_or(false))),
         description: Set(body.description),
         background_image_url: Set(body.background_image_url),
@@ -512,16 +521,16 @@ pub async fn update_course_service(
         active_course.status = Set(status);
     }
 
-    if let Some(price_cents) = body.price_cents {
-        active_course.price_cents = Set(Some(price_cents));
-    }
-
-    if let Some(currency) = body.currency {
-        active_course.currency = Set(Some(currency));
-    }
-
     if let Some(is_paid) = body.is_paid {
         active_course.is_paid = Set(Some(is_paid));
+
+        if is_paid {
+            active_course.price_cents = Set(body.price_cents);
+            active_course.currency = Set(body.currency);
+        } else {
+            active_course.price_cents = Set(None);
+            active_course.currency = Set(None);
+        }
     }
 
     active_course.description = Set(body.description);

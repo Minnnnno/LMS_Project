@@ -5,6 +5,8 @@ mod models;
 mod entity;
 mod services;
 mod ssr;
+mod app_state;
+use app_state::AppState;
 use db::connection::connect_db;
 use actix_files::Files;
 use actix_session::{SessionMiddleware, storage::CookieSessionStore};
@@ -20,10 +22,12 @@ async fn main() -> std::io::Result<()> {
     println!("Database connected!");
 
     let secret_key = Key::generate();
+    let app_state = AppState::default();
 
     HttpServer::new(move || {
         App::new()
             .app_data(actix_web::web::Data::new(db.clone()))
+            .app_data(actix_web::web::Data::new(app_state.clone()))
             .wrap(Cors::permissive())
             .wrap(from_fn(remember_me_middleware))
             .wrap(
@@ -53,6 +57,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(routes::quiz_answers_routes::init)
                     .configure(routes::grade_routes::init)
                     .configure(routes::submission_routes::init)
+                    .configure(routes::viewer_routes::init)
             )
             .configure(ssr::pages::init)
             .configure(routes::user_routes::init)

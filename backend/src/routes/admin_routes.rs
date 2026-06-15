@@ -7,6 +7,7 @@ use crate::controller::admin_controller::{
     admin_courses_page,
     admin_enrollments_page,
     admin_get_roles,
+    admin_stats,
 
     get_organisations,
     create_organisation,
@@ -37,6 +38,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(admin_courses_page);
     cfg.service(admin_enrollments_page);
     cfg.service(admin_get_roles);
+    cfg.service(admin_stats);
 
     cfg.service(get_organisations);
     cfg.service(create_organisation);

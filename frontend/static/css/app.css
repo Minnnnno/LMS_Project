@@ -309,6 +309,11 @@ a {
     width: min(100%, 24rem);
 }
 
+.admin-viewer-count {
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
 .admin-table thead th {
     position: sticky;
     top: 0;

@@ -1248,6 +1248,13 @@ async function saveCourse() {
         return;
     }
 
+    const price = Number(priceInputValue);
+
+    if (isPaid && (priceInputValue === "" || !Number.isFinite(price) || price <= 0)) {
+        showActionMessage("Paid courses must have a price greater than zero.", "error");
+        return;
+    }
+
     try {
         const backgroundImageUrl = backgroundImageFile
             ? await uploadCourseImage(backgroundImageFile)
@@ -1264,8 +1271,8 @@ async function saveCourse() {
 
         if (!isPaid) {
             payload.price = 0;
-        } else if (priceInputValue !== "") {
-            payload.price = Number(priceInputValue);
+        } else {
+            payload.price = price;
         }
 
         await axios.put(`/api/courses/${courseId}`, payload);
