@@ -3,12 +3,16 @@
 {% block title %}Downloads | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<h1 class="section-title">Downloads</h1>
-<p class="page-subtitle">Download learning materials and resources.</p>
+<section class="dashboard-header">
+    <div>
+        <h1 class="page-heading">Downloads</h1>
+        <p class="page-subtitle">Access PDFs and documents from your enrolled courses.</p>
+    </div>
+</section>
 
-<div class="card" style="margin-top: 28px;">
-    <h3>Rust Notes PDF</h3>
-    <p>Introduction to Rust programming.</p>
-    <button class="signin-btn">Download</button>
-</div>
+<div id="downloads-container" class="mt-3"></div>
 {% endblock content %}
+
+{% block extra_js %}
+<script src="/static/js/downloads.js"></script>
+{% endblock extra_js %}

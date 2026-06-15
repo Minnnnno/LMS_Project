@@ -3,13 +3,47 @@
 {% block title %}Projects | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<h1 class="section-title">Project Submission</h1>
-<p class="page-subtitle">Upload your project files here.</p>
+<section class="dashboard-header">
+    <div>
+        <h1 class="page-heading">Project Submissions</h1>
+        <p class="page-subtitle">Submit your assignment files for instructor review.</p>
+    </div>
+</section>
 
-<div class="card" style="margin-top: 28px;">
-    <input type="file" id="fileInput">
-    <button class="signin-btn" onclick="testUpload()">Upload Project</button>
-    <p id="uploadStatus"></p>
+<div id="projects-container" class="mt-3"></div>
+
+<!-- Upload modal -->
+<div class="modal fade" id="project-upload-modal" tabindex="-1" aria-labelledby="project-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title fw-bold" id="project-modal-label">
+                    <i class="bi bi-upload me-2"></i>Submit Project
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="project-submission-history" class="mb-3"></div>
+
+                <hr class="my-2">
+
+                <label class="form-label fw-semibold">Attach File</label>
+                <input type="file" class="form-control" id="project-file-input">
+
+                <label class="form-label fw-semibold mt-3">Submission Note <span class="text-muted fw-normal">(optional)</span></label>
+                <textarea class="form-control" id="project-note-input" rows="3"
+                          placeholder="Add a note for your instructor..."></textarea>
+
+                <p id="project-upload-status" class="form-text mt-2 text-muted" role="status"></p>
+            </div>
+            <div class="modal-footer border-top">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-dark" id="project-submit-btn">
+                    <i class="bi bi-upload me-1"></i>Submit
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock content %}
 

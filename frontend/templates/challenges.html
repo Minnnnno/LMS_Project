@@ -3,18 +3,16 @@
 {% block title %}Challenges | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<h1 class="section-title">Challenges</h1>
-<p class="page-subtitle">Practise your coding and problem-solving skills.</p>
-
-<div class="course-grid" style="margin-top: 28px;">
-    <div class="card">
-        <h3>Challenge 1</h3>
-        <p>Create a simple Rust function.</p>
+<section class="dashboard-header">
+    <div>
+        <h1 class="page-heading">Challenges</h1>
+        <p class="page-subtitle">Practise your skills with course assignments.</p>
     </div>
+</section>
 
-    <div class="card">
-        <h3>Challenge 2</h3>
-        <p>Build a basic Actix Web API route.</p>
-    </div>
-</div>
+<div id="challenges-container" class="mt-3"></div>
 {% endblock content %}
+
+{% block extra_js %}
+<script src="/static/js/main.js"></script>
+{% endblock extra_js %}

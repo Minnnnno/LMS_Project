@@ -9,22 +9,10 @@ let courseInstructorState = { courses: [], instructors: [] };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function escHtml(str) {
-    return String(str ?? '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function roleBadge(roleName) {
-    const cls = roleName.includes('Admin')      ? 'badge-admin'
-              : roleName.includes('Instructor') ? 'badge-instructor'
-                                                : 'badge-student';
-    return `<span class="badge-role ${cls}">${escHtml(roleName)}</span>`;
-}
-
-function initials(first, last) {
-    return ((first || '')[0] || '').toUpperCase() + ((last || '')[0] || '').toUpperCase();
-}
+// escHtml, roleBadge, and initials are now provided by lms-core.js / role.js / user.js
+function escHtml(str) { return HtmlUtils.escape(str); }
+function roleBadge(roleName) { return RoleUtils.badge(roleName); }
+function initials(first, last) { return UserUtils.initials(first, last); }
 
 function setProgress(show, label, pct) {
     const el = document.getElementById('upload-progress');

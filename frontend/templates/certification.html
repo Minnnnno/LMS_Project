@@ -3,11 +3,16 @@
 {% block title %}Certification | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<h1 class="section-title">Certification</h1>
-<p class="page-subtitle">View your completed certificates.</p>
+<section class="dashboard-header">
+    <div>
+        <h1 class="page-heading">Certification</h1>
+        <p class="page-subtitle">Complete courses to earn your certificates.</p>
+    </div>
+</section>
 
-<div class="card" style="margin-top: 28px;">
-    <h3>No certificates yet</h3>
-    <p>Complete your courses and assessments to unlock certification.</p>
-</div>
+<div id="certification-container" class="mt-3"></div>
 {% endblock content %}
+
+{% block extra_js %}
+<script src="/static/js/main.js"></script>
+{% endblock extra_js %}
