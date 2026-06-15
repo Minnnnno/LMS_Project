@@ -1,4 +1,3 @@
-pub mod malware_scanner;
 pub mod auth_helpers;
 pub mod assignment_service;
 pub mod cloudinary_service;
@@ -19,3 +18,5 @@ pub mod remember_me_service;
 pub mod student_service;
 pub mod user_service;
 pub mod admin_service;
+pub mod grade_service;
+pub mod submission_service;

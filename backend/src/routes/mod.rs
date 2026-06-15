@@ -15,3 +15,5 @@ pub mod quiz_options_routes;
 pub mod quiz_attempts_routes;
 pub mod quiz_answers_routes;
 pub mod admin_routes;
+pub mod grade_routes;
+pub mod submission_routes;

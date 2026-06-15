@@ -1,6 +1,6 @@
 use actix_web::HttpResponse;
 use lettre::{
-    message::Mailbox,
+    message::{header::ContentType, Mailbox},
     transport::smtp::authentication::Credentials,
     Message, SmtpTransport, Transport,
 };
@@ -11,6 +11,8 @@ pub struct MailRequest {
     pub to: String,
     pub subject: String,
     pub body: String,
+    #[serde(default)]
+    pub is_html: bool,
 }
 
 pub fn send_mail_message(mail: MailRequest) -> Result<(), String> {
@@ -20,7 +22,7 @@ pub fn send_mail_message(mail: MailRequest) -> Result<(), String> {
         std::env::var("SMTP_PASSWORD").map_err(|_| "SMTP_PASSWORD not found".to_string())?;
     let smtp_host = std::env::var("SMTP_HOST").map_err(|_| "SMTP_HOST not found".to_string())?;
 
-    let email = Message::builder()
+    let mut builder = Message::builder()
         .from(
             smtp_username
                 .parse::<Mailbox>()
@@ -30,7 +32,13 @@ pub fn send_mail_message(mail: MailRequest) -> Result<(), String> {
             .to
             .parse::<Mailbox>()
             .map_err(|err| format!("Invalid recipient email: {}", err))?)
-        .subject(&mail.subject)
+        .subject(&mail.subject);
+
+    if mail.is_html {
+        builder = builder.header(ContentType::TEXT_HTML);
+    }
+
+    let email = builder
         .body(mail.body)
         .map_err(|err| format!("Failed to build email: {}", err))?;
 

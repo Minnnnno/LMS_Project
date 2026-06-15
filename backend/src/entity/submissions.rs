@@ -1,6 +1,6 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
@@ -10,12 +10,12 @@ pub struct Model {
     pub submission_id: i32,
     pub assignment_id: i32,
     pub user_id: i32,
-    pub submitted_at: DateTime<Utc>,
-    pub submission_text: String,
-    pub file_url: String,
-    pub cloudinary_public_id: String,
-    pub score: Decimal,
-    pub feedback: String,
+    pub submitted_at: NaiveDateTime,
+    pub submission_text: Option<String>,
+    pub file_url: Option<String>,
+    pub cloudinary_public_id: Option<String>,
+    pub score: Option<Decimal>,
+    pub feedback: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

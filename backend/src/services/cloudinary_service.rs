@@ -1,8 +1,6 @@
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
 
-use crate::services::malware_scanner::scan_file_for_malware;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CloudinaryUploadResponse {
     pub secure_url: String,
@@ -23,21 +21,13 @@ pub async fn upload_to_cloudinary(
     let api_secret = std::env::var("CLOUDINARY_API_SECRET")
         .map_err(|_| "CLOUDINARY_API_SECRET not found".to_string())?;
 
-    let resource_type = if filename.to_lowercase().ends_with(".pdf") {
-        "raw"
-    } else {
-        "image"
-    };
+    let resource_type = "auto";
 
     let upload_url = format!(
         "https://api.cloudinary.com/v1_1/{}/{}/upload",
         cloud_name,
         resource_type
     );
-
-    if let Err(err) = scan_file_for_malware(&file_bytes).await {
-        return Err(err);
-    }
 
     let file_part = multipart::Part::bytes(file_bytes).file_name(filename);
     let form = multipart::Form::new()
