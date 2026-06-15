@@ -714,6 +714,7 @@ fn send_instructor_invite_email(email: &str, temp_password: &str) -> Result<(), 
         to: email.to_string(),
         subject: "Your SkillUp LMS instructor account".to_string(),
         body,
+        is_html: false,
     })
 }
 
