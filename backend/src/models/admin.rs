@@ -17,6 +17,11 @@ pub struct UpdateOrganisationForm {
     pub website_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+pub struct RejectOrganisationSignupRequestForm {
+    pub reason: Option<String>,
+}
+
 // User CRUD Forms
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateAdminUserForm {

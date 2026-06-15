@@ -10,6 +10,9 @@ use crate::controller::admin_controller::{
     admin_stats,
 
     get_organisations,
+    admin_get_organisation_signup_requests,
+    admin_approve_organisation_signup_request,
+    admin_reject_organisation_signup_request,
     create_organisation,
     update_organisation,
     delete_organisation,
@@ -41,6 +44,9 @@ pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(admin_stats);
 
     cfg.service(get_organisations);
+    cfg.service(admin_get_organisation_signup_requests);
+    cfg.service(admin_approve_organisation_signup_request);
+    cfg.service(admin_reject_organisation_signup_request);
     cfg.service(create_organisation);
     cfg.service(update_organisation);
     cfg.service(delete_organisation);

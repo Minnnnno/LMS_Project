@@ -305,6 +305,11 @@ a {
     overflow: auto;
 }
 
+#manage-organisation-signup-requests .admin-table-wrap {
+    max-height: 34rem;
+    overflow-x: hidden;
+}
+
 .admin-table-search {
     width: min(100%, 24rem);
 }
@@ -323,6 +328,212 @@ a {
 
 .admin-table tbody tr:hover {
     background: #f9fafb;
+}
+
+.admin-requests-table td {
+    padding: 0.75rem 0;
+    border-bottom: 0;
+}
+
+.admin-requests-table tbody tr:hover {
+    background: transparent;
+}
+
+.admin-request-item {
+    display: grid;
+    gap: 1rem;
+    padding: 1.15rem;
+    border: 1px solid #e5e7eb;
+    border-left: 0.35rem solid #111827;
+    border-radius: 0.85rem;
+    background: #ffffff;
+}
+
+.admin-request-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.admin-request-title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.admin-request-title-row strong {
+    color: #111827;
+    font-size: 1.05rem;
+}
+
+.admin-request-actions {
+    flex: 0 0 auto;
+}
+
+.admin-request-actions .d-flex {
+    flex-wrap: wrap;
+}
+
+.admin-request-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(14rem, 0.8fr) minmax(13rem, 0.7fr);
+    gap: 1rem;
+    align-items: stretch;
+}
+
+.admin-request-main {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.admin-request-main strong,
+.admin-request-main a,
+.admin-request-main code {
+    overflow-wrap: anywhere;
+}
+
+.admin-request-id {
+    color: #6b7280;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.admin-request-main code {
+    display: inline-block;
+    width: fit-content;
+    max-width: 100%;
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.4rem;
+    background: #f3f4f6;
+    color: #374151;
+    font-size: 0.82rem;
+}
+
+.admin-request-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(7rem, 1fr));
+    gap: 0.75rem;
+}
+
+.admin-request-detail {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.7rem 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.65rem;
+    background: #f9fafb;
+}
+
+.admin-request-contact,
+.admin-request-review {
+    display: grid;
+    align-content: start;
+    gap: 0.25rem;
+    min-width: 0;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.65rem;
+    background: #f9fafb;
+}
+
+.admin-request-detail span,
+.admin-request-contact > span,
+.admin-request-review > span {
+    color: #6b7280;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.admin-request-detail strong,
+.admin-request-detail a,
+.admin-request-contact strong,
+.admin-request-contact a {
+    min-width: 0;
+    color: #111827;
+    font-size: 0.88rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.admin-request-detail a,
+.admin-request-contact a {
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+.admin-request-detail a:hover,
+.admin-request-contact a:hover {
+    text-decoration: underline;
+}
+
+.admin-request-contact small {
+    color: #6b7280;
+}
+
+.admin-request-meta,
+.admin-request-reason {
+    color: #6b7280;
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.admin-request-reason {
+    max-width: 30rem;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 991.98px) {
+    .admin-request-heading {
+        display: grid;
+    }
+
+    .admin-request-actions {
+        width: 100%;
+    }
+
+    .admin-request-actions .d-flex {
+        justify-content: flex-start !important;
+    }
+
+    .admin-request-body {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-request-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.admin-reject-modal {
+    border: 0;
+    border-radius: 1rem;
+    box-shadow: 0 1.5rem 4rem rgba(15, 23, 42, 0.18);
+}
+
+.admin-reject-summary {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    background: #f9fafb;
+}
+
+.admin-reject-summary strong,
+.admin-reject-summary span {
+    overflow-wrap: anywhere;
+}
+
+.admin-reject-summary span {
+    color: #6b7280;
+    font-size: 0.9rem;
 }
 
 .admin-combobox {

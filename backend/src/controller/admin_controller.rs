@@ -8,6 +8,7 @@ use crate::entity::{courses, enrollments, organisations, users};
 use crate::models::admin::{
     CreateOrganisationForm,
     UpdateOrganisationForm,
+    RejectOrganisationSignupRequestForm,
     CreateAdminUserForm,
     UpdateAdminUserForm,
     CreateAdminCourseForm,
@@ -21,6 +22,9 @@ use crate::ssr::pages::render_page;
 use crate::services::admin_service::{
     get_all_organisations,
     get_all_roles,
+    get_organisation_signup_requests,
+    approve_organisation_signup_request,
+    reject_organisation_signup_request,
     create_organisation_service,
     update_organisation_service,
     delete_organisation_service,
@@ -145,6 +149,56 @@ pub async fn get_organisations(
 ) -> impl Responder {
     match require_admin(&session) {
         Ok(_) => get_all_organisations(db.get_ref()).await,
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/organisation-signup-requests")]
+pub async fn admin_get_organisation_signup_requests(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => get_organisation_signup_requests(db.get_ref()).await,
+        Err(response) => response,
+    }
+}
+
+#[post("/admin/organisation-signup-requests/{request_id}/approve")]
+pub async fn admin_approve_organisation_signup_request(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let request_id = path.into_inner();
+    let approved_by = session.get::<i32>("user_id").ok().flatten();
+
+    match require_admin(&session) {
+        Ok(_) => approve_organisation_signup_request(db.get_ref(), request_id, approved_by).await,
+        Err(response) => response,
+    }
+}
+
+#[post("/admin/organisation-signup-requests/{request_id}/reject")]
+pub async fn admin_reject_organisation_signup_request(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+    body: web::Json<RejectOrganisationSignupRequestForm>,
+) -> impl Responder {
+    let request_id = path.into_inner();
+    let rejected_by = session.get::<i32>("user_id").ok().flatten();
+
+    match require_admin(&session) {
+        Ok(_) => {
+            reject_organisation_signup_request(
+                db.get_ref(),
+                request_id,
+                rejected_by,
+                body.into_inner(),
+            )
+            .await
+        }
         Err(response) => response,
     }
 }

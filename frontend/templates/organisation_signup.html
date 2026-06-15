@@ -44,6 +44,12 @@
                 </div>
                 {% endif %}
 
+                {% if success %}
+                <div class="alert alert-success" role="status">
+                    {{ success }}
+                </div>
+                {% endif %}
+
                 <form action="/organisations/signup" method="post">
                     <div class="org-signup-section">
                         <h2>Organisation details</h2>
@@ -88,12 +94,14 @@
                             <div class="col-12 col-md-6">
                                 <label for="website_url" class="form-label">Website URL</label>
                                 <input
-                                    type="url"
+                                    type="text"
                                     class="form-control"
                                     id="website_url"
                                     name="website_url"
                                     value="{{ website_url | default(value="") }}"
                                     autocomplete="url"
+                                    inputmode="url"
+                                    placeholder="example.com"
                                 >
                             </div>
                         </div>

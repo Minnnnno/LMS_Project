@@ -265,6 +265,28 @@
     </div>
 
     <div class="row g-4">
+        <div id="manage-organisation-signup-requests" class="col-12 admin-anchor" data-admin-domain="organisations">
+            <div class="card border-0 shadow-sm rounded-4 admin-table-card">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                        <h3 class="section-title mb-0">Organisation signup requests</h3>
+                        <div class="input-group admin-table-search">
+                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                            <input class="form-control" type="search" data-table-search="organisationRequests" placeholder="Search requests..." aria-label="Search organisation signup requests">
+                        </div>
+                    </div>
+                    <p class="small text-secondary mb-2" data-table-search-count="organisationRequests"></p>
+                    <div class="table-responsive admin-table-wrap">
+                        <table class="table align-middle admin-table admin-requests-table mb-0">
+                            <tbody id="organisation-requests-table-body">
+                                <tr><td colspan="1" class="text-secondary">Loading organisation requests...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="manage-organisations" class="col-12 admin-anchor" data-admin-domain="organisations">
             <div class="card border-0 shadow-sm rounded-4 admin-table-card">
                 <div class="card-body p-4">
@@ -395,19 +417,63 @@
     </div>
 </section>
 
+<div class="modal fade" id="reject-organisation-request-modal" tabindex="-1" aria-labelledby="reject-organisation-request-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content admin-reject-modal" id="reject-organisation-request-form">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <p class="text-secondary small mb-1">Organisation request</p>
+                    <h2 class="modal-title section-title mb-0" id="reject-organisation-request-title">Reject request</h2>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-3">
+                <div class="admin-reject-summary mb-3">
+                    <strong id="reject-request-org-name">Organisation</strong>
+                    <span id="reject-request-admin-email">Admin email</span>
+                </div>
+                <input type="hidden" id="reject-request-id">
+                <label for="reject-request-reason" class="form-label">Rejection reason</label>
+                <textarea
+                    id="reject-request-reason"
+                    class="form-control"
+                    rows="4"
+                    placeholder="Explain what the organisation admin should fix or provide."
+                    maxlength="1000"
+                    required
+                ></textarea>
+                <div class="form-text">This reason will be saved and included in the email notification.</div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-danger rounded-3" id="reject-request-submit-btn">Reject request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 const adminActionResult = document.getElementById("admin-action-result");
+const organisationRequestsTableBody = document.getElementById("organisation-requests-table-body");
+const rejectRequestForm = document.getElementById("reject-organisation-request-form");
+const rejectRequestIdInput = document.getElementById("reject-request-id");
+const rejectRequestReasonInput = document.getElementById("reject-request-reason");
+const rejectRequestSubmitButton = document.getElementById("reject-request-submit-btn");
+const rejectRequestOrgName = document.getElementById("reject-request-org-name");
+const rejectRequestAdminEmail = document.getElementById("reject-request-admin-email");
 const organisationsTableBody = document.getElementById("organisations-table-body");
 const usersTableBody = document.getElementById("users-table-body");
 const coursesTableBody = document.getElementById("courses-table-body");
 const enrollmentsTableBody = document.getElementById("enrollments-table-body");
 const adminTableBodies = {
+    organisationRequests: organisationRequestsTableBody,
     organisations: organisationsTableBody,
     users: usersTableBody,
     courses: coursesTableBody,
     enrollments: enrollmentsTableBody,
 };
 const adminRecords = {
+    organisationRequests: [],
     organisations: [],
     users: [],
     courses: [],
@@ -687,6 +753,29 @@ function renderYesNo(value) {
     return value ? '<span class="badge text-bg-success">Yes</span>' : '<span class="badge text-bg-secondary">No</span>';
 }
 
+function renderRequestStatus(status) {
+    const variants = {
+        pending: "warning",
+        approved: "success",
+        rejected: "danger",
+    };
+    const variant = variants[status] || "secondary";
+    return `<span class="badge text-bg-${variant}">${escapeHtml(status || "unknown")}</span>`;
+}
+
+function formatDateTime(value) {
+    if (!value) {
+        return "-";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleString();
+}
+
 function editButton(domain, id, label) {
     return `
         <button
@@ -921,12 +1010,14 @@ async function loadAdminTables() {
     try {
         const domain = currentAdminDomain();
         const needsOrganisations = ["organisations", "users", "courses"].includes(domain);
+        const needsOrganisationRequests = domain === "organisations";
         const needsRoles = domain === "users";
         const needsUsers = ["users", "courses", "enrollments"].includes(domain);
         const needsCourses = ["courses", "enrollments"].includes(domain);
         const needsEnrollments = domain === "enrollments";
 
-        const [organisations, roles, users, courses, enrollments] = await Promise.all([
+        const [organisationRequests, organisations, roles, users, courses, enrollments] = await Promise.all([
+            needsOrganisationRequests ? loadTable("/admin/organisation-signup-requests") : Promise.resolve([]),
             needsOrganisations ? loadTable("/admin/organisations") : Promise.resolve([]),
             needsRoles ? loadTable("/admin/roles") : Promise.resolve([]),
             needsUsers ? loadTable("/admin/users") : Promise.resolve([]),
@@ -934,6 +1025,7 @@ async function loadAdminTables() {
             needsEnrollments ? loadTable("/admin/enrollments") : Promise.resolve([]),
         ]);
 
+        adminRecords.organisationRequests = organisationRequests;
         adminRecords.organisations = organisations;
         adminRecords.users = users;
         adminRecords.courses = courses;
@@ -958,6 +1050,88 @@ async function loadAdminTables() {
             (user) => `${user.first_name} ${user.last_name} (${user.email})`,
         );
         populateSelects("courses", courses, "course_id", (course) => course.name || "Untitled course");
+
+        renderTableBody(
+            organisationRequestsTableBody,
+            organisationRequests.map((request) => {
+                const adminName = [request.admin_first_name, request.admin_last_name]
+                    .filter(Boolean)
+                    .join(" ") || "-";
+                const requestActions = request.status === "pending"
+                    ? actionButtons([
+                        `<button type="button" class="btn btn-outline-success btn-sm" data-request-approve-id="${escapeHtml(request.request_id)}">Approve</button>`,
+                        `<button
+                            type="button"
+                            class="btn btn-outline-danger btn-sm"
+                            data-request-reject-id="${escapeHtml(request.request_id)}"
+                            data-request-org-name="${escapeHtml(request.org_name)}"
+                            data-request-admin-email="${escapeHtml(request.admin_email)}"
+                            data-bs-toggle="modal"
+                            data-bs-target="#reject-organisation-request-modal"
+                        >Reject</button>`,
+                    ])
+                    : '<span class="text-secondary small">Reviewed</span>';
+                const website = request.website_url || "";
+                const websiteDisplay = website || "No website";
+                const websiteMarkup = website
+                    ? `<a href="https://${escapeHtml(website)}" target="_blank" rel="noopener">${escapeHtml(websiteDisplay)}</a>`
+                    : `<span>${escapeHtml(websiteDisplay)}</span>`;
+                const reviewDetails = request.rejection_reason
+                    ? `<div class="admin-request-reason mt-2">${escapeHtml(request.rejection_reason)}</div>`
+                    : '<div class="text-secondary small mt-2">No rejection reason recorded.</div>';
+
+                return tableRow([
+                    `
+                        <article class="admin-request-item">
+                            <div class="admin-request-heading">
+                                <div class="admin-request-main">
+                                    <span class="admin-request-id">Request #${escapeHtml(request.request_id)}</span>
+                                    <div class="admin-request-title-row">
+                                        <strong>${escapeHtml(request.org_name)}</strong>
+                                        ${renderRequestStatus(request.status)}
+                                    </div>
+                                    <code>${escapeHtml(request.org_slug)}</code>
+                                </div>
+                                <div class="admin-request-actions">
+                                    ${requestActions}
+                                </div>
+                            </div>
+
+                            <div class="admin-request-body">
+                                <div class="admin-request-detail-grid">
+                                    <div class="admin-request-detail">
+                                        <span>Type</span>
+                                        <strong>${escapeHtml(request.org_type || "No type")}</strong>
+                                    </div>
+                                    <div class="admin-request-detail">
+                                        <span>URL</span>
+                                        ${websiteMarkup}
+                                    </div>
+                                    <div class="admin-request-detail">
+                                        <span>Submitted</span>
+                                        <strong>${escapeHtml(formatDateTime(request.created_at))}</strong>
+                                    </div>
+                                </div>
+
+                                <div class="admin-request-contact">
+                                    <span>Admin contact</span>
+                                    <strong>${escapeHtml(adminName)}</strong>
+                                    <a href="mailto:${escapeHtml(request.admin_email)}">${escapeHtml(request.admin_email)}</a>
+                                    <small>${request.requester_user_id ? `Existing user #${escapeHtml(request.requester_user_id)}` : "New admin account"}</small>
+                                </div>
+
+                                <div class="admin-request-review">
+                                    <span>Review notes</span>
+                                    ${reviewDetails}
+                                </div>
+                            </div>
+                        </article>
+                    `,
+                ]);
+            }).join(""),
+            "No organisation signup requests found.",
+            1,
+        );
 
         renderTableBody(
             organisationsTableBody,
@@ -1030,6 +1204,9 @@ async function loadAdminTables() {
         Object.keys(adminTableBodies).forEach(filterAdminTable);
     } catch (error) {
         const message = error.message || "Unable to load tables";
+        if (organisationRequestsTableBody) {
+            organisationRequestsTableBody.innerHTML = `<tr><td colspan="1" class="text-danger">${escapeHtml(message)}</td></tr>`;
+        }
         if (organisationsTableBody) {
             organisationsTableBody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(message)}</td></tr>`;
         }
@@ -1359,6 +1536,46 @@ document.addEventListener("click", async (event) => {
         return;
     }
 
+    const approveRequestButton = event.target.closest("[data-request-approve-id]");
+
+    if (approveRequestButton) {
+        if (!window.confirm("Approve this organisation signup request?")) {
+            return;
+        }
+
+        approveRequestButton.disabled = true;
+
+        try {
+            const response = await submitJson(
+                `/admin/organisation-signup-requests/${approveRequestButton.dataset.requestApproveId}/approve`,
+                "POST",
+                {},
+            );
+            setAdminMessage(response, "success");
+        } catch (error) {
+            const message = error.message || "Approval failed";
+            const variant = message.startsWith("Organisation approved, but email failed")
+                ? "warning"
+                : "danger";
+            setAdminMessage(message, variant);
+        } finally {
+            await loadAdminTables();
+            loadAdminStats();
+            approveRequestButton.disabled = false;
+        }
+        return;
+    }
+
+    const rejectRequestButton = event.target.closest("[data-request-reject-id]");
+
+    if (rejectRequestButton) {
+        rejectRequestIdInput.value = rejectRequestButton.dataset.requestRejectId || "";
+        rejectRequestReasonInput.value = "";
+        rejectRequestOrgName.textContent = rejectRequestButton.dataset.requestOrgName || "Organisation request";
+        rejectRequestAdminEmail.textContent = rejectRequestButton.dataset.requestAdminEmail || "";
+        return;
+    }
+
     const button = event.target.closest("[data-delete-endpoint]");
 
     if (!button) {
@@ -1383,6 +1600,35 @@ document.addEventListener("click", async (event) => {
         setAdminMessage(error.message || "Delete failed", "danger");
     } finally {
         button.disabled = false;
+    }
+});
+
+rejectRequestForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const requestId = rejectRequestIdInput.value;
+    const reason = rejectRequestReasonInput.value.trim();
+
+    if (!requestId || !reason) {
+        rejectRequestReasonInput.focus();
+        return;
+    }
+
+    rejectRequestSubmitButton.disabled = true;
+
+    try {
+        const response = await submitJson(
+            `/admin/organisation-signup-requests/${requestId}/reject`,
+            "POST",
+            { reason },
+        );
+        setAdminMessage(response, "success");
+        bootstrap.Modal.getOrCreateInstance(document.getElementById("reject-organisation-request-modal")).hide();
+        scheduleTableRefresh();
+    } catch (error) {
+        setAdminMessage(error.message || "Rejection failed", "danger");
+    } finally {
+        rejectRequestSubmitButton.disabled = false;
     }
 });
 

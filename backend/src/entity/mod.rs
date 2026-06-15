@@ -7,6 +7,7 @@ pub mod lesson_progress;
 pub mod module_contents;
 pub mod module_progress;
 pub mod modules;
+pub mod organisation_signup_requests;
 pub mod organisations;
 pub mod payments;
 pub mod quiz;

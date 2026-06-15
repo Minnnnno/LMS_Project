@@ -1,8 +1,10 @@
 use actix_web::HttpResponse;
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
+use serde::Serialize;
 use validator::Validate;
 
 use argon2::{
@@ -11,6 +13,7 @@ use argon2::{
 };
 
 use crate::entity::{
+    organisation_signup_requests,
     organisations,
     users,
     courses,
@@ -23,12 +26,18 @@ use crate::entity::courses::CourseStatus;
 use crate::models::admin::{
     CreateOrganisationForm,
     UpdateOrganisationForm,
+    RejectOrganisationSignupRequestForm,
     CreateAdminUserForm,
     UpdateAdminUserForm,
     CreateAdminCourseForm,
     UpdateAdminCourseForm,
     AdminEnrollmentForm,
 };
+use crate::services::email_verification_service::{
+    create_email_verification_token,
+    verification_url,
+};
+use crate::services::mailer_service::{send_mail_message, MailRequest};
 // Password Hash Helper
 fn hash_password(password: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -84,6 +93,130 @@ fn validate_optional_website_url(website_url: Option<&str>) -> Result<(), HttpRe
     } else {
         Err(HttpResponse::BadRequest().body("Website URL must start with http:// or https://"))
     }
+}
+
+#[derive(Serialize)]
+pub struct OrganisationSignupRequestDto {
+    pub request_id: i32,
+    pub org_name: String,
+    pub org_slug: String,
+    pub org_type: Option<String>,
+    pub website_url: Option<String>,
+    pub requester_user_id: Option<i32>,
+    pub admin_first_name: Option<String>,
+    pub admin_last_name: Option<String>,
+    pub admin_email: String,
+    pub status: String,
+    pub approved_by: Option<i32>,
+    pub approved_at: Option<DateTime<FixedOffset>>,
+    pub rejected_by: Option<i32>,
+    pub rejected_at: Option<DateTime<FixedOffset>>,
+    pub rejection_reason: Option<String>,
+    pub created_at: Option<DateTime<FixedOffset>>,
+    pub updated_at: Option<DateTime<FixedOffset>>,
+}
+
+impl From<organisation_signup_requests::Model> for OrganisationSignupRequestDto {
+    fn from(request: organisation_signup_requests::Model) -> Self {
+        Self {
+            request_id: request.request_id,
+            org_name: request.org_name,
+            org_slug: request.org_slug,
+            org_type: request.org_type,
+            website_url: request.website_url,
+            requester_user_id: request.requester_user_id,
+            admin_first_name: request.admin_first_name,
+            admin_last_name: request.admin_last_name,
+            admin_email: request.admin_email,
+            status: request.status,
+            approved_by: request.approved_by,
+            approved_at: request.approved_at,
+            rejected_by: request.rejected_by,
+            rejected_at: request.rejected_at,
+            rejection_reason: request.rejection_reason,
+            created_at: request.created_at,
+            updated_at: request.updated_at,
+        }
+    }
+}
+
+async fn assign_role_if_missing<C>(
+    db: &C,
+    user_id: i32,
+    role_name: roles::RoleName,
+) -> Result<(), sea_orm::DbErr>
+where
+    C: ConnectionTrait,
+{
+    let role = roles::Entity::find()
+        .filter(roles::Column::RoleName.eq(role_name))
+        .one(db)
+        .await?
+        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("Role not found in database.".to_string()))?;
+
+    let existing = user_roles::Entity::find()
+        .filter(user_roles::Column::UserId.eq(user_id))
+        .filter(user_roles::Column::RoleId.eq(role.role_id))
+        .one(db)
+        .await?;
+
+    if existing.is_none() {
+        user_roles::ActiveModel {
+            user_id: Set(user_id),
+            role_id: Set(role.role_id),
+        }
+        .insert(db)
+        .await?;
+    }
+
+    Ok(())
+}
+
+fn send_organisation_approval_email(
+    email: &str,
+    org_name: &str,
+    verification_token: Option<&str>,
+) -> Result<(), String> {
+    let mut body = format!(
+        "Your SkillUp LMS organisation request for \"{}\" has been approved.\n\nYou can now sign in and manage your organisation workspace.",
+        org_name
+    );
+
+    if let Some(token) = verification_token {
+        body.push_str(&format!(
+            "\n\nBefore signing in, verify the organisation admin email address here:\n{}",
+            verification_url(token)
+        ));
+    }
+
+    send_mail_message(MailRequest {
+        to: email.to_string(),
+        subject: "Your SkillUp LMS organisation has been approved".to_string(),
+        body,
+        is_html: false,
+    })
+}
+
+fn send_organisation_rejection_email(
+    email: &str,
+    org_name: &str,
+    reason: Option<&str>,
+) -> Result<(), String> {
+    let mut body = format!(
+        "Your SkillUp LMS organisation request for \"{}\" was not approved at this time.",
+        org_name
+    );
+
+    if let Some(reason) = reason.filter(|value| !value.trim().is_empty()) {
+        body.push_str(&format!("\n\nReason:\n{}", reason.trim()));
+    }
+
+    send_mail_message(MailRequest {
+        to: email.to_string(),
+        subject: "SkillUp LMS organisation request update".to_string(),
+        body,
+        is_html: false,
+    })
 }
 
 fn validate_course_payment(
@@ -147,6 +280,265 @@ pub async fn get_all_roles(
         Ok(role_list) => HttpResponse::Ok().json(role_list),
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Database error: {}", err)),
+    }
+}
+
+pub async fn get_organisation_signup_requests(
+    db: &DatabaseConnection,
+) -> HttpResponse {
+    match organisation_signup_requests::Entity::find()
+        .order_by_desc(organisation_signup_requests::Column::CreatedAt)
+        .all(db)
+        .await
+    {
+        Ok(requests) => HttpResponse::Ok().json(
+            requests
+                .into_iter()
+                .map(OrganisationSignupRequestDto::from)
+                .collect::<Vec<_>>(),
+        ),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error: {}", err)),
+    }
+}
+
+pub async fn approve_organisation_signup_request(
+    db: &DatabaseConnection,
+    request_id: i32,
+    approved_by: Option<i32>,
+) -> HttpResponse {
+    let txn = match db.begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Approval transaction error: {}", err));
+        }
+    };
+
+    let request = match organisation_signup_requests::Entity::find_by_id(request_id)
+        .one(&txn)
+        .await
+    {
+        Ok(Some(request)) => request,
+        Ok(None) => return HttpResponse::NotFound().body("Organisation signup request not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Request lookup error: {}", err));
+        }
+    };
+
+    if request.status != "pending" {
+        return HttpResponse::BadRequest().body("Only pending requests can be approved");
+    }
+
+    match organisations::Entity::find()
+        .filter(organisations::Column::OrgSlug.eq(request.org_slug.clone()))
+        .one(&txn)
+        .await
+    {
+        Ok(Some(_)) => return HttpResponse::BadRequest().body("Organisation slug already exists"),
+        Ok(None) => {}
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Organisation slug lookup error: {}", err));
+        }
+    }
+
+    let now = singapore_now();
+    let new_org = organisations::ActiveModel {
+        org_name: Set(request.org_name.clone()),
+        org_slug: Set(Some(request.org_slug.clone())),
+        org_type: Set(request.org_type.clone()),
+        website_url: Set(request.website_url.clone()),
+        created_at: Set(Some(now)),
+        updated_at: Set(Some(now)),
+        ..Default::default()
+    };
+
+    let inserted_org = match new_org.insert(&txn).await {
+        Ok(org) => org,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Create organisation error: {}", err));
+        }
+    };
+
+    let (admin_email, verification_token) = if let Some(user_id) = request.requester_user_id {
+        let user = match users::Entity::find_by_id(user_id).one(&txn).await {
+            Ok(Some(user)) => user,
+            Ok(None) => return HttpResponse::BadRequest().body("Requesting user was not found"),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("User lookup error: {}", err));
+            }
+        };
+
+        if user.org_id.is_some() {
+            return HttpResponse::BadRequest().body("Requesting user already belongs to an organisation");
+        }
+
+        let mut active_user = user.into_active_model();
+        active_user.org_id = Set(Some(inserted_org.org_id));
+        active_user.updated_at = Set(Some(singapore_now()));
+        let updated_user = match active_user.update(&txn).await {
+            Ok(user) => user,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("User update error: {}", err));
+            }
+        };
+
+        if let Err(err) = assign_role_if_missing(
+            &txn,
+            updated_user.user_id,
+            roles::RoleName::OrganisationAdmin,
+        )
+        .await
+        {
+            return HttpResponse::InternalServerError()
+                .body(format!("Role assignment error: {}", err));
+        }
+
+        (updated_user.email, None)
+    } else {
+        match users::Entity::find()
+            .filter(users::Column::Email.eq(request.admin_email.clone()))
+            .one(&txn)
+            .await
+        {
+            Ok(Some(_)) => return HttpResponse::BadRequest().body("Admin email already exists"),
+            Ok(None) => {}
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Admin email lookup error: {}", err));
+            }
+        }
+
+        let Some(password_hash) = request.admin_password_hash.clone() else {
+            return HttpResponse::BadRequest().body("Request is missing admin password details");
+        };
+
+        let new_user = users::ActiveModel {
+            first_name: Set(request.admin_first_name.clone().unwrap_or_default()),
+            last_name: Set(request.admin_last_name.clone().unwrap_or_default()),
+            email: Set(request.admin_email.clone()),
+            password_hash: Set(Some(password_hash)),
+            auth_provider: Set("password".to_string()),
+            org_id: Set(Some(inserted_org.org_id)),
+            email_verified: Set(false),
+            must_change_password: Set(false),
+            created_at: Set(Some(singapore_now())),
+            updated_at: Set(Some(singapore_now())),
+            ..Default::default()
+        };
+
+        let inserted_user = match new_user.insert(&txn).await {
+            Ok(user) => user,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Admin user insert error: {}", err));
+            }
+        };
+
+        if let Err(err) = assign_role_if_missing(
+            &txn,
+            inserted_user.user_id,
+            roles::RoleName::OrganisationAdmin,
+        )
+        .await
+        {
+            return HttpResponse::InternalServerError()
+                .body(format!("Role assignment error: {}", err));
+        }
+
+        let token = match create_email_verification_token(&txn, inserted_user.user_id).await {
+            Ok(token) => token,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Verification token error: {}", err));
+            }
+        };
+
+        (inserted_user.email, Some(token))
+    };
+
+    let mut active_request = request.into_active_model();
+    active_request.status = Set("approved".to_string());
+    active_request.approved_by = Set(approved_by);
+    active_request.approved_at = Set(Some(singapore_now()));
+    active_request.updated_at = Set(Some(singapore_now()));
+
+    if let Err(err) = active_request.update(&txn).await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Request update error: {}", err));
+    }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Approval commit error: {}", err));
+    }
+
+    if let Err(err) = send_organisation_approval_email(
+        &admin_email,
+        &inserted_org.org_name,
+        verification_token.as_deref(),
+    ) {
+        return HttpResponse::InternalServerError()
+            .body(format!("Organisation approved, but email failed: {}", err));
+    }
+
+    HttpResponse::Ok().body("Organisation signup request approved")
+}
+
+pub async fn reject_organisation_signup_request(
+    db: &DatabaseConnection,
+    request_id: i32,
+    rejected_by: Option<i32>,
+    body: RejectOrganisationSignupRequestForm,
+) -> HttpResponse {
+    let request = match organisation_signup_requests::Entity::find_by_id(request_id)
+        .one(db)
+        .await
+    {
+        Ok(Some(request)) => request,
+        Ok(None) => return HttpResponse::NotFound().body("Organisation signup request not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Request lookup error: {}", err));
+        }
+    };
+
+    if request.status != "pending" {
+        return HttpResponse::BadRequest().body("Only pending requests can be rejected");
+    }
+
+    let reason = body
+        .reason
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let now = singapore_now();
+    let mut active_request = request.clone().into_active_model();
+    active_request.status = Set("rejected".to_string());
+    active_request.rejected_by = Set(rejected_by);
+    active_request.rejected_at = Set(Some(now));
+    active_request.rejection_reason = Set(reason.clone());
+    active_request.updated_at = Set(Some(now));
+
+    match active_request.update(db).await {
+        Ok(_) => {
+            if let Err(err) = send_organisation_rejection_email(
+                &request.admin_email,
+                &request.org_name,
+                reason.as_deref(),
+            ) {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Request rejected, but email failed: {}", err));
+            }
+
+            HttpResponse::Ok().body("Organisation signup request rejected")
+        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Request update error: {}", err)),
     }
 }
 

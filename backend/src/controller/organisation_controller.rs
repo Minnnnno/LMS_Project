@@ -12,19 +12,19 @@ use std::collections::{HashMap, HashSet};
 use tera::{Context, Tera};
 use validator::Validate;
 
-use crate::entity::{course_instructors, courses, organisations, roles, user_roles, users};
+use crate::entity::{
+    course_instructors, courses, organisation_signup_requests, organisations, roles, user_roles,
+    users,
+};
 use crate::models::organisation::{
     AssignCourseInstructorForm, CourseInstructorCourseDto, CourseInstructorDto,
     CourseInstructorSummaryDto, CreateOrganisationForm, InviteInstructorForm, MassEnrollForm,
     OrgMemberDto, OrganisationSignupForm,
 };
 use crate::services::course_service::{get_session_user_org_id, has_role};
-use crate::services::email_verification_service::{
-    create_email_verification_token, send_verification_email,
-};
 use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::organisation_service;
-use crate::services::user_service::{assign_role_to_user, hash_password, sign_user_into_session};
+use crate::services::user_service::hash_password;
 use crate::ssr::pages::{build_page_context, render_page};
 use uuid::Uuid;
 
@@ -154,26 +154,11 @@ pub async fn organisation_signup_submit(
     let org_name = form.org_name.trim().to_string();
     let org_slug = form.org_slug.trim().to_lowercase();
     let org_type = optional_trimmed(form.org_type.as_deref());
-    let website_url = optional_trimmed(form.website_url.as_deref());
-
-    let txn = match db.get_ref().begin().await {
-        Ok(txn) => txn,
-        Err(err) => {
-            println!("Organisation signup transaction error: {:?}", err);
-            return render_signup_page(
-                &session,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Some("Unable to create the organisation right now."),
-                current_user.as_ref(),
-                None,
-                Some(&form),
-            );
-        }
-    };
+    let website_url = normalize_website_url(form.website_url.as_deref());
 
     match organisations::Entity::find()
         .filter(organisations::Column::OrgSlug.eq(org_slug.clone()))
-        .one(&txn)
+        .one(db.get_ref())
         .await
     {
         Ok(Some(_)) => {
@@ -200,22 +185,29 @@ pub async fn organisation_signup_submit(
         }
     }
 
-    let new_org = organisations::ActiveModel {
-        org_name: Set(org_name),
-        org_slug: Set(Some(org_slug)),
-        org_type: Set(org_type),
-        website_url: Set(website_url),
-        ..Default::default()
-    };
-
-    let inserted_org = match new_org.insert(&txn).await {
-        Ok(org) => org,
+    match organisation_signup_requests::Entity::find()
+        .filter(organisation_signup_requests::Column::OrgSlug.eq(org_slug.clone()))
+        .filter(organisation_signup_requests::Column::Status.eq("pending"))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(_)) => {
+            return render_signup_page(
+                &session,
+                StatusCode::BAD_REQUEST,
+                Some("An organisation signup request with this slug is already pending approval."),
+                current_user.as_ref(),
+                None,
+                Some(&form),
+            );
+        }
+        Ok(None) => {}
         Err(err) => {
-            println!("Organisation insert error: {:?}", err);
+            println!("Pending organisation slug lookup error: {:?}", err);
             return render_signup_page(
                 &session,
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Some("Unable to create the organisation right now."),
+                Some("Unable to check pending organisation requests right now."),
                 current_user.as_ref(),
                 None,
                 Some(&form),
@@ -223,81 +215,20 @@ pub async fn organisation_signup_submit(
         }
     };
 
-    let mut new_admin_verification: Option<(String, String)> = None;
-
-    let signed_in_user = if let Some(user) = current_user {
-        let refreshed_user = match users::Entity::find_by_id(user.user_id).one(&txn).await {
-            Ok(Some(refreshed_user)) => refreshed_user,
-            Ok(None) => {
-                return render_signup_page(
-                    &session,
-                    StatusCode::BAD_REQUEST,
-                    Some("Your account could not be found. Please sign in again."),
-                    Some(&user),
-                    None,
-                    Some(&form),
-                );
-            }
-            Err(err) => {
-                println!("Current user lookup error: {:?}", err);
-                return render_signup_page(
-                    &session,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Unable to verify your account right now."),
-                    Some(&user),
-                    None,
-                    Some(&form),
-                );
-            }
-        };
-
-        if refreshed_user.org_id.is_some() {
-            return render_signup_page(
-                &session,
-                StatusCode::BAD_REQUEST,
-                Some("User already belongs to an organisation."),
-                Some(&refreshed_user),
-                None,
-                Some(&form),
-            );
-        }
-
-        let mut active_user = sea_orm::IntoActiveModel::into_active_model(refreshed_user);
-        active_user.org_id = Set(Some(inserted_org.org_id));
-        let updated_user = match active_user.update(&txn).await {
-            Ok(user) => user,
-            Err(err) => {
-                println!("Current user organisation update error: {:?}", err);
-                return render_signup_page(
-                    &session,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Unable to attach your account to the organisation."),
-                    Some(&user),
-                    None,
-                    Some(&form),
-                );
-            }
-        };
-
-        if let Err(err) = assign_role_if_missing(
-            &txn,
-            updated_user.user_id,
-            roles::RoleName::OrganisationAdmin,
+    let (
+        requester_user_id,
+        admin_first_name,
+        admin_last_name,
+        admin_email,
+        admin_password_hash,
+    ) = if let Some(user) = &current_user {
+        (
+            Some(user.user_id),
+            Some(user.first_name.trim().to_string()),
+            Some(user.last_name.trim().to_string()),
+            user.email.trim().to_lowercase(),
+            None,
         )
-        .await
-        {
-            println!("Organisation admin role assignment error: {:?}", err);
-            return render_signup_page(
-                &session,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Some("Unable to assign the organisation admin role."),
-                Some(&updated_user),
-                None,
-                Some(&form),
-            );
-        }
-
-        updated_user
     } else {
         let admin_email = form
             .admin_email
@@ -308,7 +239,7 @@ pub async fn organisation_signup_submit(
 
         match users::Entity::find()
             .filter(users::Column::Email.eq(admin_email.clone()))
-            .one(&txn)
+            .one(db.get_ref())
             .await
         {
             Ok(Some(_)) => {
@@ -356,132 +287,90 @@ pub async fn organisation_signup_submit(
             }
         };
 
-        let new_user = users::ActiveModel {
-            first_name: Set(form
+        (
+            None,
+            Some(form
                 .admin_first_name
                 .as_deref()
                 .unwrap_or_default()
                 .trim()
                 .to_string()),
-            last_name: Set(form
+            Some(form
                 .admin_last_name
                 .as_deref()
                 .unwrap_or_default()
                 .trim()
                 .to_string()),
-            email: Set(admin_email),
-            password_hash: Set(Some(password_hash)),
-            auth_provider: Set("password".to_string()),
-            org_id: Set(Some(inserted_org.org_id)),
-            email_verified: Set(false),
-            must_change_password: Set(false),
-            ..Default::default()
-        };
-
-        let inserted_user = match new_user.insert(&txn).await {
-            Ok(user) => user,
-            Err(err) => {
-                println!("Admin user insert error: {:?}", err);
-                return render_signup_page(
-                    &session,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Unable to create the admin account right now."),
-                    None,
-                    None,
-                    Some(&form),
-                );
-            }
-        };
-
-        if let Err(err) = assign_role_to_user(
-            &txn,
-            inserted_user.user_id,
-            roles::RoleName::OrganisationAdmin,
+            admin_email,
+            Some(password_hash),
         )
+    };
+
+    match organisation_signup_requests::Entity::find()
+        .filter(organisation_signup_requests::Column::AdminEmail.eq(admin_email.clone()))
+        .filter(organisation_signup_requests::Column::Status.eq("pending"))
+        .one(db.get_ref())
         .await
-        {
-            println!("Organisation admin role assignment error: {:?}", err);
+    {
+        Ok(Some(_)) => {
             return render_signup_page(
                 &session,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Some("Unable to assign the organisation admin role."),
-                Some(&inserted_user),
+                StatusCode::BAD_REQUEST,
+                Some("An organisation signup request for this admin email is already pending approval."),
+                current_user.as_ref(),
                 None,
                 Some(&form),
             );
         }
+        Ok(None) => {}
+        Err(err) => {
+            println!("Pending admin email lookup error: {:?}", err);
+            return render_signup_page(
+                &session,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some("Unable to check pending organisation requests right now."),
+                current_user.as_ref(),
+                None,
+                Some(&form),
+            );
+        }
+    }
 
-        let verification_token =
-            match create_email_verification_token(&txn, inserted_user.user_id).await {
-                Ok(token) => token,
-                Err(err) => {
-                    println!("Organisation admin verification token error: {:?}", err);
-                    return render_signup_page(
-                        &session,
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Some("Unable to prepare email verification right now."),
-                        Some(&inserted_user),
-                        None,
-                        Some(&form),
-                    );
-                }
-            };
-
-        new_admin_verification = Some((inserted_user.email.clone(), verification_token));
-
-        inserted_user
+    let signup_request = organisation_signup_requests::ActiveModel {
+        org_name: Set(org_name),
+        org_slug: Set(org_slug),
+        org_type: Set(org_type),
+        website_url: Set(website_url),
+        requester_user_id: Set(requester_user_id),
+        admin_first_name: Set(admin_first_name),
+        admin_last_name: Set(admin_last_name),
+        admin_email: Set(admin_email),
+        admin_password_hash: Set(admin_password_hash),
+        status: Set("pending".to_string()),
+        ..Default::default()
     };
 
-    if let Err(err) = txn.commit().await {
-        println!("Organisation signup commit error: {:?}", err);
+    if let Err(err) = signup_request.insert(db.get_ref()).await {
+        println!("Organisation signup request insert error: {:?}", err);
         return render_signup_page(
             &session,
             StatusCode::INTERNAL_SERVER_ERROR,
-            Some("Unable to finish creating the organisation right now."),
-            Some(&signed_in_user),
+            Some("Unable to submit the organisation request right now."),
+            current_user.as_ref(),
             None,
             Some(&form),
         );
     }
 
-    if creates_new_admin_account {
-        if let Some((email, token)) = new_admin_verification {
-            if let Err(err) = send_verification_email(&email, &token) {
-                println!("Organisation admin verification email error: {}", err);
-                return render_signup_page(
-                    &session,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Organisation created, but the verification email could not be sent."),
-                    Some(&signed_in_user),
-                    None,
-                    Some(&form),
-                );
-            }
-        }
-
-        let _ = session.insert(
-            "flash_success",
-            "Organisation created. Please check your email to verify the admin account before signing in.",
-        );
-        return HttpResponse::Found()
-            .insert_header((header::LOCATION, "/login"))
-            .finish();
-    }
-
-    if let Err(message) = sign_user_into_session(db.get_ref(), &session, &signed_in_user).await {
-        println!("Organisation signup session error: {}", message);
-        return render_signup_page(
-            &session,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Some("Organisation created, but we could not sign you in automatically."),
-            Some(&signed_in_user),
-            None,
-            Some(&form),
-        );
-    }
+    let success_message = if creates_new_admin_account {
+        "Organisation request submitted. The LMS administrator will review it and email the organisation admin after approval."
+    } else {
+        "Organisation request submitted. The LMS administrator will review it and email you after approval."
+    };
+    let _ = session.insert("organisation_signup_success", success_message);
 
     HttpResponse::Found()
-        .insert_header((header::LOCATION, ORG_DASHBOARD_PATH))
+        .insert_header((header::LOCATION, "/organisations/signup"))
         .finish()
 }
 
@@ -527,6 +416,10 @@ fn render_signup_page(
 
     if let Some(error) = error {
         context.insert("error", error);
+    }
+    if let Ok(Some(success)) = session.get::<String>("organisation_signup_success") {
+        context.insert("success", &success);
+        session.remove("organisation_signup_success");
     }
     if let Some(org_name) = current_org_name {
         context.insert("current_org_name", org_name);
@@ -657,6 +550,27 @@ fn optional_trimmed(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn normalize_website_url(value: Option<&str>) -> Option<String> {
+    let mut value = value?.trim();
+
+    if value.is_empty() {
+        return None;
+    }
+
+    let lower_value = value.to_ascii_lowercase();
+    if lower_value.starts_with("https://") {
+        value = &value[8..];
+    } else if lower_value.starts_with("http://") {
+        value = &value[7..];
+    }
+
+    if value.to_ascii_lowercase().starts_with("www.") {
+        value = &value[4..];
+    }
+
+    Some(value.trim_end_matches('/').to_string())
 }
 
 fn generate_temp_password() -> String {
