@@ -200,6 +200,261 @@
     background: #f5f6f8;
 }
 
+.course-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 0 32px;
+    background: #f5f6f8;
+}
+
+.course-tab {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    padding: 14px 16px 11px;
+    background: transparent;
+    color: #667085;
+    font-size: 0.95rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.course-tab.active {
+    border-bottom-color: #171717;
+    color: #171717;
+}
+
+.course-tab-panel {
+    display: none;
+    background: #f5f6f8;
+}
+
+.course-tab-panel.active {
+    display: block;
+}
+
+.grades-layout {
+    padding: 32px;
+    background: #f5f6f8;
+}
+
+.grades-card {
+    max-width: 920px;
+}
+
+.grades-summary {
+    margin: 0 0 12px;
+    color: #475467;
+    font-weight: 700;
+}
+
+.grades-list {
+    display: grid;
+    gap: 12px;
+}
+
+.grade-section {
+    display: grid;
+    gap: 8px;
+}
+
+.grade-section h3 {
+    margin: 12px 0 0;
+    color: #344054;
+    font-size: 1rem;
+}
+
+.grade-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 14px;
+    background: #ffffff;
+}
+
+.grade-title {
+    color: #1f2937;
+    font-weight: 800;
+}
+
+.grade-meta {
+    margin-top: 4px;
+    color: #667085;
+    font-size: 0.9rem;
+}
+
+.grade-score {
+    min-width: 120px;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #f2f4f7;
+    color: #171717;
+    font-weight: 900;
+    text-align: center;
+}
+
+.grade-score.pending {
+    color: #92400e;
+    background: #fffbeb;
+}
+
+.grade-feedback {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #344054;
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+
+.dropbox-row {
+    cursor: pointer;
+}
+
+.dropbox-submit-btn {
+    min-height: 42px;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    background: #171717;
+    color: #ffffff;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.dropbox-submit-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.dropbox-existing {
+    display: grid;
+    gap: 6px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 12px;
+    background: #f9fafb;
+    color: #344054;
+}
+
+.dropbox-history-list {
+    display: grid;
+    gap: 10px;
+}
+
+.dropbox-history-item {
+    display: grid;
+    gap: 6px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 10px;
+    background: #ffffff;
+}
+
+.dropbox-history-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-weight: 800;
+}
+
+.dropbox-history-date {
+    color: #667085;
+    font-size: 0.88rem;
+}
+
+.dropbox-history-pill {
+    border-radius: 999px;
+    padding: 4px 8px;
+    background: #ecfdf3;
+    color: #166534;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.dropbox-history-pill.pending {
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.dropbox-history-note {
+    margin: 0;
+    color: #344054;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.dropbox-existing a {
+    color: #1d4ed8;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.dropbox-existing a:hover {
+    text-decoration: underline;
+}
+
+.assignment-modal-tabs {
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid #e4e7ec;
+}
+
+.assignment-modal-tab {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    padding: 10px 12px 8px;
+    background: transparent;
+    color: #667085;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.assignment-modal-tab.active {
+    border-bottom-color: #171717;
+    color: #171717;
+}
+
+.assignment-modal-panel {
+    display: none;
+}
+
+.assignment-modal-panel.active {
+    display: grid;
+    gap: 12px;
+}
+
+.assignment-modal-panel label {
+    color: #344054;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.assignment-modal-panel input,
+.assignment-modal-panel textarea {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+}
+
+.assignment-modal-panel textarea {
+    resize: vertical;
+}
+
+.grades-empty,
+.grades-error {
+    margin: 0;
+    color: #667085;
+}
+
+.grades-error {
+    color: #991b1b;
+}
+
 .instructor-controls {
     grid-column: 1 / -1;
     display: flex;
@@ -241,6 +496,15 @@
     background: #ffffff;
     padding: 24px;
     box-shadow: 0 22px 70px rgba(15, 23, 42, 0.28);
+}
+
+#assignment-details-modal {
+    padding: 32px;
+}
+
+#assignment-details-modal .assignment-details-modal {
+    width: min(860px, 100%);
+    max-height: min(820px, calc(100vh - 64px));
 }
 
 .course-edit-modal,
@@ -552,6 +816,14 @@
         padding: 24px;
     }
 
+    .course-tabs {
+        padding: 0 24px;
+    }
+
+    .grades-layout {
+        padding: 24px;
+    }
+
     .course-action-strip {
         grid-template-columns: 1fr;
         margin: 0 24px 24px;
@@ -565,5 +837,27 @@
 
     .course-action-panel {
         width: 100%;
+    }
+
+    .grade-row {
+        grid-template-columns: 1fr;
+    }
+
+    .grade-score {
+        width: 100%;
+        min-width: 0;
+    }
+
+    #assignment-details-modal {
+        padding: 16px;
+    }
+
+    #assignment-details-modal .assignment-details-modal {
+        max-height: calc(100vh - 32px);
+    }
+
+    .dropbox-history-head {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }

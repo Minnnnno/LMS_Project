@@ -66,6 +66,7 @@ pub fn send_verification_email(email: &str, token: &str) -> Result<(), String> {
         to: email.to_string(),
         subject: "Verify your SkillUp LMS email".to_string(),
         body,
+        is_html: false,
     })
 }
 

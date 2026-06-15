@@ -11,3 +11,5 @@ pub mod quiz_options;
 pub mod quiz_attempts;
 pub mod quiz_answers;
 pub mod admin;
+pub mod grade;
+pub mod submission;

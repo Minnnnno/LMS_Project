@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=8">
+<link rel="stylesheet" href="/static/css/course_details.css?v=9">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -34,28 +34,64 @@
     <div id="course-action-message" class="course-action-message" role="status" aria-live="polite"></div>
 </div>
 
-<div class="course-layout">
-    <div id="instructor-controls" class="instructor-controls" style="display: none;">
-        <button id="edit-course-btn">Edit Course</button>
-        <button id="delete-course-btn" class="danger-btn">Delete Course</button>
-        <button id="add-module-btn">+ Add Module</button>
-        <button id="add-assignment-btn">+ Add Assignment</button>
-        <button id="student-view-btn">View Student View</button>
-    </div>
-    <div class="course-card">
-        <h2>Modules</h2>
+<div class="course-tabs" id="course-tabs">
+    <button type="button" class="course-tab active" data-course-tab="content">Content</button>
+    <button type="button" class="course-tab" data-course-tab="grades">Grades</button>
+    <button type="button" class="course-tab" data-course-tab="dropbox">Dropbox</button>
+</div>
 
-        <div id="module-list"></div>
-    </div>
-
-    <div class="course-card">
-        <div class="course-card-heading">
-            <h2>Assignments Due</h2>
-            <button id="assignment-card-add-btn" class="course-card-action-btn" type="button" style="display: none;">+ Add Assignment</button>
+<div id="course-content-panel" class="course-tab-panel active">
+    <div class="course-layout">
+        <div id="instructor-controls" class="instructor-controls" style="display: none;">
+            <button id="edit-course-btn">Edit Course</button>
+            <button id="delete-course-btn" class="danger-btn">Delete Course</button>
+            <button id="add-module-btn">+ Add Module</button>
+            <button id="add-assignment-btn">+ Add Assignment</button>
+            <button id="student-view-btn">View Student View</button>
         </div>
-        <div id="assignment-list"></div>
-    </div>
+        <div class="course-card">
+            <h2>Modules</h2>
 
+            <div id="module-list"></div>
+        </div>
+
+        <div class="course-card">
+            <div class="course-card-heading">
+                <h2>Assignments Due</h2>
+                <button id="assignment-card-add-btn" class="course-card-action-btn" type="button" style="display: none;">+ Add Assignment</button>
+            </div>
+            <div id="assignment-list"></div>
+        </div>
+
+    </div>
+</div>
+
+<div id="course-grades-panel" class="course-tab-panel">
+    <div class="grades-layout">
+        <div class="course-card grades-card">
+            <div class="course-card-heading">
+                <h2>Grades</h2>
+                <button id="refresh-grades-btn" class="course-card-action-btn" type="button">Refresh</button>
+            </div>
+            <div id="grades-summary" class="grades-summary"></div>
+            <div id="grades-list" class="grades-list">
+                <p class="grades-empty">Select Grades to load your results.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="course-dropbox-panel" class="course-tab-panel">
+    <div class="grades-layout">
+        <div class="course-card grades-card">
+            <div class="course-card-heading">
+                <h2>Dropbox</h2>
+            </div>
+            <div id="dropbox-assignment-list" class="grades-list">
+                <p class="grades-empty">Assignments with upload dropboxes will appear here.</p>
+            </div>
+        </div>
+    </div>
 </div>
 <div id="edit-course-modal" class="course-modal" style="display: none;">
     <div class="modal-content course-edit-modal">
@@ -194,34 +230,56 @@
 <div id="assignment-details-modal" style="display: none;">
     <div class="modal-content assignment-details-modal">
         <h2 id="assignment-details-title">Assignment Details</h2>
-        <p id="assignment-details-description" class="assignment-details-description"></p>
 
-        <dl class="assignment-details-list">
-            <div>
-                <dt>Due</dt>
-                <dd id="assignment-details-due"></dd>
-            </div>
-            <div>
-                <dt>Max score</dt>
-                <dd id="assignment-details-score"></dd>
-            </div>
-            <div>
-                <dt>Expected file type</dt>
-                <dd id="assignment-details-file-type"></dd>
-            </div>
-            <div>
-                <dt>Submission</dt>
-                <dd id="assignment-details-submission"></dd>
-            </div>
-        </dl>
-
-        <div id="assignment-details-brief-wrap" class="assignment-details-brief" style="display: none;">
-            <a id="assignment-details-brief-link" href="#" target="_blank" rel="noopener">Open assignment brief</a>
+        <div class="assignment-modal-tabs">
+            <button type="button" class="assignment-modal-tab active" data-assignment-tab="details">Details</button>
+            <button type="button" class="assignment-modal-tab" data-assignment-tab="dropbox">Dropbox</button>
         </div>
 
-        <div id="assignment-details-instructions-wrap" class="assignment-details-instructions" style="display: none;">
-            <h3>Instructions</h3>
-            <p id="assignment-details-instructions"></p>
+        <div id="assignment-details-tab-panel" class="assignment-modal-panel active">
+            <p id="assignment-details-description" class="assignment-details-description"></p>
+
+            <dl class="assignment-details-list">
+                <div>
+                    <dt>Due</dt>
+                    <dd id="assignment-details-due"></dd>
+                </div>
+                <div>
+                    <dt>Max score</dt>
+                    <dd id="assignment-details-score"></dd>
+                </div>
+                <div>
+                    <dt>Expected file type</dt>
+                    <dd id="assignment-details-file-type"></dd>
+                </div>
+                <div>
+                    <dt>Submission</dt>
+                    <dd id="assignment-details-submission"></dd>
+                </div>
+            </dl>
+
+            <div id="assignment-details-brief-wrap" class="assignment-details-brief" style="display: none;">
+                <a id="assignment-details-brief-link" href="#" target="_blank" rel="noopener">Open assignment brief</a>
+            </div>
+
+            <div id="assignment-details-instructions-wrap" class="assignment-details-instructions" style="display: none;">
+                <h3>Instructions</h3>
+                <p id="assignment-details-instructions"></p>
+            </div>
+        </div>
+
+        <div id="assignment-dropbox-tab-panel" class="assignment-modal-panel">
+            <div id="assignment-dropbox-existing" class="dropbox-existing"></div>
+
+            <label for="assignment-dropbox-file-input">Assignment file</label>
+            <input type="file" id="assignment-dropbox-file-input">
+
+            <label for="assignment-dropbox-note-input">Submission note</label>
+            <textarea id="assignment-dropbox-note-input" rows="3" placeholder="Optional note for your instructor"></textarea>
+
+            <p id="assignment-dropbox-status" class="assignment-save-status" role="status" aria-live="polite"></p>
+
+            <button id="submit-assignment-dropbox-btn" class="dropbox-submit-btn" type="button">Submit Assignment</button>
         </div>
 
         <div class="modal-actions">
@@ -230,5 +288,5 @@
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=19"></script>
+<script src="/static/js/course_details.js?v=23"></script>
 {% endblock content %}

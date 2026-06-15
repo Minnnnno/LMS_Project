@@ -3,7 +3,23 @@ use actix_web::HttpResponse;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::entity::{courses, enrollments};
-use crate::services::auth_helpers::get_user_id;
+use crate::services::auth_helpers::{get_user_id, is_enrolled};
+
+pub async fn get_enrollment_status(
+    db: &DatabaseConnection,
+    session: &Session,
+    course_id: i32,
+) -> HttpResponse {
+    let user_id = match get_user_id(session) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
+    match is_enrolled(db, user_id, course_id).await {
+        Ok(enrolled) => HttpResponse::Ok().json(serde_json::json!({ "enrolled": enrolled })),
+        Err(response) => response,
+    }
+}
 
 pub async fn enroll_free_course(
     db: &DatabaseConnection,
