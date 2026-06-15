@@ -8,19 +8,21 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbErr,
     EntityTrait, QueryFilter, Set, TransactionTrait,
 };
+use std::collections::{HashMap, HashSet};
 use tera::{Context, Tera};
 use validator::Validate;
 
-use crate::entity::{organisations, roles, user_roles, users};
+use crate::entity::{course_instructors, courses, organisations, roles, user_roles, users};
 use crate::models::organisation::{
-    CreateOrganisationForm, InviteInstructorForm, MassEnrollForm, OrgMemberDto,
-    OrganisationSignupForm,
+    AssignCourseInstructorForm, CourseInstructorCourseDto, CourseInstructorDto,
+    CourseInstructorSummaryDto, CreateOrganisationForm, InviteInstructorForm, MassEnrollForm,
+    OrgMemberDto, OrganisationSignupForm,
 };
 use crate::services::course_service::{get_session_user_org_id, has_role};
 use crate::services::email_verification_service::{
     create_email_verification_token, send_verification_email,
 };
-use crate::services::mailer_service::{send_mail_message, MailRequest};
+use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::organisation_service;
 use crate::services::user_service::{assign_role_to_user, hash_password, sign_user_into_session};
 use crate::ssr::pages::{build_page_context, render_page};
@@ -780,6 +782,94 @@ async fn require_matching_session_organisation(
     }
 }
 
+fn session_user_id(session: &Session) -> Result<i32, HttpResponse> {
+    match session.get::<i32>("user_id") {
+        Ok(Some(user_id)) => Ok(user_id),
+        Ok(None) => Err(HttpResponse::Unauthorized().body("Please log in.")),
+        Err(err) => {
+            println!("Session user lookup error: {:?}", err);
+            Err(HttpResponse::InternalServerError().body("Unable to read session."))
+        }
+    }
+}
+
+async fn instructor_role_id(db: &DatabaseConnection) -> Result<i32, HttpResponse> {
+    roles::Entity::find()
+        .filter(roles::Column::RoleName.eq(roles::RoleName::Instructor))
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding instructor role: {}", err))
+        })?
+        .map(|role| role.role_id)
+        .ok_or_else(|| HttpResponse::InternalServerError().body("Instructor role not configured"))
+}
+
+async fn user_has_role_id(
+    db: &DatabaseConnection,
+    user_id: i32,
+    role_id: i32,
+) -> Result<bool, HttpResponse> {
+    user_roles::Entity::find()
+        .filter(user_roles::Column::UserId.eq(user_id))
+        .filter(user_roles::Column::RoleId.eq(role_id))
+        .one(db)
+        .await
+        .map(|role| role.is_some())
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error checking user role: {}", err))
+        })
+}
+
+async fn require_course_in_organisation(
+    db: &DatabaseConnection,
+    course_id: i32,
+    org_id: i32,
+) -> Result<courses::Model, HttpResponse> {
+    let course = courses::Entity::find_by_id(course_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
+
+    if course.org_id == Some(org_id) {
+        Ok(course)
+    } else {
+        Err(HttpResponse::Forbidden().body("Course is not in your organisation"))
+    }
+}
+
+async fn require_instructor_in_organisation(
+    db: &DatabaseConnection,
+    instructor_id: i32,
+    org_id: i32,
+) -> Result<users::Model, HttpResponse> {
+    let instructor = users::Entity::find_by_id(instructor_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding instructor: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Instructor not found"))?;
+
+    if instructor.org_id != Some(org_id) {
+        return Err(HttpResponse::Forbidden().body("Instructor is not in your organisation"));
+    }
+
+    let role_id = instructor_role_id(db).await?;
+    if !user_has_role_id(db, instructor_id, role_id).await? {
+        return Err(HttpResponse::BadRequest().body("User is not an instructor"));
+    }
+
+    Ok(instructor)
+}
+
 #[get("/organisations")]
 pub async fn list_organisations(
     db: web::Data<DatabaseConnection>,
@@ -1052,6 +1142,233 @@ pub async fn invite_instructor(
 }
 
 // ── Mass enrollment ────────────────────────────────────────────────────────────
+
+/// GET /api/organisations/{org_id}/course-instructors
+#[get("/organisations/{org_id}/course-instructors")]
+pub async fn list_course_instructors(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let org_courses = match courses::Entity::find()
+        .filter(courses::Column::OrgId.eq(org_id))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(courses) => courses,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding courses: {}", err));
+        }
+    };
+
+    let instructor_role_id = match instructor_role_id(db.get_ref()).await {
+        Ok(role_id) => role_id,
+        Err(response) => return response,
+    };
+
+    let instructor_user_ids = match user_roles::Entity::find()
+        .filter(user_roles::Column::RoleId.eq(instructor_role_id))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|row| row.user_id)
+            .collect::<HashSet<i32>>(),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding instructor roles: {}", err));
+        }
+    };
+
+    let org_instructors = if instructor_user_ids.is_empty() {
+        Vec::new()
+    } else {
+        match users::Entity::find()
+            .filter(users::Column::OrgId.eq(org_id))
+            .filter(users::Column::UserId.is_in(instructor_user_ids.iter().copied()))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(users) => users,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding instructors: {}", err));
+            }
+        }
+    };
+
+    let instructor_dtos = org_instructors
+        .into_iter()
+        .map(|user| CourseInstructorDto {
+            user_id: user.user_id,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            email: user.email,
+        })
+        .collect::<Vec<CourseInstructorDto>>();
+
+    let instructor_by_id = instructor_dtos
+        .iter()
+        .cloned()
+        .map(|instructor| (instructor.user_id, instructor))
+        .collect::<HashMap<i32, CourseInstructorDto>>();
+
+    let course_ids = org_courses
+        .iter()
+        .map(|course| course.course_id)
+        .collect::<Vec<i32>>();
+
+    let assignments = if course_ids.is_empty() {
+        Vec::new()
+    } else {
+        match course_instructors::Entity::find()
+            .filter(course_instructors::Column::CourseId.is_in(course_ids.clone()))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(assignments) => assignments,
+            Err(err) => {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Database error finding course instructors: {}",
+                    err
+                ));
+            }
+        }
+    };
+
+    let mut assignments_by_course: HashMap<i32, Vec<CourseInstructorDto>> = HashMap::new();
+    for assignment in assignments {
+        if let Some(instructor) = instructor_by_id.get(&assignment.instructor_id) {
+            assignments_by_course
+                .entry(assignment.course_id)
+                .or_default()
+                .push(instructor.clone());
+        }
+    }
+
+    let course_dtos = org_courses
+        .into_iter()
+        .map(|course| CourseInstructorCourseDto {
+            course_id: course.course_id,
+            name: course
+                .name
+                .unwrap_or_else(|| format!("Course #{}", course.course_id)),
+            instructors: assignments_by_course
+                .remove(&course.course_id)
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<CourseInstructorCourseDto>>();
+
+    HttpResponse::Ok().json(CourseInstructorSummaryDto {
+        courses: course_dtos,
+        instructors: instructor_dtos,
+    })
+}
+
+/// POST /api/organisations/{org_id}/courses/{course_id}/instructors
+#[post("/organisations/{org_id}/courses/{course_id}/instructors")]
+pub async fn assign_course_instructor(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+    body: web::Json<AssignCourseInstructorForm>,
+) -> impl Responder {
+    let (org_id, course_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    if let Err(response) = require_course_in_organisation(db.get_ref(), course_id, org_id).await {
+        return response;
+    }
+
+    let body = body.into_inner();
+    if let Err(response) =
+        require_instructor_in_organisation(db.get_ref(), body.instructor_id, org_id).await
+    {
+        return response;
+    }
+
+    let assigned_by = match session_user_id(&session) {
+        Ok(user_id) => user_id,
+        Err(response) => return response,
+    };
+
+    let already_assigned =
+        match course_instructors::Entity::find_by_id((course_id, body.instructor_id))
+            .one(db.get_ref())
+            .await
+        {
+            Ok(assignment) => assignment.is_some(),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error checking assignment: {}", err));
+            }
+        };
+
+    if already_assigned {
+        return HttpResponse::Ok().json(serde_json::json!({
+            "message": "Instructor is already assigned to this course"
+        }));
+    }
+
+    let assignment = course_instructors::ActiveModel {
+        course_id: Set(course_id),
+        instructor_id: Set(body.instructor_id),
+        assigned_by: Set(Some(assigned_by)),
+        ..Default::default()
+    };
+
+    match assignment.insert(db.get_ref()).await {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "message": "Instructor assigned to course"
+        })),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Failed to assign instructor: {}", err)),
+    }
+}
+
+/// DELETE /api/organisations/{org_id}/courses/{course_id}/instructors/{instructor_id}
+#[delete("/organisations/{org_id}/courses/{course_id}/instructors/{instructor_id}")]
+pub async fn remove_course_instructor(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32, i32)>,
+) -> impl Responder {
+    let (org_id, course_id, instructor_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    if let Err(response) = require_course_in_organisation(db.get_ref(), course_id, org_id).await {
+        return response;
+    }
+
+    match course_instructors::Entity::delete_by_id((course_id, instructor_id))
+        .exec(db.get_ref())
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => HttpResponse::Ok().json(serde_json::json!({
+            "message": "Instructor removed from course"
+        })),
+        Ok(_) => HttpResponse::NotFound().body("Course instructor assignment not found"),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Failed to remove instructor: {}", err)),
+    }
+}
 
 /// POST /api/organisations/{org_id}/enroll
 ///

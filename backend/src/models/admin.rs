@@ -3,26 +3,31 @@ use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateOrganisationForm {
-    #[validate(length(min = 1, message = "Organisation name is required"))]
+    #[validate(length(min = 1, max = 255, message = "Organisation name must be between 1 and 255 characters"))]
     pub org_name: String,
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateOrganisationForm {
-    #[validate(length(min = 1, message = "Organisation name is required"))]
+    #[validate(length(min = 1, max = 255, message = "Organisation name must be between 1 and 255 characters"))]
     pub org_name: String,
+
+    pub org_slug: Option<String>,
+    pub org_type: Option<String>,
+    pub website_url: Option<String>,
 }
 
 // User CRUD Forms
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateAdminUserForm {
-    #[validate(length(min = 1, message = "First name is required"))]
+    #[validate(length(min = 1, max = 100, message = "First name must be between 1 and 100 characters"))]
     pub first_name: String,
 
-    #[validate(length(min = 1, message = "Last name is required"))]
+    #[validate(length(min = 1, max = 100, message = "Last name must be between 1 and 100 characters"))]
     pub last_name: String,
 
-    #[validate(email(message = "Invalid email"))]
+    #[validate(email(message = "Enter a valid email address"))]
+    #[validate(length(max = 255, message = "Email must not exceed 255 characters"))]
     pub email: String,
 
     #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
@@ -34,13 +39,14 @@ pub struct CreateAdminUserForm {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateAdminUserForm {
-    #[validate(length(min = 1, message = "First name is required"))]
+    #[validate(length(min = 1, max = 100, message = "First name must be between 1 and 100 characters"))]
     pub first_name: String,
 
-    #[validate(length(min = 1, message = "Last name is required"))]
+    #[validate(length(min = 1, max = 100, message = "Last name must be between 1 and 100 characters"))]
     pub last_name: String,
 
-    #[validate(email(message = "Invalid email"))]
+    #[validate(email(message = "Enter a valid email address"))]
+    #[validate(length(max = 255, message = "Email must not exceed 255 characters"))]
     pub email: String,
 
     pub org_id: Option<i32>,
@@ -50,7 +56,7 @@ pub struct UpdateAdminUserForm {
 // Course CRUD Forms
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateAdminCourseForm {
-    #[validate(length(min = 1, message = "Course name is required"))]
+    #[validate(length(min = 1, max = 255, message = "Course name must be between 1 and 255 characters"))]
     pub name: String,
 
     pub org_id: Option<i32>,
@@ -68,7 +74,7 @@ pub struct CreateAdminCourseForm {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateAdminCourseForm {
-    #[validate(length(min = 1, message = "Course name is required"))]
+    #[validate(length(min = 1, max = 255, message = "Course name must be between 1 and 255 characters"))]
     pub name: String,
 
     pub org_id: Option<i32>,

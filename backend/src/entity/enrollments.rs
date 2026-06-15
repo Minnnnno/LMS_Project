@@ -12,6 +12,10 @@ pub struct Model {
     pub course_id: i32,
 
     pub enrolled_at: DateTime<Utc>,
+
+    pub created_at: Option<DateTimeWithTimeZone>,
+
+    pub updated_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

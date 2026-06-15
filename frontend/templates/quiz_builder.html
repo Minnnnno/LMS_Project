@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Quiz Creator | SkillUp LMS{% endblock title %}
+{% block title %}Quiz Builder | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/quiz_creator.css?v=2">
+<link rel="stylesheet" href="/static/css/quiz_builder.css?v=1">
 
-<div class="quiz-creator-page">
-    <header class="quiz-creator-header">
+<div class="quiz-builder-page">
+    <header class="quiz-builder-header">
         <div>
             <a id="quiz-back-link" class="quiz-back-link" href="/courses">
                 <i class="bi bi-arrow-left" aria-hidden="true"></i>
                 <span>Back to course</span>
             </a>
-            <h1>Quiz Creator</h1>
+            <h1>Quiz Builder</h1>
         </div>
         <div class="quiz-header-actions">
             <button id="preview-quiz-btn" class="secondary-action" type="button">
@@ -26,7 +26,7 @@
         </div>
     </header>
 
-    <div class="quiz-creator-layout">
+    <div class="quiz-builder-layout">
         <section class="quiz-builder-main">
             <div class="quiz-panel">
                 <h2>Quiz Details</h2>
@@ -157,5 +157,5 @@
     </div>
 </template>
 
-<script src="/static/js/quiz_creator.js?v=2"></script>
+<script src="/static/js/quiz_builder.js?v=1"></script>
 {% endblock content %}

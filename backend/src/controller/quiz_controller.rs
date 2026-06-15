@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{Responder, delete, get, post, put, web};
+use actix_web::{delete, get, post, put, web, Responder};
 use sea_orm::DatabaseConnection;
 
 use crate::models::quiz::{CreateQuiz, UpdateQuiz};
@@ -16,6 +16,15 @@ pub async fn get_quiz_by_course_id(
     path: web::Path<i32>,
 ) -> impl Responder {
     quiz_service::list_quizzes_by_course(db.get_ref(), path.into_inner()).await
+}
+
+#[get("/quiz/{quiz_id}/attempt-view")]
+pub async fn get_quiz_attempt_view(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    quiz_service::get_quiz_for_attempt(db.get_ref(), &session, path.into_inner()).await
 }
 
 #[post("/quiz")]

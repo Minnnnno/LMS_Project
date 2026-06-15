@@ -101,6 +101,23 @@ CREATE TABLE IF NOT EXISTS courses (
     ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS course_instructors (
+  course_id     INT NOT NULL,
+  instructor_id INT NOT NULL,
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  assigned_by   INT,
+  PRIMARY KEY (course_id, instructor_id),
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (instructor_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (assigned_by)
+    REFERENCES users(user_id)
+    ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS enrollments (
   user_id                    INT NOT NULL,
   course_id                  INT NOT NULL,
@@ -470,3 +487,26 @@ ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) NOT NULL DEFAULT 'password';
 
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS course_instructors (
+  course_id     INT NOT NULL,
+  instructor_id INT NOT NULL,
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  assigned_by   INT,
+  PRIMARY KEY (course_id, instructor_id),
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (instructor_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (assigned_by)
+    REFERENCES users(user_id)
+    ON DELETE SET NULL
+);
+
+INSERT INTO course_instructors (course_id, instructor_id)
+SELECT course_id, instructor_id
+FROM courses
+WHERE instructor_id IS NOT NULL
+ON CONFLICT DO NOTHING;

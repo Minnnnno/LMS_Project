@@ -15,6 +15,7 @@ let isEnrolled = false;
 let currentAssignmentDetailsId = null;
 let currentQuizzes = [];
 let moduleProgressById = new Map();
+let quizAttemptStatuses = {};
 
 function goToModuleContent(moduleId) {
     window.location.href = "/module-content/" + moduleId;
@@ -290,6 +291,7 @@ async function loadQuizzes() {
         const response = await axios.get("/api/quiz/" + courseId);
         const quizzes = Array.isArray(response.data) ? response.data : [];
         currentQuizzes = quizzes;
+        await loadQuizAttemptStatuses();
         const quizList = document.getElementById("quiz-list");
 
         if (!quizList) {
@@ -306,6 +308,13 @@ async function loadQuizzes() {
         }
 
         quizzes.forEach((quiz) => {
+            const status = quizAttemptStatuses[quiz.quiz_id] || null;
+            const studentStatus = !isInstructor && status
+                ? `<div class="quiz-attempt-state ${status.can_attempt ? "" : "blocked"}">${escapeHtml(formatQuizAttemptStatus(status))}</div>`
+                : "";
+            const rowClass = !isInstructor && status && !status.can_attempt
+                ? "quiz-row quiz-row-disabled"
+                : "quiz-row";
             const adminButtons = isInstructor
                 ? `
                     <div class="module-actions">
@@ -316,10 +325,11 @@ async function loadQuizzes() {
                 : "";
 
             quizList.innerHTML += `
-                <div class="quiz-row">
+                <div class="${rowClass}" onclick="openQuizAttempt(${quiz.quiz_id})">
                     <div>
                         <div class="quiz-title">${escapeHtml(quiz.title || "Untitled quiz")}</div>
                         <div class="quiz-subtitle">${escapeHtml(formatQuizMeta(quiz))}</div>
+                        ${studentStatus}
                     </div>
                     ${adminButtons}
                 </div>
@@ -332,6 +342,27 @@ async function loadQuizzes() {
             quizList.innerHTML = '<p class="quiz-empty">Unable to load quizzes right now.</p>';
         }
         console.error("Failed to load quizzes:", error);
+    }
+}
+
+async function loadQuizAttemptStatuses() {
+    quizAttemptStatuses = {};
+
+    if (isInstructor) {
+        return;
+    }
+
+    try {
+        const response = await axios.get(`/api/quiz-attempts/my/course/${courseId}/status`);
+        const statuses = Array.isArray(response.data) ? response.data : [];
+        quizAttemptStatuses = statuses.reduce((map, status) => {
+            map[status.quiz_id] = status;
+            return map;
+        }, {});
+    } catch (error) {
+        if (error.response?.status !== 401) {
+            console.error("Failed to load quiz attempt statuses:", error);
+        }
     }
 }
 
@@ -1262,6 +1293,22 @@ function formatQuizMeta(quiz) {
     return parts.join(" - ");
 }
 
+function formatQuizAttemptStatus(status) {
+    if (!status) {
+        return "";
+    }
+
+    if (!status.can_attempt) {
+        return status.has_submitted_attempt ? "Already attempted" : status.message;
+    }
+
+    if (status.has_submitted_attempt) {
+        return status.message ? `Already attempted / ${status.message}` : "Already attempted";
+    }
+
+    return status.message;
+}
+
 function toDatetimeLocalValue(value) {
     if (!value) {
         return "";
@@ -1505,6 +1552,13 @@ async function saveCourse() {
         return;
     }
 
+    const price = Number(priceInputValue);
+
+    if (isPaid && (priceInputValue === "" || !Number.isFinite(price) || price <= 0)) {
+        showActionMessage("Paid courses must have a price greater than zero.", "error");
+        return;
+    }
+
     try {
         const backgroundImageUrl = backgroundImageFile
             ? await uploadCourseImage(backgroundImageFile)
@@ -1521,8 +1575,8 @@ async function saveCourse() {
 
         if (!isPaid) {
             payload.price = 0;
-        } else if (priceInputValue !== "") {
-            payload.price = Number(priceInputValue);
+        } else {
+            payload.price = price;
         }
 
         await axios.put(`/api/courses/${courseId}`, payload);
@@ -1612,7 +1666,29 @@ function closeAssignmentModal() {
 
 function editQuiz(event, quizId) {
     event.stopPropagation();
-    window.location.href = `/course/${courseId}/quiz-creator?quiz_id=${quizId}`;
+    window.location.href = `/course/${courseId}/quiz-builder?quiz_id=${quizId}`;
+}
+
+function openQuizAttempt(quizId) {
+    if (!isInstructor) {
+        const status = quizAttemptStatuses[quizId];
+
+        if (status && !status.can_attempt) {
+            showActionMessage(status.message || "You cannot attempt this quiz.", "error");
+            return;
+        }
+    }
+
+    window.open(
+        `/course/${courseId}/quiz/${quizId}/attempt`,
+        `quiz_attempt_${quizId}`,
+        "popup=yes,width=980,height=760,resizable=yes,scrollbars=yes"
+    );
+}
+
+async function refreshQuizAttemptsAfterSubmit() {
+    await loadQuizzes();
+    showActionMessage("Quiz submitted.", "success");
 }
 
 async function deleteQuiz(event, quizId) {
@@ -1806,12 +1882,23 @@ function bindInstructorControls() {
         openModuleModal();
     });
 
+<<<<<<< HEAD
+=======
+    document.getElementById("add-assignment-btn")?.addEventListener("click", () => {
+        openAssignmentModal();
+    });
+
+    document.getElementById("add-quiz-btn")?.addEventListener("click", () => {
+        window.location.href = `/course/${courseId}/quiz-builder`;
+    });
+
+>>>>>>> 25d6b41887e346fb6c7826e217af1e82a902e9df
     document.getElementById("assignment-card-add-btn")?.addEventListener("click", () => {
         openAssignmentModal();
     });
 
     document.getElementById("quiz-card-add-btn")?.addEventListener("click", () => {
-        window.location.href = `/course/${courseId}/quiz-creator`;
+        window.location.href = `/course/${courseId}/quiz-builder`;
     });
 
     document.getElementById("close-module-modal-btn")?.addEventListener("click", () => {

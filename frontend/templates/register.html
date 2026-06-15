@@ -31,6 +31,28 @@
                     <p>Enter your details below to register for SkillUp.</p>
                 </div>
 
+                <div class="signup-type-grid" aria-label="Signup type">
+                    <div class="signup-type-card active">
+                        <div class="signup-type-icon">
+                            <i class="bi bi-person"></i>
+                        </div>
+                        <div>
+                            <strong>Learner account</strong>
+                            <span>Join courses and track your progress.</span>
+                        </div>
+                    </div>
+
+                    <a class="signup-type-card" href="/organisations/signup">
+                        <div class="signup-type-icon">
+                            <i class="bi bi-building"></i>
+                        </div>
+                        <div>
+                            <strong>Organisation</strong>
+                            <span>Create a workspace for your team.</span>
+                        </div>
+                    </a>
+                </div>
+
                 {% if error %}
                 <div class="error-banner" role="alert">
                     <div class="error-banner-icon">!</div>
@@ -128,17 +150,10 @@
                     </div>
 
                     <div class="row g-3">
-                        <div class="col-12 col-sm-6">
+                        <div class="col-12">
                             <button type="button" class="btn btn-outline-secondary w-100 social-btn">
                                 <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google logo">
                                 Google
-                            </button>
-                        </div>
-
-                        <div class="col-12 col-sm-6">
-                            <button type="button" class="btn btn-outline-secondary w-100 social-btn">
-                                <img src="https://www.svgrepo.com/show/512317/github-142.svg" alt="GitHub logo">
-                                GitHub
                             </button>
                         </div>
                     </div>

@@ -2,7 +2,13 @@ use crate::entity::courses::{self, CourseStatus};
 use crate::entity::enrollments;
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::services::course_service::{
-    can_manage_course, get_organisation_courses_for_session, get_session_user_org_id, has_role,
+    can_manage_course,
+    get_instructor_course_ids_for_session,
+    get_instructor_courses_for_session,
+    get_organisation_courses_for_session,
+    get_session_user_org_id,
+    has_role,
+    is_instructor_course_limited,
     price_to_cents,
 };
 use crate::services::module_progress_service;
@@ -13,8 +19,20 @@ use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 #[get("/courses")]
-pub async fn get_courses(db: web::Data<DatabaseConnection>) -> impl Responder {
-    let result = courses::Entity::find().all(db.get_ref()).await;
+pub async fn get_courses(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    if is_instructor_course_limited(&session) {
+        return match get_instructor_courses_for_session(db.get_ref(), &session).await {
+            Ok(courses) => HttpResponse::Ok().json(courses),
+            Err(response) => response,
+        };
+    }
+
+    let result = courses::Entity::find()
+    .all(db.get_ref())
+    .await;
     match result {
         Ok(course) => {
             if course.is_empty() {
@@ -28,7 +46,17 @@ pub async fn get_courses(db: web::Data<DatabaseConnection>) -> impl Responder {
 }
 
 #[get("/my-courses")]
-pub async fn get_my_courses(db: web::Data<DatabaseConnection>, session: Session) -> impl Responder {
+pub async fn get_my_courses(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    if is_instructor_course_limited(&session) {
+        return match get_instructor_courses_for_session(db.get_ref(), &session).await {
+            Ok(courses) => HttpResponse::Ok().json(courses),
+            Err(response) => response,
+        };
+    }
+
     let user_id = match session.get::<i32>("user_id") {
         Ok(Some(id)) => id,
         Ok(None) => {
@@ -85,7 +113,8 @@ pub async fn get_organisation_courses(
 #[get("/course/{course_id}")]
 pub async fn get_course_by_course_id(
     db: web::Data<DatabaseConnection>,
-    path: web::Path<i32>,
+    session: Session,
+    path: web::Path<i32>
 ) -> impl Responder {
     let course_id = path.into_inner();
     let result = courses::Entity::find_by_id(course_id)
@@ -94,6 +123,17 @@ pub async fn get_course_by_course_id(
     match result {
         Ok(course) => {
             if let Some(course) = course {
+                if is_instructor_course_limited(&session) {
+                    match can_manage_course(db.get_ref(), &session, &course).await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            return HttpResponse::Forbidden()
+                                .body("You can only view courses assigned to you");
+                        }
+                        Err(response) => return response,
+                    }
+                }
+
                 HttpResponse::Ok().json(course)
             } else {
                 HttpResponse::NotFound().body("Course not found")
@@ -169,6 +209,7 @@ pub async fn get_course_module_progress(
 #[get("/courses/search")]
 pub async fn search_course(
     db: web::Data<DatabaseConnection>,
+    session: Session,
     query: web::Query<CourseQuery>,
 ) -> impl Responder {
     let mut db_query = courses::Entity::find();
@@ -192,7 +233,22 @@ pub async fn search_course(
         db_query = db_query.filter(courses::Column::CourseId.eq(course_id))
     }
 
-    let result = db_query.all(db.get_ref()).await;
+    if is_instructor_course_limited(&session) {
+        let course_ids = match get_instructor_course_ids_for_session(db.get_ref(), &session).await {
+            Ok(course_ids) => course_ids,
+            Err(response) => return response,
+        };
+
+        if course_ids.is_empty() {
+            return HttpResponse::Ok().json(Vec::<courses::Model>::new());
+        }
+
+        db_query = db_query.filter(courses::Column::CourseId.is_in(course_ids));
+    }
+
+    let result = db_query
+        .all(db.get_ref())
+        .await;
 
     match result {
         Ok(course) => {
@@ -229,6 +285,20 @@ pub async fn update_course(
                         .body("You can only update courses under your organisation");
                 }
                 Err(response) => return response,
+            }
+
+            let updated_price_cents = match data.price {
+                Some(price) => match price_to_cents(price) {
+                    Ok(price_cents) => price_cents,
+                    Err(response) => return response,
+                },
+                None => course.price_cents.unwrap_or(0),
+            };
+            let updated_is_paid = data.is_paid.unwrap_or(course.is_paid.unwrap_or(false));
+
+            if updated_is_paid && updated_price_cents <= 0 {
+                return HttpResponse::BadRequest()
+                    .body("Paid courses must have a price greater than zero");
             }
 
             let mut active: courses::ActiveModel = course.into();
@@ -271,11 +341,8 @@ pub async fn update_course(
                 active.status = Set(course_status);
             }
 
-            if let Some(price) = data.price {
-                active.price_cents = Set(Some(match price_to_cents(price) {
-                    Ok(price_cents) => price_cents,
-                    Err(response) => return response,
-                }));
+            if data.price.is_some() {
+                active.price_cents = Set(Some(updated_price_cents));
             }
             if let Some(currency) = data.currency {
                 active.currency = Set(Some(currency));
@@ -333,6 +400,16 @@ pub async fn create_course(
         Err(response) => return response,
     };
 
+    let price_cents = match price_to_cents(data.price) {
+        Ok(price_cents) => price_cents,
+        Err(response) => return response,
+    };
+
+    if data.is_paid && price_cents <= 0 {
+        return HttpResponse::BadRequest()
+            .body("Paid courses must have a price greater than zero");
+    }
+
     let course = courses::ActiveModel {
         name: Set(Some(data.name)),
         instructor_id: Set(Some(data.instructor_id.unwrap_or(session_user_id))),
@@ -348,10 +425,7 @@ pub async fn create_course(
             }
         }),
 
-        price_cents: Set(Some(match price_to_cents(data.price) {
-            Ok(price_cents) => price_cents,
-            Err(response) => return response,
-        })),
+        price_cents: Set(Some(price_cents)),
         currency: Set(Some(data.currency)),
         is_paid: Set(Some(data.is_paid)),
         description: Set(data.description),

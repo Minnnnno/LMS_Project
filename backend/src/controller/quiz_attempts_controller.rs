@@ -33,6 +33,20 @@ pub async fn get_my_attempts(
     quiz_attempt_service::list_my_attempts(db.get_ref(), &session).await
 }
 
+// Students see their own attempt availability for all quizzes in a course
+#[get("/quiz-attempts/my/course/{course_id}/status")]
+pub async fn get_my_attempt_statuses_by_course(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>,
+    session: Session,
+) -> impl Responder {
+    quiz_attempt_service::list_my_attempt_statuses_by_course(
+        db.get_ref(),
+        &session,
+        path.into_inner(),
+    ).await
+}
+
 // Students create their own attempts; user_id is pulled from session, not the request body
 #[post("/quiz-attempts")]
 pub async fn create_quiz_attempt(

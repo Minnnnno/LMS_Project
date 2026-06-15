@@ -14,6 +14,8 @@ pub struct Model {
     pub org_id: Option<i32>,
     pub email_verified: bool,
     pub must_change_password: bool,
+    pub created_at: Option<DateTimeWithTimeZone>,
+    pub updated_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

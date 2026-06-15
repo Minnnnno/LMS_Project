@@ -15,6 +15,8 @@ pub struct Model {
     pub is_paid: Option<bool>,
     pub description: Option<String>,
     pub background_image_url: Option<String>,
+    pub created_at: Option<DateTimeWithTimeZone>,
+    pub updated_at: Option<DateTimeWithTimeZone>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[sea_orm(

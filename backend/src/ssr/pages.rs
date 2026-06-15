@@ -3,7 +3,7 @@ use actix_web::{HttpResponse, Responder, get, http::header, web};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tera::{Context, Tera};
 
-use crate::entity::{courses as course_entity, modules};
+use crate::entity::{courses as course_entity, modules, quiz};
 use crate::services::auth_helpers::is_enrolled;
 use crate::services::course_service::can_manage_course;
 
@@ -95,8 +95,8 @@ async fn course_details_page(
     }
 }
 
-#[get("/course/{course_id}/quiz-creator")]
-async fn quiz_creator_page(
+#[get("/course/{course_id}/quiz-builder")]
+async fn quiz_builder_page(
     db: web::Data<DatabaseConnection>,
     session: Session,
     path: web::Path<i32>,
@@ -109,8 +109,7 @@ async fn quiz_creator_page(
                 .finish();
         }
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
         }
     };
 
@@ -132,8 +131,54 @@ async fn quiz_creator_page(
     }
 
     match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
-        Ok(true) => render_page("quiz_creator.html", &session),
+        Ok(true) => render_page("quiz_builder.html", &session),
         Ok(false) => HttpResponse::Forbidden().body("You cannot manage quizzes for this course"),
+        Err(response) => response,
+    }
+}
+
+#[get("/course/{course_id}/quiz/{quiz_id}/attempt")]
+async fn quiz_attempt_page(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err));
+        }
+    };
+
+    let (course_id, quiz_id) = path.into_inner();
+    let quiz = match quiz::Entity::find_by_id(quiz_id).one(db.get_ref()).await {
+        Ok(Some(quiz)) => quiz,
+        Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding quiz: {}", err));
+        }
+    };
+
+    if quiz.course_id != course_id {
+        return HttpResponse::NotFound().body("Quiz not found for this course");
+    }
+
+    match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
+        Ok(true) => return render_page("quiz_attempt.html", &session),
+        Ok(false) => {}
+        Err(response) => return response,
+    }
+
+    match is_enrolled(db.get_ref(), user_id, course_id).await {
+        Ok(true) => render_page("quiz_attempt.html", &session),
+        Ok(false) => HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz"),
         Err(response) => response,
     }
 }
@@ -215,7 +260,8 @@ pub fn init(cfg: &mut web::ServiceConfig) {
         .service(projects)
         .service(downloads)
         .service(course_details_page)
-        .service(quiz_creator_page)
+        .service(quiz_builder_page)
+        .service(quiz_attempt_page)
         .service(module_content_page)
         .service(pdf_viewer_page);
 }
@@ -255,6 +301,11 @@ pub fn build_page_context(session: &Session) -> Context {
         .unwrap_or_default();
 
     context.insert("role_names", &role_names);
+
+    let is_instructor_managed_only = role_names.iter().any(|role| role == "Instructor")
+        && !role_names.iter().any(|role| role == "Organisation Admin")
+        && !role_names.iter().any(|role| role == "LMS Admin");
+    context.insert("is_instructor_managed_only", &is_instructor_managed_only);
 
     let role_ids: Vec<i32> = session
         .get::<Vec<i32>>("role_ids")
