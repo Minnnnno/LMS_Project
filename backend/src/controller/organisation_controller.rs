@@ -5,7 +5,7 @@ use actix_web::{
     post, web,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbErr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
     EntityTrait, QueryFilter, Set, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
@@ -737,6 +737,26 @@ async fn user_has_role_id(
         })
 }
 
+async fn lms_admin_user_ids<C>(db: &C) -> Result<HashSet<i32>, DbErr>
+where
+    C: ConnectionTrait,
+{
+    let Some(lms_admin_role) = roles::Entity::find()
+        .filter(roles::Column::RoleName.eq(roles::RoleName::LmsAdmin))
+        .one(db)
+        .await?
+    else {
+        return Ok(HashSet::new());
+    };
+
+    let rows = user_roles::Entity::find()
+        .filter(user_roles::Column::RoleId.eq(lms_admin_role.role_id))
+        .all(db)
+        .await?;
+
+    Ok(rows.into_iter().map(|row| row.user_id).collect())
+}
+
 async fn require_course_in_organisation(
     db: &DatabaseConnection,
     course_id: i32,
@@ -1340,6 +1360,13 @@ pub async fn mass_enroll(
 
     let mut enrolled: Vec<i32> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
+    let lms_admins = match lms_admin_user_ids(&txn).await {
+        Ok(user_ids) => user_ids,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to check LMS admin users: {}", err));
+        }
+    };
 
     for &uid in &body.user_ids {
         // 1. Fetch user
@@ -1355,14 +1382,21 @@ pub async fn mass_enroll(
             }
         };
 
+        if lms_admins.contains(&uid) {
+            errors.push(format!("User {} is an LMS admin and cannot be added", uid));
+            continue;
+        }
+
         if let Some(existing_org_id) = user.org_id {
-            if existing_org_id != org_id {
+            if existing_org_id == org_id {
+                errors.push(format!("User {} already belongs to this organisation", uid));
+            } else {
                 errors.push(format!(
                     "User {} already belongs to another organisation",
                     uid
                 ));
-                continue;
             }
+            continue;
         }
 
         // 2. Set org_id on the user
@@ -1455,23 +1489,27 @@ pub async fn remove_org_member(
 /// GET /api/users/all  –  users visible to this organisation admin for CSV/Excel matching
 #[get("/users/all")]
 pub async fn list_all_users(db: web::Data<DatabaseConnection>, session: Session) -> impl Responder {
-    let org_id = match require_session_organisation(db.get_ref(), &session).await {
-        Ok(org_id) => org_id,
-        Err(response) => return response,
+    if let Err(response) = require_session_organisation(db.get_ref(), &session).await {
+        return response;
+    }
+
+    let lms_admins = match lms_admin_user_ids(db.get_ref()).await {
+        Ok(user_ids) => user_ids,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to check LMS admin users: {}", err));
+        }
     };
 
     match users::Entity::find()
-        .filter(
-            Condition::any()
-                .add(users::Column::OrgId.is_null())
-                .add(users::Column::OrgId.eq(org_id)),
-        )
+        .filter(users::Column::OrgId.is_null())
         .all(db.get_ref())
         .await
     {
         Ok(users) => {
             let safe: Vec<serde_json::Value> = users
                 .iter()
+                .filter(|u| !lms_admins.contains(&u.user_id))
                 .map(|u| {
                     serde_json::json!({
                         "user_id": u.user_id,
@@ -1497,6 +1535,14 @@ pub async fn list_unassigned_users(
         return response;
     }
 
+    let lms_admins = match lms_admin_user_ids(db.get_ref()).await {
+        Ok(user_ids) => user_ids,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to check LMS admin users: {}", err));
+        }
+    };
+
     match users::Entity::find()
         .filter(users::Column::OrgId.is_null())
         .all(db.get_ref())
@@ -1505,6 +1551,7 @@ pub async fn list_unassigned_users(
         Ok(users) => {
             let safe: Vec<serde_json::Value> = users
                 .iter()
+                .filter(|u| !lms_admins.contains(&u.user_id))
                 .map(|u| {
                     serde_json::json!({
                         "user_id": u.user_id,
