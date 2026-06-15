@@ -3,13 +3,18 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=10">
+<link rel="stylesheet" href="/static/css/course_details.css?v=13">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
         <div class="course-hero-content">
             <div class="course-heading">
                 <h1 id="course-title">Loading course...</h1>
+            </div>
+            <div id="course-hero-actions" class="course-hero-actions" style="display: none;">
+                <button id="edit-course-btn" type="button">Edit Course</button>
+                <button id="delete-course-btn" class="danger-btn" type="button">Delete Course</button>
+                <button id="student-view-btn" type="button">View Student View</button>
             </div>
         </div>
     </div>
@@ -34,24 +39,33 @@
     <div id="course-action-message" class="course-action-message" role="status" aria-live="polite"></div>
 </div>
 
+<div id="course-progress-card" class="course-progress-card" hidden>
+    <div class="course-progress-head">
+        <div>
+            <span class="course-progress-label">Course Progress</span>
+            <p id="course-progress-summary">0 of 0 modules completed</p>
+        </div>
+        <strong id="course-progress-percent">0%</strong>
+    </div>
+    <div class="course-progress-track" aria-hidden="true">
+        <div id="course-progress-fill" class="course-progress-fill" style="width: 0%;"></div>
+    </div>
+</div>
+
 <div class="course-tabs" id="course-tabs">
     <button type="button" class="course-tab active" data-course-tab="content">Content</button>
     <button type="button" class="course-tab" data-course-tab="grades">Grades</button>
     <button type="button" class="course-tab" data-course-tab="dropbox">Dropbox</button>
+    <button type="button" id="course-submissions-tab-btn" class="course-tab" data-course-tab="submissions" style="display: none;">Submissions</button>
 </div>
 
 <div id="course-content-panel" class="course-tab-panel active">
     <div class="course-layout">
-        <div id="instructor-controls" class="instructor-controls" style="display: none;">
-            <button id="edit-course-btn">Edit Course</button>
-            <button id="delete-course-btn" class="danger-btn">Delete Course</button>
-            <button id="add-module-btn">+ Add Module</button>
-            <button id="add-assignment-btn">+ Add Assignment</button>
-            <button id="add-quiz-btn">+ Add Quiz</button>
-            <button id="student-view-btn">View Student View</button>
-        </div>
         <div class="course-card">
-            <h2>Modules</h2>
+            <div class="course-card-heading">
+                <h2>Modules</h2>
+                <button id="add-module-btn" class="course-card-action-btn" type="button" style="display: none;">+ Add Module</button>
+            </div>
 
             <div id="module-list"></div>
         </div>
@@ -98,6 +112,19 @@
             </div>
             <div id="dropbox-assignment-list" class="grades-list">
                 <p class="grades-empty">Assignments with upload dropboxes will appear here.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="course-submissions-panel" class="course-tab-panel">
+    <div class="grades-layout">
+        <div class="course-card grades-card">
+            <div class="course-card-heading">
+                <h2>Student Submissions</h2>
+            </div>
+            <div id="course-submissions-list" class="grades-list">
+                <p class="grades-empty">Assignments with student submissions will appear here.</p>
             </div>
         </div>
     </div>
@@ -243,6 +270,7 @@
         <div class="assignment-modal-tabs">
             <button type="button" class="assignment-modal-tab active" data-assignment-tab="details">Details</button>
             <button type="button" class="assignment-modal-tab" data-assignment-tab="dropbox">Dropbox</button>
+            <button type="button" id="assignment-submissions-tab-btn" class="assignment-modal-tab" data-assignment-tab="submissions" style="display: none;">Submissions</button>
         </div>
 
         <div id="assignment-details-tab-panel" class="assignment-modal-panel active">
@@ -291,11 +319,17 @@
             <button id="submit-assignment-dropbox-btn" class="dropbox-submit-btn" type="button">Submit Assignment</button>
         </div>
 
+        <div id="assignment-submissions-tab-panel" class="assignment-modal-panel">
+            <div id="assignment-submissions-list" class="assignment-submissions-list">
+                <p class="grades-empty">Student submissions will appear here.</p>
+            </div>
+        </div>
+
         <div class="modal-actions">
             <button id="close-assignment-details-btn" type="button">Close</button>
         </div>
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=24"></script>
+<script src="/static/js/course_details.js?v=27"></script>
 {% endblock content %}

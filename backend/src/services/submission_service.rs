@@ -1,12 +1,15 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
+use std::collections::HashSet;
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 
-use crate::entity::{assignments, submissions, users};
-use crate::models::submission::{CreateSubmission, StudentSubmission};
+use crate::entity::{assignments, courses, submissions, users};
+use crate::models::submission::{CreateSubmission, GradeSubmission, StaffSubmission, StudentSubmission};
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
+use crate::services::course_service::can_manage_course;
 use crate::services::mailer_service::{send_mail_message, MailRequest};
 
 async fn require_enrolled_for_assignment(
@@ -41,6 +44,89 @@ fn to_student_submission(submission: submissions::Model) -> StudentSubmission {
         cloudinary_public_id: submission.cloudinary_public_id,
         score: submission.score,
         feedback: submission.feedback,
+    }
+}
+
+async fn require_can_manage_assignment(
+    db: &DatabaseConnection,
+    session: &Session,
+    assignment_id: i32,
+) -> Result<assignments::Model, HttpResponse> {
+    let assignment = assignments::Entity::find_by_id(assignment_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding assignment: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Assignment not found"))?;
+
+    let course = courses::Entity::find_by_id(assignment.course_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
+
+    match can_manage_course(db, session, &course).await {
+        Ok(true) => Ok(assignment),
+        Ok(false) => Err(HttpResponse::Forbidden().body("You cannot grade submissions for this course")),
+        Err(response) => Err(response),
+    }
+}
+
+fn to_staff_submission(
+    submission: submissions::Model,
+    user: users::Model,
+    is_latest: bool,
+) -> StaffSubmission {
+    StaffSubmission {
+        submission_id: submission.submission_id,
+        assignment_id: submission.assignment_id,
+        user_id: submission.user_id,
+        student_name: format!("{} {}", user.first_name, user.last_name),
+        student_email: user.email,
+        submitted_at: submission.submitted_at,
+        submission_text: submission.submission_text,
+        file_url: submission.file_url,
+        cloudinary_public_id: submission.cloudinary_public_id,
+        score: submission.score,
+        feedback: submission.feedback,
+        is_latest,
+    }
+}
+
+async fn is_latest_submission_for_student(
+    db: &DatabaseConnection,
+    submission: &submissions::Model,
+) -> Result<bool, HttpResponse> {
+    let latest_submission = submissions::Entity::find()
+        .filter(submissions::Column::AssignmentId.eq(submission.assignment_id))
+        .filter(submissions::Column::UserId.eq(submission.user_id))
+        .order_by_desc(submissions::Column::SubmittedAt)
+        .order_by_desc(submissions::Column::SubmissionId)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding latest submission: {}", err))
+        })?;
+
+    Ok(latest_submission
+        .map(|latest| latest.submission_id == submission.submission_id)
+        .unwrap_or(false))
+}
+
+async fn require_latest_submission_for_grading(
+    db: &DatabaseConnection,
+    submission: &submissions::Model,
+) -> Result<(), HttpResponse> {
+    if is_latest_submission_for_student(db, submission).await? {
+        Ok(())
+    } else {
+        Err(HttpResponse::Forbidden().body("Only the student's latest submission can be graded"))
     }
 }
 
@@ -330,6 +416,134 @@ pub async fn list_my_submissions(
         ),
         Err(err) => {
             HttpResponse::InternalServerError().body(format!("Database error finding submission: {}", err))
+        }
+    }
+}
+
+pub async fn list_assignment_submissions(
+    db: &DatabaseConnection,
+    session: &Session,
+    assignment_id: i32,
+) -> HttpResponse {
+    if let Err(response) = require_can_manage_assignment(db, session, assignment_id).await {
+        return response;
+    }
+
+    let submission_rows = match submissions::Entity::find()
+        .filter(submissions::Column::AssignmentId.eq(assignment_id))
+        .order_by_desc(submissions::Column::SubmittedAt)
+        .all(db)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding submissions: {}", err));
+        }
+    };
+
+    let mut latest_submission_ids = HashSet::new();
+    for submission in &submission_rows {
+        if is_latest_submission_for_student(db, submission).await.unwrap_or(false) {
+            latest_submission_ids.insert(submission.submission_id);
+        }
+    }
+
+    let mut staff_submissions = Vec::with_capacity(submission_rows.len());
+
+    for submission in submission_rows {
+        let is_latest = latest_submission_ids.contains(&submission.submission_id);
+        let user = match users::Entity::find_by_id(submission.user_id).one(db).await {
+            Ok(Some(user)) => user,
+            Ok(None) => continue,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding submission user: {}", err));
+            }
+        };
+
+        staff_submissions.push(to_staff_submission(submission, user, is_latest));
+    }
+
+    HttpResponse::Ok().json(staff_submissions)
+}
+
+pub async fn grade_submission(
+    db: &DatabaseConnection,
+    session: &Session,
+    submission_id: i32,
+    data: GradeSubmission,
+) -> HttpResponse {
+    let submission = match submissions::Entity::find_by_id(submission_id).one(db).await {
+        Ok(Some(submission)) => submission,
+        Ok(None) => return HttpResponse::NotFound().body("Submission not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding submission: {}", err));
+        }
+    };
+
+    let assignment = match require_can_manage_assignment(db, session, submission.assignment_id).await {
+        Ok(assignment) => assignment,
+        Err(response) => return response,
+    };
+
+    if let Err(response) = require_latest_submission_for_grading(db, &submission).await {
+        return response;
+    }
+
+    if data.score.is_sign_negative() {
+        return HttpResponse::BadRequest().body("Score cannot be negative");
+    }
+
+    if let Some(max_score) = assignment.max_score {
+        if data.score > max_score {
+            return HttpResponse::BadRequest().body("Score cannot be greater than max score");
+        }
+    }
+
+    let mut active: submissions::ActiveModel = submission.into();
+    active.score = Set(Some(data.score));
+    active.feedback = Set(data.feedback.map(|feedback| feedback.trim().to_string()).filter(|feedback| !feedback.is_empty()));
+
+    match active.update(db).await {
+        Ok(saved) => HttpResponse::Ok().json(to_student_submission(saved)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Database error saving grade: {}", err))
+        }
+    }
+}
+
+pub async fn clear_submission_grade(
+    db: &DatabaseConnection,
+    session: &Session,
+    submission_id: i32,
+) -> HttpResponse {
+    let submission = match submissions::Entity::find_by_id(submission_id).one(db).await {
+        Ok(Some(submission)) => submission,
+        Ok(None) => return HttpResponse::NotFound().body("Submission not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding submission: {}", err));
+        }
+    };
+
+    if let Err(response) = require_can_manage_assignment(db, session, submission.assignment_id).await {
+        return response;
+    }
+
+    if let Err(response) = require_latest_submission_for_grading(db, &submission).await {
+        return response;
+    }
+
+    let mut active: submissions::ActiveModel = submission.into();
+    active.score = Set(None);
+    active.feedback = Set(None);
+
+    match active.update(db).await {
+        Ok(saved) => HttpResponse::Ok().json(to_student_submission(saved)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Database error clearing grade: {}", err))
         }
     }
 }

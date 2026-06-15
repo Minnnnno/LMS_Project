@@ -23,3 +23,25 @@ pub struct StudentSubmission {
     pub score: Option<Decimal>,
     pub feedback: Option<String>,
 }
+
+#[derive(Serialize)]
+pub struct StaffSubmission {
+    pub submission_id: i32,
+    pub assignment_id: i32,
+    pub user_id: i32,
+    pub student_name: String,
+    pub student_email: String,
+    pub submitted_at: NaiveDateTime,
+    pub submission_text: Option<String>,
+    pub file_url: Option<String>,
+    pub cloudinary_public_id: Option<String>,
+    pub score: Option<Decimal>,
+    pub feedback: Option<String>,
+    pub is_latest: bool,
+}
+
+#[derive(Deserialize)]
+pub struct GradeSubmission {
+    pub score: Decimal,
+    pub feedback: Option<String>,
+}

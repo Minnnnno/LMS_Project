@@ -6,6 +6,7 @@ pub mod email_verification_service;
 pub mod enrollment_service;
 pub mod mailer_service;
 pub mod module_content_service;
+pub mod module_progress_service;
 pub mod module_service;
 pub mod organisation_service;
 pub mod payment_service;

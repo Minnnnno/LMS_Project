@@ -5,6 +5,7 @@ use crate::services::course_service::{
     can_manage_course, get_organisation_courses_for_session, get_session_user_org_id, has_role,
     price_to_cents,
 };
+use crate::services::module_progress_service;
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
 use sea_orm::sea_query::Expr;
@@ -125,6 +126,42 @@ pub async fn get_course_manage_access(
         Ok(can_manage) => HttpResponse::Ok().json(serde_json::json!({
             "can_manage": can_manage
         })),
+        Err(response) => response,
+    }
+}
+
+#[get("/courses/{course_id}/progress")]
+pub async fn get_course_progress(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    match module_progress_service::get_course_progress(
+        db.get_ref(),
+        &session,
+        path.into_inner(),
+    )
+    .await
+    {
+        Ok(progress) => HttpResponse::Ok().json(progress),
+        Err(response) => response,
+    }
+}
+
+#[get("/courses/{course_id}/module-progress")]
+pub async fn get_course_module_progress(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    match module_progress_service::get_course_module_progress(
+        db.get_ref(),
+        &session,
+        path.into_inner(),
+    )
+    .await
+    {
+        Ok(progress) => HttpResponse::Ok().json(progress),
         Err(response) => response,
     }
 }

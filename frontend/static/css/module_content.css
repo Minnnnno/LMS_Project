@@ -25,6 +25,60 @@
     cursor: pointer;
 }
 
+.module-progress-card {
+    margin-bottom: 18px;
+    padding: 18px 20px;
+    border: 1px solid #eaecf0;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.module-progress-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.module-progress-label {
+    display: block;
+    margin-bottom: 5px;
+    color: #667085;
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0;
+}
+
+#module-progress-summary {
+    margin: 0;
+    color: #344054;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+#module-progress-percent {
+    color: #171717;
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.module-progress-track {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #eef2f6;
+}
+
+.module-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: #0f766e;
+    transition: width 0.24s ease;
+}
+
 .content-list {
     margin-bottom: 24px;
     border-radius: 18px;
@@ -84,6 +138,10 @@
     background: #f8fafc;
 }
 
+.module-row.opened {
+    background: #f0fdf4;
+}
+
 .content-title {
     display: block;
     color: #1f2937;
@@ -102,6 +160,18 @@
 .content-actions {
     display: inline-flex;
     gap: 8px;
+}
+
+.content-opened-tick {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #16a34a;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
 }
 
 .content-action-btn {

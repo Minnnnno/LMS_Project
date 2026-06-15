@@ -33,8 +33,9 @@
 .course-hero-content {
     width: 100%;
     display: flex;
-    justify-content: flex-start;
+    justify-content: space-between;
     align-items: flex-end;
+    gap: 18px;
 }
 
 .course-heading {
@@ -189,6 +190,86 @@
     border-color: #fecaca;
     background: #fef2f2;
     color: #991b1b;
+}
+
+.course-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.course-hero-actions button {
+    min-height: 42px;
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: 8px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.92);
+    color: #171717;
+    font-size: 0.9rem;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 10px 22px rgba(0,0,0,0.2);
+}
+
+.course-hero-actions .danger-btn {
+    border-color: rgba(254,202,202,0.7);
+    background: #b42318;
+    color: #ffffff;
+}
+
+.course-progress-card {
+    margin: 0 40px 28px;
+    padding: 18px 20px;
+    border: 1px solid #eaecf0;
+    border-radius: 0.9rem;
+    background: #ffffff;
+    box-shadow: 0 12px 26px rgba(16, 24, 40, 0.07);
+}
+
+.course-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.course-progress-label {
+    display: block;
+    margin-bottom: 5px;
+    color: #667085;
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0;
+}
+
+#course-progress-summary {
+    margin: 0;
+    color: #344054;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+#course-progress-percent {
+    color: #171717;
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.course-progress-track {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #eef2f6;
+}
+
+.course-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: #0f766e;
+    transition: width 0.24s ease;
 }
 
 .course-layout {
@@ -396,6 +477,109 @@
     text-decoration: underline;
 }
 
+.assignment-submissions-list,
+.staff-submission-list {
+    display: grid;
+    gap: 12px;
+}
+
+.staff-submission-item {
+    display: grid;
+    gap: 10px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 12px;
+    background: #ffffff;
+}
+
+.submission-shortcut-row {
+    cursor: pointer;
+}
+
+.submission-shortcut-row:hover {
+    background: #f8fafc;
+}
+
+.staff-submission-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.staff-submission-head div {
+    display: grid;
+    gap: 2px;
+}
+
+.staff-submission-head span {
+    color: #667085;
+    font-size: 0.88rem;
+}
+
+.staff-submission-meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.staff-grade-form {
+    display: grid;
+    gap: 10px;
+}
+
+.staff-grade-form label {
+    display: grid;
+    gap: 5px;
+    color: #344054;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.staff-grade-form input,
+.staff-grade-form textarea {
+    width: 100%;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
+    font-weight: 500;
+}
+
+.staff-grade-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.staff-grade-actions button {
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: #171717;
+    color: #ffffff;
+    font-size: 0.86rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.staff-grade-actions .danger-btn {
+    background: #fef3f2;
+    color: #b42318;
+}
+
+.staff-grade-readonly {
+    display: grid;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    color: #475467;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
 .assignment-modal-tabs {
     display: flex;
     gap: 6px;
@@ -453,26 +637,6 @@
 
 .grades-error {
     color: #991b1b;
-}
-
-.instructor-controls {
-    grid-column: 1 / -1;
-    display: flex;
-    gap: 12px;
-    margin-bottom: 8px;
-}
-
-.instructor-controls button {
-    padding: 10px 16px;
-    border: none;
-    border-radius: 8px;
-    background: #2f5bea;
-    color: white;
-    cursor: pointer;
-}
-
-.instructor-controls .danger-btn {
-    background: #b42318;
 }
 
 .course-modal,
@@ -649,21 +813,48 @@
 
 .module-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: 14px;
-    padding: 16px 0;
+    padding: 22px 18px;
     border-bottom: 1px solid #e4e7ec;
     cursor: pointer;
+    transition: background 0.16s ease;
 }
 
 .module-row:last-child {
     border-bottom: 0;
 }
 
+.module-row:hover,
+.module-row.completed {
+    background: #e8f7ff;
+}
+
 .module-title {
     font-weight: 700;
     color: #1f2937;
+}
+
+.module-progress-ring {
+    --module-progress: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at center, #fff 58%, transparent 60%),
+        conic-gradient(#0878c9 calc(var(--module-progress) * 1%), #e6edf5 0);
+    color: #171717;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.module-progress-ring span {
+    display: inline-block;
 }
 
 .module-actions {
@@ -836,9 +1027,22 @@
         padding: 18px;
     }
 
+    .course-progress-card {
+        margin: 0 24px 24px;
+    }
+
+    .course-progress-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .course-hero-content {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .course-hero-actions {
+        justify-content: flex-start;
     }
 
     .course-action-panel {
@@ -847,6 +1051,20 @@
 
     .grade-row {
         grid-template-columns: 1fr;
+    }
+
+    .module-row {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    .module-actions {
+        grid-column: 1 / -1;
+    }
+
+    .module-progress-ring {
+        width: 56px;
+        height: 56px;
+        font-size: 0.86rem;
     }
 
     .grade-score {

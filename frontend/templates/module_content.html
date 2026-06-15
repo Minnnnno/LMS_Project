@@ -2,7 +2,7 @@
 
 {% block title %}Module Content | SkillUp LMS{% endblock title %}
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/module_content.css?v=2">
+<link rel="stylesheet" href="/static/css/module_content.css?v=3">
 {% endblock extra_css %}
 {% block content %}
 <div class="module-page">
@@ -11,6 +11,18 @@
             <h1 class="page-title">Module Content</h1>
         </div>
         <button id="add-content-btn" class="primary-btn" style="display: none;">+ Add Content</button>
+    </div>
+    <div id="module-progress-card" class="module-progress-card" hidden>
+        <div class="module-progress-head">
+            <div>
+                <span class="module-progress-label">Module Progress</span>
+                <p id="module-progress-summary">Not opened yet</p>
+            </div>
+            <strong id="module-progress-percent">0%</strong>
+        </div>
+        <div class="module-progress-track" aria-hidden="true">
+            <div id="module-progress-fill" class="module-progress-fill" style="width: 0%;"></div>
+        </div>
     </div>
     <div id="content-status-message" class="content-status-message" role="status" aria-live="polite"></div>
     <div id="content-list" class="content-list"></div>
@@ -61,5 +73,5 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/module_content.js?v=9"></script>
+<script src="/static/js/module_content.js?v=10"></script>
 {% endblock content %}

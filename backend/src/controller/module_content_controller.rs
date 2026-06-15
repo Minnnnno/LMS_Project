@@ -3,6 +3,7 @@ use crate::models::module_content::{CreateModuleContent, UpdateModuleContent};
 use crate::services::auth_helpers::get_user_id;
 use crate::services::course_service::has_role;
 use crate::services::module_content_service::{can_manage_module_content, can_view_module_content};
+use crate::services::module_progress_service;
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
@@ -95,10 +96,9 @@ pub async fn get_module_content_by_id(
 ) -> impl Responder {
     let module_id = path.into_inner();
 
-    match get_user_id(&session) {
-        Ok(_) => {}
-        Err(response) => return response,
-    };
+    if let Err(response) = get_user_id(&session) {
+        return response;
+    }
 
     match can_view_module_content(db.get_ref(), &session, module_id).await {
         Ok(true) => {}
@@ -122,6 +122,34 @@ pub async fn get_module_content_by_id(
             }
         }
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+    }
+}
+
+#[get("/module-content/{module_id}/progress")]
+pub async fn get_module_content_progress(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    match module_progress_service::get_module_progress(db.get_ref(), &session, path.into_inner())
+        .await
+    {
+        Ok(progress) => HttpResponse::Ok().json(progress),
+        Err(response) => response,
+    }
+}
+
+#[post("/module-content/{module_id}/progress")]
+pub async fn mark_module_content_opened(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    match module_progress_service::mark_module_completed(db.get_ref(), &session, path.into_inner())
+        .await
+    {
+        Ok(progress) => HttpResponse::Ok().json(progress),
+        Err(response) => response,
     }
 }
 

@@ -14,6 +14,7 @@ let gradesLoaded = false;
 let isEnrolled = false;
 let currentAssignmentDetailsId = null;
 let currentQuizzes = [];
+let moduleProgressById = new Map();
 
 function goToModuleContent(moduleId) {
     window.location.href = "/module-content/" + moduleId;
@@ -167,6 +168,9 @@ async function handleCourseAction() {
         await axios.post(`/api/courses/${courseId}/enroll`);
         isEnrolled = true;
         resetCourseActionButton();
+        await loadCourseProgress();
+        await loadCourseModuleProgresses();
+        await loadModules();
         showActionMessage("You are enrolled in this course.", "success");
     } catch (error) {
         if (error.response?.status === 401) {
@@ -195,6 +199,11 @@ async function loadModules() {
         }
 
         modules.forEach((module) => {
+            const progress = moduleProgressById.get(Number(module.module_id)) || {
+                opened: false,
+                progress_percent: 0,
+            };
+            const percent = Math.max(0, Math.min(100, Number(progress.progress_percent || 0)));
             const instructorButtons = isInstructor
                 ? `
                     <div class="module-actions">
@@ -203,13 +212,21 @@ async function loadModules() {
                     </div>
                 `
                 : "";
+            const progressRing = !isInstructor
+                ? `
+                    <div class="module-progress-ring" style="--module-progress: ${percent};" aria-label="${percent}% complete">
+                        <span>${percent}%</span>
+                    </div>
+                `
+                : "";
 
             moduleList.innerHTML += `
-                <div class="module-row" onclick="goToModuleContent(${module.module_id})">
+                <div class="module-row ${percent === 100 ? "completed" : ""}" onclick="goToModuleContent(${module.module_id})">
                     <div class="module-info">
-                        <div class="module-title">${module.title}</div>
+                        <div class="module-title">${escapeHtml(module.title || "Untitled module")}</div>
                     </div>
                     ${instructorButtons}
+                    ${progressRing}
                     <span class="module-arrow">&rsaquo;</span>
                 </div>
             `;
@@ -226,6 +243,9 @@ async function loadAssignments() {
         currentAssignments = assignments;
         const assignmentList = document.getElementById("assignment-list");
         renderDropboxAssignments();
+        if (document.querySelector('.course-tab.active')?.dataset.courseTab === "submissions") {
+            renderCourseSubmissionsTab();
+        }
 
         assignmentList.innerHTML = "";
 
@@ -327,6 +347,78 @@ async function loadEnrollmentStatus() {
     }
 }
 
+async function loadCourseModuleProgresses() {
+    moduleProgressById = new Map();
+
+    if (!isEnrolled || isInstructor) {
+        return;
+    }
+
+    try {
+        const response = await axios.get(`/api/courses/${courseId}/module-progress`);
+        const progressRows = Array.isArray(response.data) ? response.data : [];
+
+        moduleProgressById = new Map(
+            progressRows.map((progress) => [Number(progress.module_id), progress])
+        );
+    } catch (error) {
+        moduleProgressById = new Map();
+
+        if (![401, 403, 404].includes(error.response?.status)) {
+            console.error("Failed to load module progress:", error);
+        }
+    }
+}
+
+function hideCourseProgress() {
+    const progressCard = document.getElementById("course-progress-card");
+
+    if (progressCard) {
+        progressCard.hidden = true;
+    }
+}
+
+function renderCourseProgress(progress) {
+    const progressCard = document.getElementById("course-progress-card");
+    const progressSummary = document.getElementById("course-progress-summary");
+    const progressPercent = document.getElementById("course-progress-percent");
+    const progressFill = document.getElementById("course-progress-fill");
+
+    if (!progressCard || !progressSummary || !progressPercent || !progressFill) {
+        return;
+    }
+
+    const completedModules = Number(progress.completed_modules || 0);
+    const totalModules = Number(progress.total_modules || 0);
+    const percent = Math.max(0, Math.min(100, Number(progress.progress_percent || 0)));
+    const moduleLabel = totalModules === 1 ? "module" : "modules";
+
+    progressSummary.textContent = totalModules
+        ? `${completedModules} of ${totalModules} ${moduleLabel} completed`
+        : "No modules available yet";
+    progressPercent.textContent = `${percent}%`;
+    progressFill.style.width = `${percent}%`;
+    progressCard.hidden = false;
+}
+
+async function loadCourseProgress() {
+    if (!isEnrolled || isInstructor) {
+        hideCourseProgress();
+        return;
+    }
+
+    try {
+        const response = await axios.get(`/api/courses/${courseId}/progress`);
+        renderCourseProgress(response.data || {});
+    } catch (error) {
+        hideCourseProgress();
+
+        if (![401, 403, 404].includes(error.response?.status)) {
+            console.error("Failed to load course progress:", error);
+        }
+    }
+}
+
 function setActiveCourseTab(tabName) {
     document.querySelectorAll(".course-tab").forEach((tab) => {
         tab.classList.toggle("active", tab.dataset.courseTab === tabName);
@@ -338,6 +430,8 @@ function setActiveCourseTab(tabName) {
         ?.classList.toggle("active", tabName === "grades");
     document.getElementById("course-dropbox-panel")
         ?.classList.toggle("active", tabName === "dropbox");
+    document.getElementById("course-submissions-panel")
+        ?.classList.toggle("active", tabName === "submissions");
 
     if (tabName === "grades" && !gradesLoaded) {
         loadGrades();
@@ -346,16 +440,36 @@ function setActiveCourseTab(tabName) {
     if (tabName === "dropbox") {
         renderDropboxAssignments();
     }
+
+    if (tabName === "submissions") {
+        renderCourseSubmissionsTab();
+    }
 }
 
 function setGradeTabsVisible(visible) {
     const tabs = document.getElementById("course-tabs");
+    const gradesTab = document.querySelector('.course-tab[data-course-tab="grades"]');
+    const dropboxTab = document.querySelector('.course-tab[data-course-tab="dropbox"]');
+    const submissionsTab = document.getElementById("course-submissions-tab-btn");
 
     if (tabs) {
-        tabs.style.display = visible ? "flex" : "none";
+        tabs.style.display = "flex";
     }
 
-    if (!visible) {
+    if (gradesTab) {
+        gradesTab.style.display = visible ? "inline-flex" : "none";
+    }
+
+    if (dropboxTab) {
+        dropboxTab.style.display = visible ? "inline-flex" : "none";
+    }
+
+    if (submissionsTab) {
+        submissionsTab.style.display = isInstructor ? "inline-flex" : "none";
+    }
+
+    const activeTab = document.querySelector(".course-tab.active")?.dataset.courseTab;
+    if ((!visible && ["grades", "dropbox"].includes(activeTab)) || (visible && activeTab === "submissions")) {
         setActiveCourseTab("content");
     }
 }
@@ -567,10 +681,44 @@ function setAssignmentModalTab(tabName) {
         ?.classList.toggle("active", tabName === "details");
     document.getElementById("assignment-dropbox-tab-panel")
         ?.classList.toggle("active", tabName === "dropbox");
+    document.getElementById("assignment-submissions-tab-panel")
+        ?.classList.toggle("active", tabName === "submissions");
 
     if (tabName === "dropbox" && currentAssignmentDetailsId) {
         loadAssignmentSubmissions(currentAssignmentDetailsId);
     }
+
+    if (tabName === "submissions" && currentAssignmentDetailsId) {
+        loadStaffAssignmentSubmissions(currentAssignmentDetailsId);
+    }
+}
+
+function renderCourseSubmissionsTab() {
+    const list = document.getElementById("course-submissions-list");
+
+    if (!list) {
+        return;
+    }
+
+    if (!isInstructor) {
+        list.innerHTML = '<p class="grades-empty">Student submissions are available to course staff.</p>';
+        return;
+    }
+
+    if (!currentAssignments.length) {
+        list.innerHTML = '<p class="grades-empty">No assignments have been created yet.</p>';
+        return;
+    }
+
+    list.innerHTML = currentAssignments.map((assignment) => `
+        <div class="grade-row submission-shortcut-row" onclick="openAssignmentDetails(${assignment.assignment_id}, 'submissions')">
+            <div>
+                <div class="grade-title">${escapeHtml(assignment.title || "Untitled assignment")}</div>
+                <div class="grade-meta">Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
+            </div>
+            <div class="grade-score">View Submissions</div>
+        </div>
+    `).join("");
 }
 
 function openAssignmentDropbox(assignmentId) {
@@ -585,6 +733,10 @@ function openAssignmentDetails(assignmentId, initialTab = "details") {
     }
 
     currentAssignmentDetailsId = assignmentId;
+    const submissionsTab = document.getElementById("assignment-submissions-tab-btn");
+    if (submissionsTab) {
+        submissionsTab.style.display = isInstructor ? "inline-flex" : "none";
+    }
     document.getElementById("assignment-details-title").textContent = assignment.title || "Assignment Details";
     document.getElementById("assignment-details-description").textContent =
         assignment.description || "No description provided.";
@@ -616,7 +768,7 @@ function openAssignmentDetails(assignmentId, initialTab = "details") {
     }
 
     resetAssignmentDropbox(assignment);
-    setAssignmentModalTab(initialTab);
+    setAssignmentModalTab(isInstructor && initialTab === "dropbox" ? "submissions" : initialTab);
     document.getElementById("assignment-details-modal").style.display = "flex";
 }
 
@@ -783,6 +935,141 @@ async function loadAssignmentSubmissions(assignmentId) {
     }
 }
 
+function renderStaffSubmissionList(submissions) {
+    if (!submissions.length) {
+        return '<p class="grades-empty">No student submissions yet.</p>';
+    }
+
+    return `
+        <div class="staff-submission-list">
+            ${submissions.map((submission) => {
+                const submittedAt = formatAssignmentDate(submission.submitted_at);
+                const score = submission.score ?? "";
+                const feedback = submission.feedback || "";
+                const fileLink = submission.file_url
+                    ? `<a href="${escapeHtml(submission.file_url)}" target="_blank" rel="noopener">Open submitted file</a>`
+                    : "<span>No file attached.</span>";
+                const note = submission.submission_text
+                    ? `<p class="dropbox-history-note">${escapeHtml(submission.submission_text)}</p>`
+                    : "";
+                const latestBadge = submission.is_latest
+                    ? '<span class="dropbox-history-pill">Latest</span>'
+                    : '<span class="dropbox-history-pill pending">Past submission</span>';
+                const gradeControls = submission.is_latest
+                    ? `
+                        <div class="staff-grade-form">
+                            <label>
+                                Score
+                                <input id="grade-score-${submission.submission_id}" type="number" min="0" step="0.01" value="${escapeHtml(score)}">
+                            </label>
+                            <label>
+                                Feedback
+                                <textarea id="grade-feedback-${submission.submission_id}" rows="2">${escapeHtml(feedback)}</textarea>
+                            </label>
+                            <div class="staff-grade-actions">
+                                <button type="button" onclick="saveSubmissionGrade(${submission.submission_id})">Save Grade</button>
+                                <button type="button" class="danger-btn" onclick="clearSubmissionGrade(${submission.submission_id})">Clear Grade</button>
+                            </div>
+                        </div>
+                    `
+                    : `
+                        <div class="staff-grade-readonly">
+                            ${score !== "" ? `<span>Score: ${escapeHtml(formatGradeNumber(score))}</span>` : "<span>Not graded</span>"}
+                            ${feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(feedback)}</p>` : ""}
+                        </div>
+                    `;
+
+                return `
+                    <div class="staff-submission-item">
+                        <div class="staff-submission-head">
+                            <div>
+                                <strong>${escapeHtml(submission.student_name || "Student")}</strong>
+                                <span>${escapeHtml(submission.student_email || "")}</span>
+                            </div>
+                            <div class="staff-submission-meta">
+                                ${latestBadge}
+                                <span class="dropbox-history-date">Submitted: ${escapeHtml(submittedAt)}</span>
+                            </div>
+                        </div>
+                        ${fileLink}
+                        ${note}
+                        ${gradeControls}
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
+async function loadStaffAssignmentSubmissions(assignmentId) {
+    const list = document.getElementById("assignment-submissions-list");
+
+    if (!list) {
+        return;
+    }
+
+    list.innerHTML = '<p class="grades-empty">Loading student submissions...</p>';
+
+    try {
+        const response = await axios.get(`/api/assignments/${assignmentId}/submissions`);
+        list.innerHTML = renderStaffSubmissionList(response.data || []);
+    } catch (error) {
+        const message = error.response?.data || "Failed to load student submissions.";
+        list.innerHTML = `<p class="grades-error">${escapeHtml(message)}</p>`;
+    }
+}
+
+async function saveSubmissionGrade(submissionId) {
+    const scoreInput = document.getElementById(`grade-score-${submissionId}`);
+    const feedbackInput = document.getElementById(`grade-feedback-${submissionId}`);
+
+    if (!scoreInput || !feedbackInput) {
+        return;
+    }
+
+    const score = scoreInput.value.trim();
+
+    if (score === "" || Number(score) < 0) {
+        alert("Please enter a score of 0 or higher");
+        return;
+    }
+
+    try {
+        await axios.put(`/api/submissions/${submissionId}/grade`, {
+            score: Number(score),
+            feedback: feedbackInput.value.trim() || null,
+        });
+
+        if (currentAssignmentDetailsId) {
+            await loadStaffAssignmentSubmissions(currentAssignmentDetailsId);
+        }
+
+        gradesLoaded = false;
+        showActionMessage("Grade saved.", "success");
+    } catch (error) {
+        showActionMessage(error.response?.data || "Failed to save grade.", "error");
+    }
+}
+
+async function clearSubmissionGrade(submissionId) {
+    if (!confirm("Clear this grade?")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/submissions/${submissionId}/grade`);
+
+        if (currentAssignmentDetailsId) {
+            await loadStaffAssignmentSubmissions(currentAssignmentDetailsId);
+        }
+
+        gradesLoaded = false;
+        showActionMessage("Grade cleared.", "success");
+    } catch (error) {
+        showActionMessage(error.response?.data || "Failed to clear grade.", "error");
+    }
+}
+
 async function loadCourseTitle() {
     try {
         const response = await axios.get("/api/course/" + courseId);
@@ -800,11 +1087,12 @@ async function loadManageAccess() {
         const response = await axios.get(`/api/courses/${courseId}/manage-access`);
         isInstructor = Boolean(response.data.can_manage);
 
-        const controls = document.getElementById("instructor-controls");
-        if (controls) {
-            controls.style.display = isInstructor ? "flex" : "none";
+        const heroActions = document.getElementById("course-hero-actions");
+        if (heroActions) {
+            heroActions.style.display = isInstructor ? "flex" : "none";
         }
 
+        setModuleCardAddVisible(isInstructor);
         setAssignmentCardAddVisible(isInstructor);
         setQuizCardAddVisible(isInstructor);
 
@@ -814,16 +1102,32 @@ async function loadManageAccess() {
         }
 
         setGradeTabsVisible(!isInstructor);
+        if (isInstructor) {
+            hideCourseProgress();
+        }
     } catch (error) {
         isInstructor = false;
+        const heroActions = document.getElementById("course-hero-actions");
+        if (heroActions) {
+            heroActions.style.display = "none";
+        }
         const actionStrip = document.querySelector(".course-action-strip");
         if (actionStrip) {
             actionStrip.style.display = "grid";
         }
+        setModuleCardAddVisible(false);
         setAssignmentCardAddVisible(false);
         setQuizCardAddVisible(false);
         setGradeTabsVisible(true);
         console.error("Failed to load course management access:", error);
+    }
+}
+
+function setModuleCardAddVisible(visible) {
+    const moduleCardAddButton = document.getElementById("add-module-btn");
+
+    if (moduleCardAddButton) {
+        moduleCardAddButton.style.display = visible ? "inline-flex" : "none";
     }
 }
 
@@ -1481,27 +1785,25 @@ function bindInstructorControls() {
     document.getElementById("close-course-modal-btn")?.addEventListener("click", closeCourseModal);
     document.getElementById("course-paid-input")?.addEventListener("change", updateCoursePaidFields);
 
-    document.getElementById("student-view-btn")?.addEventListener("click", () => {
-        document.getElementById("instructor-controls").style.display = "none";
+    document.getElementById("student-view-btn")?.addEventListener("click", async () => {
+        const heroActions = document.getElementById("course-hero-actions");
+        if (heroActions) {
+            heroActions.style.display = "none";
+        }
         isInstructor = false;
+        setModuleCardAddVisible(false);
         setAssignmentCardAddVisible(false);
         setQuizCardAddVisible(false);
         setGradeTabsVisible(true);
+        await loadCourseModuleProgresses();
         loadModules();
         loadAssignments();
         loadQuizzes();
+        loadCourseProgress();
     });
 
     document.getElementById("add-module-btn")?.addEventListener("click", () => {
         openModuleModal();
-    });
-
-    document.getElementById("add-assignment-btn")?.addEventListener("click", () => {
-        openAssignmentModal();
-    });
-
-    document.getElementById("add-quiz-btn")?.addEventListener("click", () => {
-        window.location.href = `/course/${courseId}/quiz-creator`;
     });
 
     document.getElementById("assignment-card-add-btn")?.addEventListener("click", () => {
@@ -1548,6 +1850,8 @@ async function init() {
     await loadCourseTitle();
     await loadEnrollmentStatus();
     await loadManageAccess();
+    await loadCourseProgress();
+    await loadCourseModuleProgresses();
     await loadModules();
     await loadAssignments();
     await loadQuizzes();
