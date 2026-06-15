@@ -1,12 +1,19 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use serde::Serialize;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 
 use crate::entity::{
     courses,
     quiz::{self, Entity as QuizEntity},
 };
+use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
+use crate::entity::quiz_options::{Column as QuizOptionColumn, Entity as QuizOptionEntity};
+use crate::entity::quiz_questions::{Column as QuizQuestionColumn, Entity as QuizQuestionEntity};
 use crate::models::quiz::{CreateQuiz, UpdateQuiz};
+use crate::services::auth_helpers::{get_role_ids, get_user_id, is_enrolled, is_student_only};
 use crate::services::course_service::can_manage_course;
 
 async fn require_can_manage_course(
@@ -32,6 +39,29 @@ async fn require_can_manage_course(
     }
 }
 
+#[derive(Serialize)]
+struct AttemptQuizOption {
+    option_id: i32,
+    option_text: String,
+    position: i32,
+}
+
+#[derive(Serialize)]
+struct AttemptQuizQuestion {
+    question_id: i32,
+    question_type: crate::entity::quiz_questions::QuestionType,
+    question_text: String,
+    position: i32,
+    points: i32,
+    options: Vec<AttemptQuizOption>,
+}
+
+#[derive(Serialize)]
+struct AttemptQuizPayload {
+    quiz: quiz::Model,
+    questions: Vec<AttemptQuizQuestion>,
+}
+
 pub async fn list_quizzes(db: &DatabaseConnection) -> HttpResponse {
     match QuizEntity::find().all(db).await {
         Ok(quizzes) if quizzes.is_empty() => HttpResponse::NotFound().body("No quizzes found"),
@@ -50,6 +80,100 @@ pub async fn list_quizzes_by_course(db: &DatabaseConnection, course_id: i32) -> 
         Ok(quizzes) => HttpResponse::Ok().json(quizzes),
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
+}
+
+pub async fn get_quiz_for_attempt(
+    db: &DatabaseConnection,
+    session: &Session,
+    quiz_id: i32,
+) -> HttpResponse {
+    let user_id = match get_user_id(session) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+
+    let quiz = match QuizEntity::find_by_id(quiz_id).one(db).await {
+        Ok(Some(quiz)) => quiz,
+        Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
+        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+    };
+
+    if let Some(starts_at) = quiz.starts_at {
+        if starts_at > chrono::Local::now().naive_local() {
+            return HttpResponse::Forbidden().body("This quiz is not open yet");
+        }
+    }
+
+    if is_student_only(&get_role_ids(session)) {
+        match is_enrolled(db, user_id, quiz.course_id).await {
+            Ok(true) => {}
+            Ok(false) => return HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz"),
+            Err(response) => return response,
+        }
+
+        if let Some(max_attempts) = quiz.max_attempts {
+            match QuizAttemptEntity::find()
+                .filter(QuizAttemptColumn::QuizId.eq(quiz_id))
+                .filter(QuizAttemptColumn::UserId.eq(user_id))
+                .all(db)
+                .await
+            {
+                Ok(attempts) => {
+                    let has_open_attempt = attempts.iter().any(|attempt| attempt.submitted_at.is_none());
+
+                    if attempts.len() >= max_attempts as usize && !has_open_attempt {
+                        return HttpResponse::Forbidden().body("No attempts left");
+                    }
+                }
+                Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+            }
+        }
+    }
+
+    let questions = match QuizQuestionEntity::find()
+        .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
+        .order_by_asc(QuizQuestionColumn::Position)
+        .all(db)
+        .await
+    {
+        Ok(questions) => questions,
+        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+    };
+
+    let mut attempt_questions = Vec::with_capacity(questions.len());
+
+    for question in questions {
+        let options = match QuizOptionEntity::find()
+            .filter(QuizOptionColumn::QuestionId.eq(question.question_id))
+            .order_by_asc(QuizOptionColumn::Position)
+            .all(db)
+            .await
+        {
+            Ok(options) => options
+                .into_iter()
+                .map(|option| AttemptQuizOption {
+                    option_id: option.option_id,
+                    option_text: option.option_text,
+                    position: option.position,
+                })
+                .collect(),
+            Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        };
+
+        attempt_questions.push(AttemptQuizQuestion {
+            question_id: question.question_id,
+            question_type: question.question_type,
+            question_text: question.question_text,
+            position: question.position,
+            points: question.points,
+            options,
+        });
+    }
+
+    HttpResponse::Ok().json(AttemptQuizPayload {
+        quiz,
+        questions: attempt_questions,
+    })
 }
 
 pub async fn create_quiz(

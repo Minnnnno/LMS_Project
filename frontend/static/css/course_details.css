@@ -707,6 +707,15 @@
     background: #f8fafc;
 }
 
+.quiz-row-disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.quiz-row-disabled:hover {
+    background: transparent;
+}
+
 .assignment-row:last-child,
 .quiz-row:last-child {
     border-bottom: 0;
@@ -723,6 +732,17 @@
     margin-top: 4px;
     color: #667085;
     font-size: 0.9rem;
+}
+
+.quiz-attempt-state {
+    margin-top: 6px;
+    color: #1570ef;
+    font-size: 0.84rem;
+    font-weight: 800;
+}
+
+.quiz-attempt-state.blocked {
+    color: #b42318;
 }
 
 .assignment-save-status {
