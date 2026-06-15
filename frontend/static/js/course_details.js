@@ -1882,8 +1882,6 @@ function bindInstructorControls() {
         openModuleModal();
     });
 
-<<<<<<< HEAD
-=======
     document.getElementById("add-assignment-btn")?.addEventListener("click", () => {
         openAssignmentModal();
     });
@@ -1892,7 +1890,6 @@ function bindInstructorControls() {
         window.location.href = `/course/${courseId}/quiz-builder`;
     });
 
->>>>>>> 25d6b41887e346fb6c7826e217af1e82a902e9df
     document.getElementById("assignment-card-add-btn")?.addEventListener("click", () => {
         openAssignmentModal();
     });
