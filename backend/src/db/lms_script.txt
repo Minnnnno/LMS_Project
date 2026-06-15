@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
   description  TEXT,
   max_attempts INT DEFAULT NULL,       -- NULL = unlimited
   time_limit   INT DEFAULT NULL,       -- in minutes, NULL = no limit
-  starts_at    TIMESTAMP DEFAULT NULL, -- NULL = not scheduled (inaccessible)
+  starts_at    TIMESTAMP DEFAULT NULL, -- NULL = available anytime
   ends_at      TIMESTAMP GENERATED ALWAYS AS (
     starts_at + (INTERVAL '1 minute' * 10)
   ) STORED,                            -- always 10 minutes after starts_at

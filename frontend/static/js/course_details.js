@@ -11,6 +11,7 @@ let currentAssignmentBriefUrl = null;
 let gradesLoaded = false;
 let isEnrolled = false;
 let currentAssignmentDetailsId = null;
+let currentQuizzes = [];
 
 function goToModuleContent(moduleId) {
     window.location.href = "/module-content/" + moduleId;
@@ -259,6 +260,56 @@ async function loadAssignments() {
         const assignmentList = document.getElementById("assignment-list");
         assignmentList.innerHTML = "<p>No tasks due.</p>";
         console.error("Failed to load assignments:", error);
+    }
+}
+
+async function loadQuizzes() {
+    try {
+        const response = await axios.get("/api/quiz/" + courseId);
+        const quizzes = Array.isArray(response.data) ? response.data : [];
+        currentQuizzes = quizzes;
+        const quizList = document.getElementById("quiz-list");
+
+        if (!quizList) {
+            return;
+        }
+
+        quizList.innerHTML = "";
+
+        if (!quizzes.length) {
+            quizList.innerHTML = isInstructor
+                ? '<p class="quiz-empty">No quizzes yet. Use Add Quiz to create one.</p>'
+                : '<p class="quiz-empty">No quizzes available.</p>';
+            return;
+        }
+
+        quizzes.forEach((quiz) => {
+            const adminButtons = isInstructor
+                ? `
+                    <div class="module-actions">
+                        <button class="module-action-btn edit-btn" onclick="editQuiz(event, ${quiz.quiz_id})">Edit</button>
+                        <button class="module-action-btn delete-btn" onclick="deleteQuiz(event, ${quiz.quiz_id})">Delete</button>
+                    </div>
+                `
+                : "";
+
+            quizList.innerHTML += `
+                <div class="quiz-row">
+                    <div>
+                        <div class="quiz-title">${escapeHtml(quiz.title || "Untitled quiz")}</div>
+                        <div class="quiz-subtitle">${escapeHtml(formatQuizMeta(quiz))}</div>
+                    </div>
+                    ${adminButtons}
+                </div>
+            `;
+        });
+    } catch (error) {
+        currentQuizzes = [];
+        const quizList = document.getElementById("quiz-list");
+        if (quizList) {
+            quizList.innerHTML = '<p class="quiz-empty">Unable to load quizzes right now.</p>';
+        }
+        console.error("Failed to load quizzes:", error);
     }
 }
 
@@ -753,6 +804,7 @@ async function loadManageAccess() {
         }
 
         setAssignmentCardAddVisible(isInstructor);
+        setQuizCardAddVisible(isInstructor);
 
         const actionStrip = document.querySelector(".course-action-strip");
         if (actionStrip) {
@@ -767,6 +819,7 @@ async function loadManageAccess() {
             actionStrip.style.display = "grid";
         }
         setAssignmentCardAddVisible(false);
+        setQuizCardAddVisible(false);
         setGradeTabsVisible(true);
         console.error("Failed to load course management access:", error);
     }
@@ -777,6 +830,14 @@ function setAssignmentCardAddVisible(visible) {
 
     if (assignmentCardAddButton) {
         assignmentCardAddButton.style.display = visible ? "inline-flex" : "none";
+    }
+}
+
+function setQuizCardAddVisible(visible) {
+    const quizCardAddButton = document.getElementById("quiz-card-add-btn");
+
+    if (quizCardAddButton) {
+        quizCardAddButton.style.display = visible ? "inline-flex" : "none";
     }
 }
 
@@ -829,6 +890,37 @@ function formatAssignmentDate(value) {
         dateStyle: "medium",
         timeStyle: "short",
     });
+}
+
+function formatQuizDate(value) {
+    if (!value) {
+        return "Available anytime";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleString("en-SG", {
+        dateStyle: "medium",
+        timeStyle: "short",
+    });
+}
+
+function formatQuizMeta(quiz) {
+    const parts = [formatQuizDate(quiz.starts_at)];
+
+    if (quiz.time_limit) {
+        parts.push(`${quiz.time_limit} min`);
+    }
+
+    if (quiz.max_attempts) {
+        parts.push(`${quiz.max_attempts} attempt${quiz.max_attempts === 1 ? "" : "s"}`);
+    }
+
+    return parts.join(" · ");
 }
 
 function toDatetimeLocalValue(value) {
@@ -1170,6 +1262,28 @@ function closeAssignmentModal() {
     document.getElementById("assignment-modal").style.display = "none";
 }
 
+function editQuiz(event, quizId) {
+    event.stopPropagation();
+    window.location.href = `/course/${courseId}/quiz-creator?quiz_id=${quizId}`;
+}
+
+async function deleteQuiz(event, quizId) {
+    event.stopPropagation();
+
+    if (!confirm("Delete this quiz?")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/quiz/${quizId}`);
+        await loadQuizzes();
+        showActionMessage("Quiz deleted.", "success");
+    } catch (error) {
+        const message = error.response?.data || "Failed to delete quiz.";
+        showActionMessage(message, "error");
+    }
+}
+
 function editAssignment(event, assignmentId) {
     event.stopPropagation();
     const assignment = currentAssignments.find((item) => item.assignment_id === assignmentId);
@@ -1327,9 +1441,11 @@ function bindInstructorControls() {
         document.getElementById("instructor-controls").style.display = "none";
         isInstructor = false;
         setAssignmentCardAddVisible(false);
+        setQuizCardAddVisible(false);
         setGradeTabsVisible(true);
         loadModules();
         loadAssignments();
+        loadQuizzes();
     });
 
     document.getElementById("add-module-btn")?.addEventListener("click", () => {
@@ -1340,8 +1456,16 @@ function bindInstructorControls() {
         openAssignmentModal();
     });
 
+    document.getElementById("add-quiz-btn")?.addEventListener("click", () => {
+        window.location.href = `/course/${courseId}/quiz-creator`;
+    });
+
     document.getElementById("assignment-card-add-btn")?.addEventListener("click", () => {
         openAssignmentModal();
+    });
+
+    document.getElementById("quiz-card-add-btn")?.addEventListener("click", () => {
+        window.location.href = `/course/${courseId}/quiz-creator`;
     });
 
     document.getElementById("close-module-modal-btn")?.addEventListener("click", () => {
@@ -1382,6 +1506,7 @@ async function init() {
     await loadManageAccess();
     await loadModules();
     await loadAssignments();
+    await loadQuizzes();
 }
 
 init();

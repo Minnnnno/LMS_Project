@@ -71,7 +71,7 @@ pub async fn create_question(
     };
 
     match question.insert(db).await {
-        Ok(_) => HttpResponse::Ok().body("New quiz question created successfully!"),
+        Ok(question) => HttpResponse::Ok().json(question),
         Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
     }
 }

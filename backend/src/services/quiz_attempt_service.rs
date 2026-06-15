@@ -3,6 +3,7 @@ use actix_web::HttpResponse;
 use chrono::Local;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
+use crate::entity::quiz::Entity as QuizEntity;
 use crate::entity::quiz_attempts::{
     ActiveModel as QuizAttemptActiveModel, Column as QuizAttemptColumn,
     Entity as QuizAttemptEntity,
@@ -79,6 +80,18 @@ pub async fn create_attempt(
         Ok(id) => id,
         Err(response) => return response,
     };
+
+    let quiz = match QuizEntity::find_by_id(data.quiz_id).one(db).await {
+        Ok(Some(quiz)) => quiz,
+        Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
+        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+    };
+
+    if let Some(starts_at) = quiz.starts_at {
+        if starts_at > Local::now().naive_local() {
+            return HttpResponse::Forbidden().body("This quiz is not open yet");
+        }
+    }
 
     let attempt = QuizAttemptActiveModel {
         quiz_id: Set(data.quiz_id),
