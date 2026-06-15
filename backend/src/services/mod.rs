@@ -5,6 +5,7 @@ pub mod course_service;
 pub mod email_verification_service;
 pub mod enrollment_service;
 pub mod mailer_service;
+pub mod password_reset_service;
 pub mod module_content_service;
 pub mod module_progress_service;
 pub mod module_service;
