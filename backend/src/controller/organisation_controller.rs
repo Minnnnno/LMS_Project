@@ -868,20 +868,12 @@ pub async fn delete_organisation(
     session: Session,
     path: web::Path<i32>,
 ) -> impl Responder {
+    let org_id = path.into_inner();
     if !has_role(&session, "LMS Admin") {
         return HttpResponse::Forbidden().body("LMS Admin role required");
     }
 
-    let org_id = path.into_inner();
-    match organisations::Entity::delete_by_id(org_id)
-        .exec(db.get_ref())
-        .await
-    {
-        Ok(res) if res.rows_affected > 0 => HttpResponse::Ok().body("Organisation deleted"),
-        Ok(_) => HttpResponse::NotFound().body("Organisation not found"),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Failed to delete organisation: {}", err)),
-    }
+    organisation_service::delete_organisation_and_dependents(db.get_ref(), org_id).await
 }
 
 // ── Members ────────────────────────────────────────────────────────────────────

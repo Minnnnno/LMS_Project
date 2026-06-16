@@ -29,10 +29,4 @@ impl AppState {
         viewers.len()
     }
 
-    pub fn remove_viewer(&self, viewer_id: &str) -> usize {
-        let mut viewers = self.viewers.lock().unwrap_or_else(|error| error.into_inner());
-
-        viewers.remove(viewer_id);
-        viewers.len()
-    }
 }

@@ -29,18 +29,3 @@ pub async fn viewer_heartbeat(
     })
 }
 
-#[post("/viewers/disconnect")]
-pub async fn viewer_disconnect(
-    state: web::Data<AppState>,
-    body: web::Json<ViewerHeartbeat>,
-) -> impl Responder {
-    let viewer_id = body.viewer_id.trim();
-
-    if viewer_id.is_empty() || viewer_id.len() > 128 {
-        return HttpResponse::BadRequest().body("Invalid viewer ID");
-    }
-
-    HttpResponse::Ok().json(ViewerCount {
-        active_viewers: state.remove_viewer(viewer_id),
-    })
-}
