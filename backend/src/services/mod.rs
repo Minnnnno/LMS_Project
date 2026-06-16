@@ -11,6 +11,7 @@ pub mod module_progress_service;
 pub mod module_service;
 pub mod organisation_service;
 pub mod payment_service;
+pub mod prerequisite_service;
 pub mod quiz_answer_service;
 pub mod quiz_attempt_service;
 pub mod quiz_option_service;

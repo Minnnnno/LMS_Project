@@ -1,11 +1,45 @@
 // course.js — CoursesPage class for the /courses page.
 // Depends on lms-core.js (HtmlUtils, Course, LmsApi, PageState) and enrollment.js.
 
+const COURSE_IMAGE_PRESETS = [
+    { title: "Software Development", url: "/static/images/course-presets/software-development.jpg", width: 1600, height: 900 },
+    { title: "Data Analytics", url: "/static/images/course-presets/data-analytics.jpg", width: 1600, height: 900 },
+    { title: "Cybersecurity", url: "/static/images/course-presets/cybersecurity.jpg", width: 1600, height: 900 },
+    { title: "Cloud Computing", url: "/static/images/course-presets/cloud-computing.jpg", width: 1600, height: 900 },
+    { title: "Artificial Intelligence", url: "/static/images/course-presets/artificial-intelligence.jpg", width: 1600, height: 900 },
+    { title: "Business Management", url: "/static/images/course-presets/business-management.jpg", width: 1600, height: 900 },
+    { title: "Digital Marketing", url: "/static/images/course-presets/digital-marketing.jpg", width: 1600, height: 900 },
+    { title: "Entrepreneurship", url: "/static/images/course-presets/entrepreneurship.jpg", width: 1600, height: 900 },
+    { title: "Finance", url: "/static/images/course-presets/finance.jpg", width: 1600, height: 900 },
+    { title: "Project Management", url: "/static/images/course-presets/project-management.jpg", width: 1600, height: 900 },
+    { title: "Design Thinking", url: "/static/images/course-presets/design-thinking.jpg", width: 1600, height: 900 },
+    { title: "UI/UX Design", url: "/static/images/course-presets/ui-ux-design.jpg", width: 1600, height: 900 },
+    { title: "Photography", url: "/static/images/course-presets/photography.jpg", width: 1600, height: 900 },
+    { title: "Healthcare", url: "/static/images/course-presets/healthcare.jpg", width: 1600, height: 900 },
+    { title: "Education", url: "/static/images/course-presets/education.jpg", width: 1600, height: 900 },
+    { title: "Communication", url: "/static/images/course-presets/communication.jpg", width: 1600, height: 900 },
+    { title: "Leadership", url: "/static/images/course-presets/leadership.jpg", width: 1600, height: 900 },
+    { title: "Languages", url: "/static/images/course-presets/languages.jpg", width: 1600, height: 900 },
+    { title: "Engineering", url: "/static/images/course-presets/engineering.jpg", width: 1600, height: 900 },
+    { title: "Hospitality", url: "/static/images/course-presets/hospitality.jpg", width: 1600, height: 900 },
+];
+
+const COURSE_IMAGE_RULES = {
+    maxFileSizeBytes: 5 * 1024 * 1024,
+    minWidth: 1200,
+    minHeight: 675,
+    targetRatio: 16 / 9,
+    ratioTolerance: 0.08,
+};
+
 class CoursesPage {
     constructor() {
         this.organisationCourseIds = new Set();
         this.enrolledCourseIds     = new Set();
         this.canManageOrg          = false;
+        this.selectedPresetImage   = null;
+        this.selectedImageFile     = null;
+        this.selectedImageObjectUrl = null;
     }
 
     // ---------------------------------------------------------------------------
@@ -70,10 +104,15 @@ class CoursesPage {
     openModal() {
         document.getElementById("create-course-name").value        = "";
         document.getElementById("create-course-description").value = "";
-        document.getElementById("create-course-image").value       = "";
+        document.getElementById("create-course-image-file").value  = "";
         document.getElementById("create-course-price").value       = "0";
         document.getElementById("create-course-currency").value    = "SGD";
         document.getElementById("create-course-paid").checked      = false;
+        this.selectedPresetImage = null;
+        this.selectedImageFile = null;
+        this._clearImageObjectUrl();
+        this._renderPresetImages();
+        this._setImagePreview("");
         this._setModalState(false, "");
         document.getElementById("create-course-modal").style.display = "flex";
     }
@@ -92,10 +131,169 @@ class CoursesPage {
         if (status)   { status.textContent = message; status.className = isError ? "course-form-status error" : "course-form-status"; }
     }
 
+    _clearImageObjectUrl() {
+        if (this.selectedImageObjectUrl) {
+            URL.revokeObjectURL(this.selectedImageObjectUrl);
+            this.selectedImageObjectUrl = null;
+        }
+    }
+
+    _setImagePreview(imageUrl) {
+        const preview = document.getElementById("create-course-image-preview");
+
+        if (!preview) return;
+
+        if (!imageUrl) {
+            preview.style.backgroundImage = "";
+            preview.innerHTML = "<span>No image selected</span>";
+            return;
+        }
+
+        preview.style.backgroundImage = `url('${imageUrl}')`;
+        preview.innerHTML = "";
+    }
+
+    _renderPresetImages() {
+        const grid = document.getElementById("create-course-preset-grid");
+
+        if (!grid) return;
+
+        grid.innerHTML = COURSE_IMAGE_PRESETS.map((preset, index) => `
+            <button
+                class="course-preset-option"
+                type="button"
+                data-preset-index="${index}"
+                onclick="window.coursesPage.selectPresetImage(${index})"
+            >
+                <span class="course-preset-thumb" style="background-image: url('${HtmlUtils.escape(preset.url)}')"></span>
+                <span>${HtmlUtils.escape(preset.title)}</span>
+            </button>
+        `).join("");
+    }
+
+    _syncPresetSelection() {
+        document.querySelectorAll(".course-preset-option").forEach((button) => {
+            const preset = COURSE_IMAGE_PRESETS[Number(button.dataset.presetIndex)];
+            button.classList.toggle("selected", preset?.url === this.selectedPresetImage?.url);
+        });
+    }
+
+    selectPresetImage(index) {
+        const preset = COURSE_IMAGE_PRESETS[index];
+
+        if (!preset || this._validateImageSize(preset.width, preset.height)) {
+            this._setModalState(false, "Selected preset image does not fit the required cover size.", true);
+            return;
+        }
+
+        this.selectedPresetImage = preset;
+        this.selectedImageFile = null;
+        this._clearImageObjectUrl();
+        document.getElementById("create-course-image-file").value = "";
+        this._setImagePreview(preset.url);
+        this._syncPresetSelection();
+        this._setModalState(false, "");
+    }
+
+    _validateImageSize(width, height) {
+        if (width < COURSE_IMAGE_RULES.minWidth || height < COURSE_IMAGE_RULES.minHeight) {
+            return `Image must be at least ${COURSE_IMAGE_RULES.minWidth} x ${COURSE_IMAGE_RULES.minHeight}.`;
+        }
+
+        if (Math.abs((width / height) - COURSE_IMAGE_RULES.targetRatio) > COURSE_IMAGE_RULES.ratioTolerance) {
+            return "Image must be close to a 16:9 course cover shape.";
+        }
+
+        return "";
+    }
+
+    async _getImageDimensions(file) {
+        const objectUrl = URL.createObjectURL(file);
+
+        try {
+            const image = new Image();
+            const loaded = new Promise((resolve, reject) => {
+                image.onload = () => resolve({
+                    width: image.naturalWidth,
+                    height: image.naturalHeight,
+                });
+                image.onerror = () => reject(new Error("Could not read image dimensions."));
+            });
+
+            image.src = objectUrl;
+            return await loaded;
+        } finally {
+            URL.revokeObjectURL(objectUrl);
+        }
+    }
+
+    async _validateUploadedImage(file) {
+        if (!file.type.startsWith("image/")) {
+            return "Please upload an image file.";
+        }
+
+        if (file.size > COURSE_IMAGE_RULES.maxFileSizeBytes) {
+            return "Image must be 5 MB or smaller.";
+        }
+
+        const dimensions = await this._getImageDimensions(file);
+        return this._validateImageSize(dimensions.width, dimensions.height);
+    }
+
+    async handleCourseImageFileChange(event) {
+        const file = event.target.files?.[0] || null;
+
+        if (!file) {
+            this.selectedImageFile = null;
+            this._clearImageObjectUrl();
+            this._setImagePreview(this.selectedPresetImage?.url || "");
+            return;
+        }
+
+        const validationMessage = await this._validateUploadedImage(file);
+
+        if (validationMessage) {
+            event.target.value = "";
+            this.selectedImageFile = null;
+            this._setModalState(false, validationMessage, true);
+            return;
+        }
+
+        this.selectedImageFile = file;
+        this.selectedPresetImage = null;
+        this._syncPresetSelection();
+        this._clearImageObjectUrl();
+        this.selectedImageObjectUrl = URL.createObjectURL(file);
+        this._setImagePreview(this.selectedImageObjectUrl);
+        this._setModalState(false, "");
+    }
+
+    async _uploadCourseImage(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folder", "lms/courses");
+
+        const response = await axios.post("/api/cloudinary/upload", formData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+            },
+        });
+
+        return response.data.secure_url;
+    }
+
+    async _getSelectedCourseImageUrl() {
+        if (this.selectedImageFile) {
+            this._setModalState(true, "Uploading course image...");
+            return this._uploadCourseImage(this.selectedImageFile);
+        }
+
+        return this.selectedPresetImage?.url || null;
+    }
+
     async createCourse() {
         const name        = document.getElementById("create-course-name").value.trim();
         const description = document.getElementById("create-course-description").value.trim();
-        const imageUrl    = document.getElementById("create-course-image").value.trim();
         const price       = Number(document.getElementById("create-course-price").value || 0);
         const currency    = document.getElementById("create-course-currency").value || "SGD";
         const isPaid      = document.getElementById("create-course-paid").checked;
@@ -110,6 +308,8 @@ class CoursesPage {
         }
 
         try {
+            this._setModalState(true, "Creating course...");
+            const imageUrl = await this._getSelectedCourseImageUrl();
             this._setModalState(true, "Creating course...");
             await LmsApi.post("/api/courses", {
                 name,
@@ -265,6 +465,8 @@ class CoursesPage {
             ?.addEventListener("click", () => this.closeModal());
         document.getElementById("save-create-course-btn")
             ?.addEventListener("click", () => this.createCourse());
+        document.getElementById("create-course-image-file")
+            ?.addEventListener("change", (event) => this.handleCourseImageFileChange(event));
 
         await this.loadOrganisationCourses();
 

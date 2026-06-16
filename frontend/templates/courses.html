@@ -3,7 +3,7 @@
 {% block title %}Courses | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course.css?v=5">
+<link rel="stylesheet" href="/static/css/course.css?v=6">
 <section id="organisation-courses-section" class="course-section organisation-course-section" data-managed-only="{{ is_instructor_managed_only }}" hidden>
     <div class="course-section-heading">
         <div>
@@ -61,8 +61,25 @@
         <label for="create-course-description">Description</label>
         <textarea id="create-course-description" rows="3" placeholder="Brief course description"></textarea>
 
-        <label for="create-course-image">Background image URL</label>
-        <input id="create-course-image" type="url" placeholder="https://...">
+        <div class="course-image-picker">
+            <div>
+                <label>Background image</label>
+                <div id="create-course-image-preview" class="course-image-preview">
+                    <span>No image selected</span>
+                </div>
+            </div>
+
+            <div>
+                <label>Choose a preset</label>
+                <div id="create-course-preset-grid" class="course-preset-grid"></div>
+            </div>
+
+            <div>
+                <label for="create-course-image-file">Upload image</label>
+                <input id="create-course-image-file" type="file" accept="image/*">
+                <p class="course-image-help">Use a 16:9 image, at least 1200 x 675, up to 5 MB.</p>
+            </div>
+        </div>
 
         <div class="course-form-row">
             <div>
@@ -91,5 +108,5 @@
     </div>
 </div>
 
-<script src="/static/js/course.js?v=12"></script>
+<script src="/static/js/course.js?v=14"></script>
 {% endblock content %}

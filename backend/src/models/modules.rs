@@ -6,7 +6,8 @@ use serde::{Serialize, Deserialize};
 pub struct CreateModules {
     pub course_id: i32, 
     pub title: String, 
-    pub position: i32
+    pub position: i32,
+    pub prerequisite_module_ids: Option<Vec<i32>>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct ModulesQuery {
@@ -21,5 +22,6 @@ pub struct UpdateModules{
     pub module_id: Option<i32>,
     pub course_id: Option<i32>,
     pub title: Option<String>,
-    pub position: Option<i32>
+    pub position: Option<i32>,
+    pub prerequisite_module_ids: Option<Vec<i32>>,
 }

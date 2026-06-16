@@ -2,11 +2,44 @@ use crate::entity::{courses, modules};
 use crate::models::modules::{CreateModules, UpdateModules};
 use crate::services::course_service::can_manage_course;
 use crate::services::module_service::reorder_modules_for_course;
+use crate::services::prerequisite_service;
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct ModulePayload {
+    module_id: i32,
+    course_id: i32,
+    title: String,
+    position: i32,
+    prerequisite_module_ids: Vec<i32>,
+}
+
+async fn module_payloads(
+    db: &DatabaseConnection,
+    modules: Vec<modules::Model>,
+) -> Result<Vec<ModulePayload>, HttpResponse> {
+    let mut payloads = Vec::with_capacity(modules.len());
+
+    for module in modules {
+        let prerequisite_module_ids =
+            prerequisite_service::get_module_prerequisite_ids(db, module.module_id).await?;
+
+        payloads.push(ModulePayload {
+            module_id: module.module_id,
+            course_id: module.course_id,
+            title: module.title,
+            position: module.position,
+            prerequisite_module_ids,
+        });
+    }
+
+    Ok(payloads)
+}
 
 async fn require_can_manage_course_id(
     db: &DatabaseConnection,
@@ -39,7 +72,10 @@ pub async fn get_modules(db: web::Data<DatabaseConnection>) -> impl Responder {
             if modules.is_empty() {
                 HttpResponse::NotFound().body("No modules found")
             } else {
-                HttpResponse::Ok().json(modules)
+                match module_payloads(db.get_ref(), modules).await {
+                    Ok(payloads) => HttpResponse::Ok().json(payloads),
+                    Err(response) => response,
+                }
             }
         }
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
@@ -62,7 +98,10 @@ pub async fn get_modules_by_course_id(
             if modules.is_empty() {
                 HttpResponse::NotFound().body("No modules found")
             } else {
-                HttpResponse::Ok().json(modules)
+                match module_payloads(db.get_ref(), modules).await {
+                    Ok(payloads) => HttpResponse::Ok().json(payloads),
+                    Err(response) => response,
+                }
             }
         }
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
@@ -118,6 +157,19 @@ pub async fn update_module(
 
             match active.update(db.get_ref()).await {
                 Ok(_) => {
+                    if let Some(prerequisite_module_ids) = data.prerequisite_module_ids {
+                        if let Err(response) = prerequisite_service::replace_module_prerequisites(
+                            db.get_ref(),
+                            current_course_id,
+                            module_id,
+                            prerequisite_module_ids,
+                        )
+                        .await
+                        {
+                            return response;
+                        }
+                    }
+
                     if let Err(response) = reorder_modules_for_course(
                         db.get_ref(),
                         current_course_id,
@@ -169,6 +221,17 @@ pub async fn create_module(
 
     match module.insert(db.get_ref()).await {
         Ok(result) => {
+            if let Err(response) = prerequisite_service::replace_module_prerequisites(
+                db.get_ref(),
+                course_id,
+                result.module_id,
+                data.prerequisite_module_ids.unwrap_or_default(),
+            )
+            .await
+            {
+                return response;
+            }
+
             if let Err(response) = reorder_modules_for_course(
                 db.get_ref(),
                 course_id,

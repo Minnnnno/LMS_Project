@@ -15,6 +15,7 @@ use crate::entity::quiz_questions::{Column as QuizQuestionColumn, Entity as Quiz
 use crate::models::quiz::{CreateQuiz, UpdateQuiz};
 use crate::services::auth_helpers::{get_role_ids, get_user_id, is_enrolled, is_student_only};
 use crate::services::course_service::can_manage_course;
+use crate::services::prerequisite_service;
 
 async fn require_can_manage_course(
     db: &DatabaseConnection,
@@ -62,10 +63,54 @@ struct AttemptQuizPayload {
     questions: Vec<AttemptQuizQuestion>,
 }
 
+#[derive(Serialize)]
+struct QuizPayload {
+    quiz_id: i32,
+    course_id: i32,
+    title: String,
+    description: Option<String>,
+    max_attempts: Option<i32>,
+    time_limit: Option<i32>,
+    starts_at: Option<chrono::NaiveDateTime>,
+    ends_at: Option<chrono::NaiveDateTime>,
+    created_at: chrono::NaiveDateTime,
+    prerequisite_module_ids: Vec<i32>,
+}
+
+async fn quiz_payloads(
+    db: &DatabaseConnection,
+    quizzes: Vec<quiz::Model>,
+) -> Result<Vec<QuizPayload>, HttpResponse> {
+    let mut payloads = Vec::with_capacity(quizzes.len());
+
+    for quiz in quizzes {
+        let prerequisite_module_ids =
+            prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await?;
+
+        payloads.push(QuizPayload {
+            quiz_id: quiz.quiz_id,
+            course_id: quiz.course_id,
+            title: quiz.title,
+            description: quiz.description,
+            max_attempts: quiz.max_attempts,
+            time_limit: quiz.time_limit,
+            starts_at: quiz.starts_at,
+            ends_at: quiz.ends_at,
+            created_at: quiz.created_at,
+            prerequisite_module_ids,
+        });
+    }
+
+    Ok(payloads)
+}
+
 pub async fn list_quizzes(db: &DatabaseConnection) -> HttpResponse {
     match QuizEntity::find().all(db).await {
         Ok(quizzes) if quizzes.is_empty() => HttpResponse::NotFound().body("No quizzes found"),
-        Ok(quizzes) => HttpResponse::Ok().json(quizzes),
+        Ok(quizzes) => match quiz_payloads(db, quizzes).await {
+            Ok(payloads) => HttpResponse::Ok().json(payloads),
+            Err(response) => response,
+        },
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
@@ -77,7 +122,10 @@ pub async fn list_quizzes_by_course(db: &DatabaseConnection, course_id: i32) -> 
         .await
     {
         Ok(quizzes) if quizzes.is_empty() => HttpResponse::NotFound().body("No quizzes found"),
-        Ok(quizzes) => HttpResponse::Ok().json(quizzes),
+        Ok(quizzes) => match quiz_payloads(db, quizzes).await {
+            Ok(payloads) => HttpResponse::Ok().json(payloads),
+            Err(response) => response,
+        },
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
@@ -108,6 +156,29 @@ pub async fn get_quiz_for_attempt(
         match is_enrolled(db, user_id, quiz.course_id).await {
             Ok(true) => {}
             Ok(false) => return HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz"),
+            Err(response) => return response,
+        }
+
+        let prerequisite_ids =
+            match prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await {
+                Ok(ids) => ids,
+                Err(response) => return response,
+            };
+
+        match prerequisite_service::get_first_incomplete_required_module(
+            db,
+            user_id,
+            prerequisite_ids,
+        )
+        .await
+        {
+            Ok(Some(prerequisite)) => {
+                return HttpResponse::Forbidden().body(format!(
+                    "Complete {} before attempting this quiz",
+                    prerequisite.title
+                ));
+            }
+            Ok(None) => {}
             Err(response) => return response,
         }
 
@@ -196,7 +267,20 @@ pub async fn create_quiz(
     };
 
     match new_quiz.insert(db).await {
-        Ok(quiz) => HttpResponse::Ok().json(quiz),
+        Ok(quiz) => {
+            if let Err(response) = prerequisite_service::replace_quiz_prerequisites(
+                db,
+                quiz.course_id,
+                quiz.quiz_id,
+                data.prerequisite_module_ids.unwrap_or_default(),
+            )
+            .await
+            {
+                return response;
+            }
+
+            HttpResponse::Ok().json(quiz)
+        }
         Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
     }
 }
@@ -209,14 +293,16 @@ pub async fn update_quiz(
 ) -> HttpResponse {
     match QuizEntity::find_by_id(quiz_id).one(db).await {
         Ok(Some(updated_quiz)) => {
+            let course_id = updated_quiz.course_id;
+
             if let Err(response) =
-                require_can_manage_course(db, session, updated_quiz.course_id).await
+                require_can_manage_course(db, session, course_id).await
             {
                 return response;
             }
 
-            if let Some(course_id) = data.course_id {
-                if course_id != updated_quiz.course_id {
+            if let Some(requested_course_id) = data.course_id {
+                if requested_course_id != course_id {
                     return HttpResponse::BadRequest()
                         .body("Moving quizzes between courses is not supported here");
                 }
@@ -241,7 +327,22 @@ pub async fn update_quiz(
             }
 
             match active.update(db).await {
-                Ok(_) => HttpResponse::Ok().body(format!("Quiz with id {} updated!", quiz_id)),
+                Ok(_) => {
+                    if let Some(prerequisite_module_ids) = data.prerequisite_module_ids {
+                        if let Err(response) = prerequisite_service::replace_quiz_prerequisites(
+                            db,
+                            course_id,
+                            quiz_id,
+                            prerequisite_module_ids,
+                        )
+                        .await
+                        {
+                            return response;
+                        }
+                    }
+
+                    HttpResponse::Ok().body(format!("Quiz with id {} updated!", quiz_id))
+                }
                 Err(err) => {
                     HttpResponse::InternalServerError().body(format!("Update error: {}", err))
                 }

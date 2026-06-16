@@ -2,6 +2,55 @@ const pathParts = window.location.pathname.split("/");
 const courseId = pathParts[2];
 const SG_TIME_ZONE = "Asia/Singapore";
 const TIMEZONE_OFFSET_PATTERN = /(Z|[+-]\d{2}:?\d{2})$/i;
+const COURSE_IMAGE_PRESETS = [
+    { title: "Software Development", url: "https://images.unsplash.com/photo-1515879218367-8466d910aaa4" },
+    { title: "Web Development", url: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6" },
+    { title: "Mobile Development", url: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c" },
+    { title: "Game Development", url: "https://images.unsplash.com/photo-1542751371-adc38448a05e" },
+    { title: "Data Analytics", url: "https://images.unsplash.com/photo-1551288049-bebda4e38f71" },
+    { title: "Data Science", url: "https://images.unsplash.com/photo-1527474305487-b87b222841cc" },
+    { title: "Artificial Intelligence", url: "https://images.unsplash.com/photo-1677442136019-21780ecad995" },
+    { title: "Machine Learning", url: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e" },
+    { title: "Cybersecurity", url: "https://images.unsplash.com/photo-1563986768609-322da13575f3" },
+    { title: "Cloud Computing", url: "https://images.unsplash.com/photo-1451187580459-43490279c0fa" },
+    { title: "DevOps", url: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31" },
+    { title: "Blockchain", url: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0" },
+    { title: "Business Management", url: "https://images.unsplash.com/photo-1552664730-d307ca884978" },
+    { title: "Project Management", url: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40" },
+    { title: "Leadership", url: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f" },
+    { title: "Entrepreneurship", url: "https://images.unsplash.com/photo-1559136555-9303baea8ebd" },
+    { title: "Human Resources", url: "https://images.unsplash.com/photo-1521737604893-d14cc237f11d" },
+    { title: "Finance", url: "https://images.unsplash.com/photo-1520607162513-77705c0f0d4a" },
+    { title: "Accounting", url: "https://images.unsplash.com/photo-1554224155-6726b3ff858f" },
+    { title: "Investment", url: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3" },
+    { title: "Digital Marketing", url: "https://images.unsplash.com/photo-1460925895917-afdab827c52f" },
+    { title: "Content Marketing", url: "https://images.unsplash.com/photo-1432888622747-4eb9a8efeb07" },
+    { title: "Social Media Marketing", url: "https://images.unsplash.com/photo-1611162616475-46b635cb6868" },
+    { title: "Sales", url: "https://images.unsplash.com/photo-1556740749-887f6717d7e4" },
+    { title: "Communication", url: "https://images.unsplash.com/photo-1515169067868-5387ec356754" },
+    { title: "Public Speaking", url: "https://images.unsplash.com/photo-1475721027785-f74eccf877e2" },
+    { title: "Design Thinking", url: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d" },
+    { title: "UI/UX Design", url: "https://images.unsplash.com/photo-1581291518857-4e27b48ff24e" },
+    { title: "Graphic Design", url: "https://images.unsplash.com/photo-1626785774573-4b799315345d" },
+    { title: "Photography", url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee" },
+    { title: "Video Editing", url: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d" },
+    { title: "Education", url: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1" },
+    { title: "Healthcare", url: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1f" },
+    { title: "Nursing", url: "https://images.unsplash.com/photo-1584515933487-779824d29309" },
+    { title: "Psychology", url: "https://images.unsplash.com/photo-1506126613408-eca07ce68773" },
+    { title: "Languages", url: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d" },
+    { title: "Engineering", url: "https://images.unsplash.com/photo-1581092919535-7146ff1a590e" },
+    { title: "Hospitality", url: "https://images.unsplash.com/photo-1566073771259-6a8506099945" },
+    { title: "Customer Service", url: "https://images.unsplash.com/photo-1551434678-e076c223a692" },
+    { title: "Personal Development", url: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438" }
+];
+const COURSE_IMAGE_RULES = {
+    maxFileSizeBytes: 5 * 1024 * 1024,
+    minWidth: 1200,
+    minHeight: 675,
+    targetRatio: 16 / 9,
+    ratioTolerance: 0.08,
+};
 let currentCourse = null;
 let actionMessageTimer = null;
 let isInstructor = false;
@@ -16,9 +65,48 @@ let currentAssignmentDetailsId = null;
 let currentQuizzes = [];
 let moduleProgressById = new Map();
 let quizAttemptStatuses = {};
+let selectedCoursePresetImage = null;
+let selectedCourseImageFile = null;
+let selectedCourseImageObjectUrl = null;
 
 function goToModuleContent(moduleId) {
+    const module = currentModules.find((item) => Number(item.module_id) === Number(moduleId));
+    const prerequisite = module ? getFirstIncompleteModulePrerequisite(module) : null;
+
+    if (!isInstructor && prerequisite) {
+        showActionMessage(
+            `Complete ${prerequisite.title || "the previous module"} before opening this module.`,
+            "warning"
+        );
+        return;
+    }
+
     window.location.href = "/module-content/" + moduleId;
+}
+
+function getModuleProgressPercent(moduleId) {
+    const progress = moduleProgressById.get(Number(moduleId)) || {
+        opened: false,
+        progress_percent: 0,
+    };
+
+    return Math.max(0, Math.min(100, Number(progress.progress_percent || 0)));
+}
+
+function getFirstIncompleteModulePrerequisite(module) {
+    if (isInstructor || !isEnrolled) {
+        return null;
+    }
+
+    const prerequisiteIds = Array.isArray(module.prerequisite_module_ids)
+        ? module.prerequisite_module_ids.map(Number)
+        : [];
+
+    return prerequisiteIds
+        .map((moduleId) => currentModules.find((item) => Number(item.module_id) === moduleId))
+        .filter(Boolean)
+        .sort((first, second) => Number(first.position) - Number(second.position))
+        .find((item) => getModuleProgressPercent(item.module_id) < 100) || null;
 }
 
 function getCoursePriceCents(course) {
@@ -200,11 +288,9 @@ async function loadModules() {
         }
 
         modules.forEach((module) => {
-            const progress = moduleProgressById.get(Number(module.module_id)) || {
-                opened: false,
-                progress_percent: 0,
-            };
-            const percent = Math.max(0, Math.min(100, Number(progress.progress_percent || 0)));
+            const percent = getModuleProgressPercent(module.module_id);
+            const prerequisite = getFirstIncompleteModulePrerequisite(module);
+            const isLocked = Boolean(prerequisite);
             const instructorButtons = isInstructor
                 ? `
                     <div class="module-actions">
@@ -220,15 +306,24 @@ async function loadModules() {
                     </div>
                 `
                 : "";
+            const lockHint = isLocked
+                ? `<div class="module-subtitle">Complete ${escapeHtml(prerequisite.title || "the previous module")} first</div>`
+                : "";
+            const rowClass = [
+                "module-row",
+                percent === 100 ? "completed" : "",
+                isLocked ? "locked" : "",
+            ].filter(Boolean).join(" ");
 
             moduleList.innerHTML += `
-                <div class="module-row ${percent === 100 ? "completed" : ""}" onclick="goToModuleContent(${module.module_id})">
+                <div class="${rowClass}" onclick="goToModuleContent(${module.module_id})">
                     <div class="module-info">
                         <div class="module-title">${escapeHtml(module.title || "Untitled module")}</div>
+                        ${lockHint}
                     </div>
                     ${instructorButtons}
                     ${progressRing}
-                    <span class="module-arrow">&rsaquo;</span>
+                    <span class="module-arrow">${isLocked ? '<i class="bi bi-lock-fill" aria-hidden="true"></i>' : "&rsaquo;"}</span>
                 </div>
             `;
         });
@@ -348,7 +443,7 @@ async function loadQuizzes() {
 async function loadQuizAttemptStatuses() {
     quizAttemptStatuses = {};
 
-    if (isInstructor) {
+    if (isInstructor || !isEnrolled) {
         return;
     }
 
@@ -1399,16 +1494,172 @@ function updateCoursePaidFields() {
     document.getElementById("course-paid-fields").hidden = !isPaid;
 }
 
+function clearCourseImageObjectUrl() {
+    if (selectedCourseImageObjectUrl) {
+        URL.revokeObjectURL(selectedCourseImageObjectUrl);
+        selectedCourseImageObjectUrl = null;
+    }
+}
+
+function setCourseImagePreview(imageUrl) {
+    const preview = document.getElementById("course-image-preview");
+
+    if (!preview) {
+        return;
+    }
+
+    if (!imageUrl) {
+        preview.style.backgroundImage = "";
+        preview.innerHTML = "<span>No image selected</span>";
+        return;
+    }
+
+    preview.style.backgroundImage = `url('${imageUrl}')`;
+    preview.innerHTML = "";
+}
+
+function renderCourseImagePresets() {
+    const grid = document.getElementById("course-image-preset-grid");
+
+    if (!grid) {
+        return;
+    }
+
+    grid.innerHTML = COURSE_IMAGE_PRESETS.map((preset, index) => `
+        <button
+            class="course-preset-option"
+            type="button"
+            data-preset-index="${index}"
+            onclick="selectCoursePresetImage(${index})"
+        >
+            <span class="course-preset-thumb" style="background-image: url('${escapeHtml(preset.url)}')"></span>
+            <span>${escapeHtml(preset.title)}</span>
+        </button>
+    `).join("");
+}
+
+function syncCoursePresetSelection() {
+    document.querySelectorAll("#course-image-preset-grid .course-preset-option").forEach((button) => {
+        const preset = COURSE_IMAGE_PRESETS[Number(button.dataset.presetIndex)];
+        button.classList.toggle("selected", preset?.url === selectedCoursePresetImage?.url);
+    });
+}
+
+function validateCourseImageSize(width, height) {
+    if (width < COURSE_IMAGE_RULES.minWidth || height < COURSE_IMAGE_RULES.minHeight) {
+        return `Image must be at least ${COURSE_IMAGE_RULES.minWidth} x ${COURSE_IMAGE_RULES.minHeight}.`;
+    }
+
+    if (Math.abs((width / height) - COURSE_IMAGE_RULES.targetRatio) > COURSE_IMAGE_RULES.ratioTolerance) {
+        return "Image must be close to a 16:9 course cover shape.";
+    }
+
+    return "";
+}
+
+function selectCoursePresetImage(index) {
+    const preset = COURSE_IMAGE_PRESETS[index];
+
+    if (!preset || validateCourseImageSize(preset.width, preset.height)) {
+        showActionMessage("Selected preset image does not fit the required cover size.", "error");
+        return;
+    }
+
+    selectedCoursePresetImage = preset;
+    selectedCourseImageFile = null;
+    clearCourseImageObjectUrl();
+    document.getElementById("course-image-input").value = "";
+    setCourseImagePreview(preset.url);
+    syncCoursePresetSelection();
+}
+
+async function getCourseImageDimensions(file) {
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+        const image = new Image();
+        const loaded = new Promise((resolve, reject) => {
+            image.onload = () => resolve({
+                width: image.naturalWidth,
+                height: image.naturalHeight,
+            });
+            image.onerror = () => reject(new Error("Could not read image dimensions."));
+        });
+
+        image.src = objectUrl;
+        return await loaded;
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
+async function validateCourseUploadedImage(file) {
+    if (!file.type.startsWith("image/")) {
+        return "Please upload an image file.";
+    }
+
+    if (file.size > COURSE_IMAGE_RULES.maxFileSizeBytes) {
+        return "Image must be 5 MB or smaller.";
+    }
+
+    const dimensions = await getCourseImageDimensions(file);
+    return validateCourseImageSize(dimensions.width, dimensions.height);
+}
+
+async function handleCourseImageFileChange(event) {
+    const file = event.target.files?.[0] || null;
+
+    if (!file) {
+        selectedCourseImageFile = null;
+        clearCourseImageObjectUrl();
+        setCourseImagePreview(selectedCoursePresetImage?.url || currentCourse?.background_image_url || "");
+        return;
+    }
+
+    const validationMessage = await validateCourseUploadedImage(file);
+
+    if (validationMessage) {
+        event.target.value = "";
+        selectedCourseImageFile = null;
+        showActionMessage(validationMessage, "error");
+        return;
+    }
+
+    selectedCourseImageFile = file;
+    selectedCoursePresetImage = null;
+    syncCoursePresetSelection();
+    clearCourseImageObjectUrl();
+    selectedCourseImageObjectUrl = URL.createObjectURL(file);
+    setCourseImagePreview(selectedCourseImageObjectUrl);
+}
+
+async function getSelectedCourseImageUrl() {
+    if (selectedCourseImageFile) {
+        return uploadCourseImage(selectedCourseImageFile);
+    }
+
+    return selectedCoursePresetImage?.url || currentCourse?.background_image_url || null;
+}
+
 function openCourseModal() {
     if (!currentCourse) {
         return;
     }
+
+    selectedCourseImageFile = null;
+    clearCourseImageObjectUrl();
+    selectedCoursePresetImage = COURSE_IMAGE_PRESETS.find((preset) => {
+        return preset.url === currentCourse.background_image_url;
+    }) || null;
 
     document.getElementById("course-name-input").value = currentCourse.name || "";
     document.getElementById("course-name-input").placeholder = currentCourse.name || "Course name";
     document.getElementById("course-description-input").value = currentCourse.description || "";
     document.getElementById("course-description-input").placeholder = currentCourse.description || "Course description";
     document.getElementById("course-image-input").value = "";
+    renderCourseImagePresets();
+    syncCoursePresetSelection();
+    setCourseImagePreview(currentCourse.background_image_url || "");
     const priceCents = getCoursePriceCents(currentCourse);
     document.getElementById("course-price-input").value =
         priceCents === null ? "" : (priceCents / 100).toFixed(2);
@@ -1423,6 +1674,9 @@ function openCourseModal() {
 }
 
 function closeCourseModal() {
+    selectedCoursePresetImage = null;
+    selectedCourseImageFile = null;
+    clearCourseImageObjectUrl();
     document.getElementById("edit-course-modal").style.display = "none";
 }
 
@@ -1541,7 +1795,6 @@ async function submitAssignmentDropbox() {
 async function saveCourse() {
     const name = document.getElementById("course-name-input").value.trim();
     const description = document.getElementById("course-description-input").value.trim();
-    const backgroundImageFile = document.getElementById("course-image-input").files[0];
     const priceInputValue = document.getElementById("course-price-input").value.trim();
     const currency = document.getElementById("course-currency-input").value.trim() || "SGD";
     const status = document.getElementById("course-status-input").value;
@@ -1560,9 +1813,7 @@ async function saveCourse() {
     }
 
     try {
-        const backgroundImageUrl = backgroundImageFile
-            ? await uploadCourseImage(backgroundImageFile)
-            : currentCourse.background_image_url;
+        const backgroundImageUrl = await getSelectedCourseImageUrl();
 
         const payload = {
             name,
@@ -1621,6 +1872,7 @@ function openModuleModal(module = null) {
         module?.position || currentModules.length + 1;
     document.getElementById("module-position-input").placeholder =
         String(module?.position || currentModules.length + 1);
+    populateModulePrerequisiteOptions(module);
     document.getElementById("add-module-modal").style.display = "flex";
 }
 
@@ -1630,7 +1882,56 @@ function closeModuleModal() {
     document.getElementById("module-title-input").placeholder = "Module title, e.g. Week 1 Introduction";
     document.getElementById("module-position-input").value = "";
     document.getElementById("module-position-input").placeholder = "1";
+    const prerequisiteInput = document.getElementById("module-prerequisites-input");
+    if (prerequisiteInput) {
+        prerequisiteInput.innerHTML = "";
+    }
     document.getElementById("add-module-modal").style.display = "none";
+}
+
+function populateModulePrerequisiteOptions(module = null) {
+    const prerequisiteInput = document.getElementById("module-prerequisites-input");
+
+    if (!prerequisiteInput) {
+        return;
+    }
+
+    const selectedIds = new Set(
+        Array.isArray(module?.prerequisite_module_ids)
+            ? module.prerequisite_module_ids.map(Number)
+            : []
+    );
+    const currentModuleId = Number(module?.module_id || 0);
+
+    const options = currentModules
+        .filter((item) => Number(item.module_id) !== currentModuleId)
+        .sort((first, second) => Number(first.position) - Number(second.position))
+        .map((item) => {
+            const moduleId = Number(item.module_id);
+            const checked = selectedIds.has(moduleId) ? "checked" : "";
+            const label = `${item.position}. ${item.title || "Untitled module"}`;
+
+            return `
+                <label class="prerequisite-option">
+                    <input type="checkbox" value="${moduleId}" ${checked}>
+                    <span>${escapeHtml(label)}</span>
+                </label>
+            `;
+        })
+        .join("");
+
+    prerequisiteInput.innerHTML = options || '<p class="prerequisite-empty">No other modules available.</p>';
+}
+
+function getSelectedModulePrerequisiteIds() {
+    const prerequisiteInput = document.getElementById("module-prerequisites-input");
+
+    if (!prerequisiteInput) {
+        return [];
+    }
+
+    return [...prerequisiteInput.querySelectorAll('input[type="checkbox"]:checked')]
+        .map((input) => Number(input.value));
 }
 
 function openAssignmentModal(assignment = null) {
@@ -1835,12 +2136,14 @@ async function saveModule() {
         await axios.put(`/api/modules/${currentEditingModuleId}`, {
             title,
             position,
+            prerequisite_module_ids: getSelectedModulePrerequisiteIds(),
         });
     } else {
         await axios.post("/api/modules", {
             course_id: Number(courseId),
             title,
             position,
+            prerequisite_module_ids: getSelectedModulePrerequisiteIds(),
         });
     }
 
@@ -1860,6 +2163,7 @@ function bindInstructorControls() {
     document.getElementById("save-course-btn")?.addEventListener("click", saveCourse);
     document.getElementById("close-course-modal-btn")?.addEventListener("click", closeCourseModal);
     document.getElementById("course-paid-input")?.addEventListener("change", updateCoursePaidFields);
+    document.getElementById("course-image-input")?.addEventListener("change", handleCourseImageFileChange);
 
     document.getElementById("student-view-btn")?.addEventListener("click", async () => {
         const heroActions = document.getElementById("course-hero-actions");

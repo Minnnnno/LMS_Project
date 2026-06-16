@@ -14,6 +14,7 @@ use crate::entity::quiz_attempts::{
 use crate::entity::quiz_questions::{Column as QuizQuestionColumn, Entity as QuizQuestionEntity};
 use crate::models::quiz_attempts::{CreateAttempt, MarkAttempt};
 use crate::services::auth_helpers::{get_role_ids, get_user_id, is_enrolled, is_student_only};
+use crate::services::prerequisite_service;
 
 #[derive(Serialize)]
 struct QuizAttemptStatus {
@@ -180,6 +181,34 @@ pub async fn list_my_attempt_statuses_by_course(
             Err(response) => return response,
         };
 
+        let prerequisite_ids =
+            match prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await {
+                Ok(ids) => ids,
+                Err(response) => return response,
+            };
+
+        if let Some(prerequisite) = match prerequisite_service::get_first_incomplete_required_module(
+            db,
+            user_id,
+            prerequisite_ids,
+        )
+        .await
+        {
+            Ok(module) => module,
+            Err(response) => return response,
+        } {
+            statuses.push(QuizAttemptStatus {
+                quiz_id: quiz.quiz_id,
+                attempts_used: attempts.len(),
+                attempts_left: quiz.max_attempts.map(|max| (max - attempts.len() as i32).max(0)),
+                max_attempts: quiz.max_attempts,
+                has_submitted_attempt: attempts.iter().any(|attempt| attempt.submitted_at.is_some()),
+                can_attempt: false,
+                message: format!("Complete {} before attempting this quiz", prerequisite.title),
+            });
+            continue;
+        }
+
         statuses.push(build_attempt_status(
             quiz.quiz_id,
             quiz.max_attempts,
@@ -211,6 +240,29 @@ pub async fn create_attempt(
         match is_enrolled(db, user_id, quiz.course_id).await {
             Ok(true) => {}
             Ok(false) => return HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz"),
+            Err(response) => return response,
+        }
+
+        let prerequisite_ids =
+            match prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await {
+                Ok(ids) => ids,
+                Err(response) => return response,
+            };
+
+        match prerequisite_service::get_first_incomplete_required_module(
+            db,
+            user_id,
+            prerequisite_ids,
+        )
+        .await
+        {
+            Ok(Some(prerequisite)) => {
+                return HttpResponse::Forbidden().body(format!(
+                    "Complete {} before attempting this quiz",
+                    prerequisite.title
+                ));
+            }
+            Ok(None) => {}
             Err(response) => return response,
         }
     }

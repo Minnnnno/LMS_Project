@@ -97,6 +97,47 @@
     resize: vertical;
 }
 
+.prerequisite-checklist {
+    display: grid;
+    gap: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 10px;
+    background: #ffffff;
+}
+
+.prerequisite-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    color: #344054;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.prerequisite-option:hover {
+    background: #f8fafc;
+}
+
+.prerequisite-option input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.prerequisite-empty {
+    margin: 0;
+    color: #667085;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
 .quiz-form-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(120px, 0.55fr);
