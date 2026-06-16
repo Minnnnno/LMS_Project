@@ -61,6 +61,12 @@
         <label for="create-course-description">Description</label>
         <textarea id="create-course-description" rows="3" placeholder="Brief course description"></textarea>
 
+        <label for="create-course-visibility">Visibility</label>
+        <select id="create-course-visibility">
+            <option value="public">Public - everyone can view and enroll</option>
+            <option value="private">Private - only my organisation</option>
+        </select>
+
         <div class="course-image-picker">
             <div>
                 <label>Background image</label>
@@ -108,5 +114,5 @@
     </div>
 </div>
 
-<script src="/static/js/course.js?v=14"></script>
+<script src="/static/js/course.js?v=15"></script>
 {% endblock content %}

@@ -34,6 +34,15 @@ pub fn price_to_cents(price: rust_decimal::Decimal) -> Result<i32, HttpResponse>
         .ok_or_else(|| HttpResponse::BadRequest().body("Invalid price"))
 }
 
+pub fn normalize_course_visibility(visibility: Option<String>) -> Result<String, HttpResponse> {
+    let visibility = visibility.unwrap_or_else(|| "public".to_string()).to_lowercase();
+
+    match visibility.as_str() {
+        "public" | "private" => Ok(visibility),
+        _ => Err(HttpResponse::BadRequest().body("Invalid course visibility")),
+    }
+}
+
 pub async fn get_session_user_org_id(
     db: &DatabaseConnection,
     session: &Session,
@@ -109,6 +118,44 @@ pub async fn can_manage_course(
     }
 
     Ok(false)
+}
+
+pub async fn can_view_course(
+    db: &DatabaseConnection,
+    session: &Session,
+    course: &courses::Model,
+) -> Result<bool, HttpResponse> {
+    if course.visibility != "private" {
+        return Ok(true);
+    }
+
+    if has_role(session, "LMS Admin") {
+        return Ok(true);
+    }
+
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => return Ok(false),
+        Err(err) => {
+            return Err(HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err)));
+        }
+    };
+
+    let user = users::Entity::find_by_id(user_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding user: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("User not found"))?;
+
+    if user.org_id.is_some() && user.org_id == course.org_id {
+        return Ok(true);
+    }
+
+    can_manage_course(db, session, course).await
 }
 
 pub async fn get_instructor_course_ids_for_session(

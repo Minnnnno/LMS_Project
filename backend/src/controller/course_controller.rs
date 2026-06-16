@@ -3,12 +3,14 @@ use crate::entity::enrollments;
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::services::course_service::{
     can_manage_course,
+    can_view_course,
     get_instructor_course_ids_for_session,
     get_instructor_courses_for_session,
     get_organisation_courses_for_session,
     get_session_user_org_id,
     has_role,
     is_instructor_course_limited,
+    normalize_course_visibility,
     price_to_cents,
 };
 use crate::services::module_progress_service;
@@ -16,7 +18,40 @@ use actix_session::Session;
 use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
 use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set};
+
+async fn accessible_course_condition(
+    db: &DatabaseConnection,
+    session: &Session,
+) -> Result<Option<Condition>, HttpResponse> {
+    if has_role(session, "LMS Admin") {
+        return Ok(None);
+    }
+
+    let user_org_id = match session.get::<i32>("user_id") {
+        Ok(Some(_)) => match get_session_user_org_id(db, session).await {
+            Ok(org_id) => org_id,
+            Err(response) => return Err(response),
+        },
+        Ok(None) => None,
+        Err(err) => {
+            return Err(HttpResponse::InternalServerError()
+                .body(format!("Session error: {}", err)));
+        }
+    };
+
+    let mut condition = Condition::any().add(courses::Column::Visibility.eq("public"));
+
+    if let Some(org_id) = user_org_id {
+        condition = condition.add(
+            Condition::all()
+                .add(courses::Column::Visibility.eq("private"))
+                .add(courses::Column::OrgId.eq(org_id)),
+        );
+    }
+
+    Ok(Some(condition))
+}
 
 #[get("/courses")]
 pub async fn get_courses(
@@ -30,9 +65,16 @@ pub async fn get_courses(
         };
     }
 
-    let result = courses::Entity::find()
-    .all(db.get_ref())
-    .await;
+    let mut query = courses::Entity::find();
+
+    if let Some(condition) = match accessible_course_condition(db.get_ref(), &session).await {
+        Ok(condition) => condition,
+        Err(response) => return response,
+    } {
+        query = query.filter(condition);
+    }
+
+    let result = query.all(db.get_ref()).await;
     match result {
         Ok(course) => {
             if course.is_empty() {
@@ -132,6 +174,15 @@ pub async fn get_course_by_course_id(
                         }
                         Err(response) => return response,
                     }
+                }
+
+                match can_view_course(db.get_ref(), &session, &course).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        return HttpResponse::Forbidden()
+                            .body("This course is private to its organisation");
+                    }
+                    Err(response) => return response,
                 }
 
                 HttpResponse::Ok().json(course)
@@ -244,6 +295,11 @@ pub async fn search_course(
         }
 
         db_query = db_query.filter(courses::Column::CourseId.is_in(course_ids));
+    } else if let Some(condition) = match accessible_course_condition(db.get_ref(), &session).await {
+        Ok(condition) => condition,
+        Err(response) => return response,
+    } {
+        db_query = db_query.filter(condition);
     }
 
     let result = db_query
@@ -357,6 +413,12 @@ pub async fn update_course(
             if let Some(background_image_url) = data.background_image_url {
                 active.background_image_url = Set(Some(background_image_url));
             }
+            if let Some(visibility) = data.visibility {
+                active.visibility = Set(match normalize_course_visibility(Some(visibility)) {
+                    Ok(visibility) => visibility,
+                    Err(response) => return response,
+                });
+            }
 
             match active.update(db.get_ref()).await {
                 Ok(_) => HttpResponse::Ok().body(format!("Course with id {} updated!", course_id)),
@@ -410,6 +472,11 @@ pub async fn create_course(
             .body("Paid courses must have a price greater than zero");
     }
 
+    let visibility = match normalize_course_visibility(data.visibility) {
+        Ok(visibility) => visibility,
+        Err(response) => return response,
+    };
+
     let course = courses::ActiveModel {
         name: Set(Some(data.name)),
         instructor_id: Set(Some(data.instructor_id.unwrap_or(session_user_id))),
@@ -430,6 +497,7 @@ pub async fn create_course(
         is_paid: Set(Some(data.is_paid)),
         description: Set(data.description),
         background_image_url: Set(data.background_image_url),
+        visibility: Set(visibility),
 
         ..Default::default()
     };

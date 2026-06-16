@@ -14,6 +14,7 @@ pub struct CreateCourse {
     pub is_paid: bool,
     pub description: Option<String>,
     pub background_image_url: Option<String>,
+    pub visibility: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct CourseQuery {
@@ -35,4 +36,5 @@ pub struct UpdateCourse {
     pub is_paid: Option<bool>,
     pub description: Option<String>,
     pub background_image_url: Option<String>,
+    pub visibility: Option<String>,
 }

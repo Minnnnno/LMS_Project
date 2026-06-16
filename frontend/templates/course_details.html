@@ -139,6 +139,12 @@
         <label for="course-description-input">Description</label>
         <textarea id="course-description-input" rows="4"></textarea>
 
+        <label for="course-visibility-input">Visibility</label>
+        <select id="course-visibility-input">
+            <option value="public">Public - everyone can view and enroll</option>
+            <option value="private">Private - only my organisation</option>
+        </select>
+
         <div class="course-image-picker">
             <div>
                 <label>Background image</label>
@@ -351,5 +357,5 @@
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=31"></script>
+<script src="/static/js/course_details.js?v=32"></script>
 {% endblock content %}

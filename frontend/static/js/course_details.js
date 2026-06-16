@@ -1656,6 +1656,7 @@ function openCourseModal() {
     document.getElementById("course-name-input").placeholder = currentCourse.name || "Course name";
     document.getElementById("course-description-input").value = currentCourse.description || "";
     document.getElementById("course-description-input").placeholder = currentCourse.description || "Course description";
+    document.getElementById("course-visibility-input").value = currentCourse.visibility || "public";
     document.getElementById("course-image-input").value = "";
     renderCourseImagePresets();
     syncCoursePresetSelection();
@@ -1798,6 +1799,7 @@ async function saveCourse() {
     const priceInputValue = document.getElementById("course-price-input").value.trim();
     const currency = document.getElementById("course-currency-input").value.trim() || "SGD";
     const status = document.getElementById("course-status-input").value;
+    const visibility = document.getElementById("course-visibility-input").value || "public";
     const isPaid = document.getElementById("course-paid-input").checked;
 
     if (!name) {
@@ -1821,6 +1823,7 @@ async function saveCourse() {
             background_image_url: backgroundImageUrl || null,
             currency: isPaid ? currency : "SGD",
             status,
+            visibility,
             is_paid: isPaid,
         };
 

@@ -4,6 +4,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 
 use crate::entity::{courses, enrollments};
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
+use crate::services::course_service::can_view_course;
 
 pub async fn get_enrollment_status(
     db: &DatabaseConnection,
@@ -42,6 +43,15 @@ pub async fn enroll_free_course(
 
     if course.is_paid.unwrap_or(false) {
         return HttpResponse::BadRequest().body("This is a paid course. Please use checkout.");
+    }
+
+    match can_view_course(db, session, &course).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::Forbidden()
+                .body("This course is private to its organisation");
+        }
+        Err(response) => return response,
     }
 
     match enrollments::Entity::find()

@@ -104,6 +104,7 @@ class CoursesPage {
     openModal() {
         document.getElementById("create-course-name").value        = "";
         document.getElementById("create-course-description").value = "";
+        document.getElementById("create-course-visibility").value  = "public";
         document.getElementById("create-course-image-file").value  = "";
         document.getElementById("create-course-price").value       = "0";
         document.getElementById("create-course-currency").value    = "SGD";
@@ -294,6 +295,7 @@ class CoursesPage {
     async createCourse() {
         const name        = document.getElementById("create-course-name").value.trim();
         const description = document.getElementById("create-course-description").value.trim();
+        const visibility  = document.getElementById("create-course-visibility").value || "public";
         const price       = Number(document.getElementById("create-course-price").value || 0);
         const currency    = document.getElementById("create-course-currency").value || "SGD";
         const isPaid      = document.getElementById("create-course-paid").checked;
@@ -319,6 +321,7 @@ class CoursesPage {
                 is_paid: isPaid,
                 description: description || null,
                 background_image_url: imageUrl || null,
+                visibility,
             });
             this.closeModal();
             await this.loadOrganisationCourses();
