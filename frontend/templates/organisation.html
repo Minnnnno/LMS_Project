@@ -1,50 +1,200 @@
 {% extends "base.html" %}
 
-{% block title %}Organisation | SkillUp LMS{% endblock title %}
+{% block title %}Organisation Dashboard | SkillUp LMS{% endblock title %}
 
 {% block extra_css %}
 <style>
+  .org-dashboard-page {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .org-dashboard-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .org-dashboard-heading {
+    display: grid;
+    gap: .35rem;
+  }
+
+  .org-dashboard-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: .9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--skillup-dark);
+    color: #fff;
+    font-size: 1.35rem;
+    margin-bottom: .35rem;
+  }
+
+  .section-panel {
+    background: #fff;
+    border-radius: .9rem;
+    border: 1px solid var(--skillup-border);
+    padding: 1.25rem;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, .04);
+  }
+
+  .org-section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .org-section-title {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+  }
+
+  .org-section-title i {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: .7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    color: #111827;
+  }
+
+  .org-workspace-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .org-manage-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(20rem, .9fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  #org-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: .75rem;
+  }
+
   .org-card {
     background: #fff;
-    border-radius: 1rem;
+    border-radius: .85rem;
     border: 1px solid var(--skillup-border);
-    padding: 1.5rem;
+    padding: 1rem 1.1rem;
     cursor: pointer;
-    transition: box-shadow 0.15s, border-color 0.15s;
+    transition: box-shadow .15s, border-color .15s, transform .15s;
   }
-  .org-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); border-color: #c0c8d8; }
-  .org-card.active { border-color: var(--skillup-dark); box-shadow: 0 0 0 2px rgba(23,23,23,.12); }
 
-  .member-row { display: flex; align-items: center; gap: .75rem; padding: .55rem 0; border-bottom: 1px solid #f0f2f5; }
-  .member-row:last-child { border-bottom: none; }
+  .org-card:hover {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+    border-color: #c0c8d8;
+    transform: translateY(-1px);
+  }
+
+  .org-card.active {
+    border-color: var(--skillup-dark);
+    box-shadow: 0 0 0 2px rgba(23, 23, 23, .12);
+  }
+
+  .member-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .8rem 0;
+    border-bottom: 1px solid #f0f2f5;
+  }
+
+  .member-row:last-child {
+    border-bottom: none;
+  }
+
   .member-avatar {
-    width: 2.2rem; height: 2.2rem; border-radius: 50%;
-    background: var(--skillup-dark); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-size: .75rem; font-weight: 700; flex-shrink: 0;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    background: var(--skillup-dark);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .75rem;
+    font-weight: 700;
+    flex-shrink: 0;
   }
-  .badge-role { font-size: .7rem; padding: .2em .55em; border-radius: 999px; font-weight: 600; }
+
+  .badge-role {
+    font-size: .7rem;
+    padding: .2em .55em;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+
   .badge-instructor { background: #e0f0ff; color: #0055aa; }
-  .badge-student    { background: #e6f9ee; color: #1a7a3a; }
-  .badge-admin      { background: #fff0e0; color: #a05000; }
+  .badge-student { background: #e6f9ee; color: #1a7a3a; }
+  .badge-admin { background: #fff0e0; color: #a05000; }
 
-  .section-panel { background: #fff; border-radius: 1rem; border: 1px solid var(--skillup-border); padding: 1.5rem; }
-
-  /* Enrol tabs */
-  .enroll-tabs { display: flex; gap: .5rem; margin-bottom: 1.25rem; }
-  .enroll-tab {
-    flex: 1; padding: .55rem; border-radius: .65rem; border: 1.5px solid var(--skillup-border);
-    background: #f7f8fb; font-size: .85rem; font-weight: 600; cursor: pointer;
-    color: #667085; transition: all .15s; text-align: center;
+  .org-enroll-toolbar {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
   }
-  .enroll-tab.active { background: var(--skillup-dark); color: #fff; border-color: var(--skillup-dark); }
-  .enroll-tab:hover:not(.active) { border-color: #aab; background: #f0f2f6; }
 
-  /* Manual user list */
-  #enroll-user-list { max-height: 220px; overflow-y: auto; }
-  .enroll-user-item { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; }
+  .enroll-tabs {
+    display: flex;
+    gap: .5rem;
+    margin-bottom: 1.25rem;
+  }
 
-  /* Drop zone */
+  .enroll-tab {
+    flex: 1;
+    padding: .6rem .75rem;
+    border-radius: .65rem;
+    border: 1.5px solid var(--skillup-border);
+    background: #f7f8fb;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    color: #667085;
+    transition: all .15s;
+    text-align: center;
+  }
+
+  .enroll-tab.active {
+    background: var(--skillup-dark);
+    color: #fff;
+    border-color: var(--skillup-dark);
+  }
+
+  .enroll-tab:hover:not(.active) {
+    border-color: #aab;
+    background: #f0f2f6;
+  }
+
+  #enroll-user-list {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .enroll-user-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .35rem 0;
+  }
+
   .drop-zone {
     border: 2px dashed var(--skillup-border);
     border-radius: .85rem;
@@ -54,26 +204,60 @@
     transition: border-color .15s, background .15s;
     background: #fafbfc;
   }
-  .drop-zone:hover, .drop-zone.drag-over {
+
+  .drop-zone:hover,
+  .drop-zone.drag-over {
     border-color: var(--skillup-dark);
     background: #f0f2f6;
   }
-  .drop-zone i { font-size: 2rem; color: #aab; display: block; margin-bottom: .5rem; }
 
-  /* Preview table */
-  #csv-preview-wrap { max-height: 220px; overflow-y: auto; margin-top: .75rem; }
-  #csv-preview-wrap table { font-size: .8rem; }
-  .preview-match   { background: #eaf7ee; }
+  .drop-zone i {
+    font-size: 2rem;
+    color: #aab;
+    display: block;
+    margin-bottom: .5rem;
+  }
+
+  #csv-preview-wrap {
+    max-height: 220px;
+    overflow-y: auto;
+    margin-top: .75rem;
+  }
+
+  #csv-preview-wrap table {
+    font-size: .8rem;
+  }
+
+  .preview-match { background: #eaf7ee; }
   .preview-nomatch { background: #fff3f3; }
-  .preview-legend  { display: flex; gap: 1rem; font-size: .75rem; margin-top: .5rem; }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .preview-legend {
+    display: flex;
+    gap: 1rem;
+    font-size: .75rem;
+    margin-top: .5rem;
+  }
 
-  /* Progress bar */
-  #upload-progress { display: none; }
-  .result-summary { border-radius: .65rem; padding: .75rem 1rem; font-size: .85rem; }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+  }
+
+  #upload-progress {
+    display: none;
+  }
+
+  .result-summary {
+    border-radius: .65rem;
+    padding: .75rem 1rem;
+    font-size: .85rem;
+  }
+
   .result-summary.success { background: #eaf7ee; color: #1a7a3a; }
   .result-summary.partial { background: #fff8e0; color: #7a5500; }
-  .result-summary.error   { background: #fff0f0; color: #aa0000; }
+  .result-summary.error { background: #fff0f0; color: #aa0000; }
 
   .course-instructor-card {
     border: 1px solid #eef0f4;
@@ -81,6 +265,7 @@
     padding: .85rem;
     background: #fbfcfe;
   }
+
   .course-instructor-chip {
     display: inline-flex;
     align-items: center;
@@ -93,6 +278,7 @@
     font-size: .78rem;
     font-weight: 600;
   }
+
   .course-instructor-chip button {
     border: 0;
     background: transparent;
@@ -100,172 +286,78 @@
     padding: 0;
     line-height: 1;
   }
+
+  @media (max-width: 991.98px) {
+    .org-dashboard-header,
+    .org-section-header {
+      display: grid;
+    }
+
+    .org-manage-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 {% endblock extra_css %}
 
 {% block content %}
-<div class="px-4 py-3">
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <div>
-      <h1 class="section-title mb-0">Organisation</h1>
-      <p class="page-subtitle mb-0">Manage members in your organisation.</p>
+<div class="org-dashboard-page px-4 py-3">
+  <div class="org-dashboard-header">
+    <div class="org-dashboard-heading">
+      <span class="org-dashboard-icon"><i class="bi bi-building"></i></span>
+      <div>
+        <h1 class="page-heading mb-1">Organisation Dashboard</h1>
+        <p class="page-subtitle mb-0">Manage the people, instructors, and course assignments in your organisation.</p>
+      </div>
     </div>
   </div>
 
-  <div class="row g-3">
-    <!-- Left: org list -->
-    <div class="col-12 col-lg-4">
-      <div class="section-panel">
-        <h6 class="fw-bold mb-3">Your Organisation</h6>
-        <div id="org-list">
-          <p class="text-muted small">Loading…</p>
+  <div class="org-workspace-grid">
+    <div class="section-panel">
+      <div class="org-section-header">
+        <div class="org-section-title">
+          <i class="bi bi-buildings"></i>
+          <div>
+            <h2 class="section-title mb-1">Current Organisation</h2>
+            <p class="page-subtitle mb-0">The workspace you are managing.</p>
+          </div>
         </div>
+      </div>
+      <div id="org-list">
+        <p class="text-muted small">Loading...</p>
       </div>
     </div>
 
-    <!-- Right panel -->
-    <div class="col-12 col-lg-8">
-
-      <!-- Members list -->
+    <div class="org-manage-grid">
       <div class="section-panel" id="members-panel" style="display:none">
-        <div class="d-flex align-items-center justify-content-between mb-3">
-          <h6 class="fw-bold mb-0" id="members-title">Members</h6>
+        <div class="org-section-header">
+          <div class="org-section-title">
+            <i class="bi bi-people"></i>
+            <div>
+              <h2 class="section-title mb-1" id="members-title">Members</h2>
+              <p class="page-subtitle mb-0">People currently attached to this organisation.</p>
+            </div>
+          </div>
           {% if role_names and "Organisation Admin" in role_names %}
-          <button class="btn btn-sm btn-outline-dark rounded-3" id="btn-open-enroll">
-            <i class="bi bi-people-fill me-1"></i>Enrol Members
+          <button class="btn btn-dark rounded-3" id="btn-open-enroll">
+            <i class="bi bi-person-plus me-1"></i>Add Learners
           </button>
           {% endif %}
         </div>
         <div id="members-list">
-          <p class="text-muted small">Select an organisation on the left.</p>
+          <p class="text-muted small">Select an organisation.</p>
         </div>
       </div>
 
-      <!-- Enrol panel -->
-      <div class="section-panel mt-3" id="enroll-panel" style="display:none">
-        <div class="d-flex align-items-center justify-content-between mb-3">
-          <h6 class="fw-bold mb-0">Add learners to <span id="enroll-org-name" class="text-decoration-underline"></span></h6>
-          <button class="btn btn-sm btn-outline-secondary rounded-3" id="btn-cancel-enroll">
-            <i class="bi bi-x-lg"></i>
-          </button>
-        </div>
-
-        <form id="invite-instructor-form" class="border rounded-3 p-3 mb-3">
-          <label class="form-label fw-semibold small" for="invite-instructor-email">Instructor email</label>
-          <div class="input-group input-group-sm">
-            <input
-              class="form-control"
-              id="invite-instructor-email"
-              type="email"
-              placeholder="instructor@example.com"
-              autocomplete="email"
-              required
-            >
-            <button class="btn btn-dark" id="btn-invite-instructor" type="submit">
-              <i class="bi bi-envelope-plus me-1"></i>Invite Instructor
-            </button>
-          </div>
-          <div id="invite-instructor-feedback" class="mt-2"></div>
-        </form>
-
-        <!-- Role selector (shared) -->
-        <div class="mb-3">
-          <label class="form-label fw-semibold small">Role to assign</label>
-          <select class="form-select form-select-sm" id="enroll-role" style="max-width:200px">
-            <option value="Student">Student</option>
-            <option value="Instructor">Instructor (Lecturer)</option>
-          </select>
-        </div>
-
-        <!-- Mode tabs -->
-        <div class="enroll-tabs">
-          <div class="enroll-tab active" id="tab-manual" onclick="switchTab('manual')">
-            <i class="bi bi-person-check me-1"></i>Select Manually
-          </div>
-          <div class="enroll-tab" id="tab-file" onclick="switchTab('file')">
-            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Upload CSV / Excel
-          </div>
-        </div>
-
-        <!-- Manual tab -->
-        <div id="pane-manual">
-          <input type="text" class="form-control form-control-sm mb-2" id="enroll-search"
-                 placeholder="Search by name or email…">
-          <div id="enroll-user-list" class="border rounded p-2 mb-3">
-            <p class="text-muted small mb-0">Loading available users…</p>
-          </div>
-          <button class="btn btn-dark btn-sm rounded-3" id="btn-do-enroll">
-            <i class="bi bi-check2-all me-1"></i>Add Selected
-          </button>
-        </div>
-
-        <!-- File upload tab -->
-        <div id="pane-file" style="display:none">
-
-          <!-- Template download hint -->
-          <div class="alert alert-light border small py-2 mb-3">
-            <i class="bi bi-info-circle me-1"></i>
-            Your file needs an <strong>email</strong> column. Optionally include
-            <strong>first_name</strong> and <strong>last_name</strong>.
-            <a href="#" id="btn-download-template" class="ms-1 fw-semibold">Download template CSV</a>
-          </div>
-
-          <!-- Drop zone -->
-          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-            <i class="bi bi-cloud-arrow-up"></i>
-            <div class="fw-semibold">Drop your CSV or Excel file here</div>
-            <div class="text-muted small mt-1">or click to browse · .csv, .xlsx, .xls accepted</div>
-          </div>
-          <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none">
-
-          <!-- Progress -->
-          <div id="upload-progress" class="mt-3">
-            <div class="d-flex justify-content-between small mb-1">
-              <span id="progress-label">Parsing file…</span>
-              <span id="progress-pct">0%</span>
-            </div>
-            <div class="progress" style="height:6px">
-              <div class="progress-bar bg-dark" id="progress-bar" style="width:0%"></div>
+      <div class="section-panel" id="course-instructor-panel" style="display:none">
+        <div class="org-section-header">
+          <div class="org-section-title">
+            <i class="bi bi-person-workspace"></i>
+            <div>
+              <h2 class="section-title mb-1">Course Instructors</h2>
+              <p class="page-subtitle mb-0">Assign instructors to courses in this organisation.</p>
             </div>
           </div>
-
-          <!-- Preview table -->
-          <div id="csv-preview-wrap" style="display:none">
-            <div class="d-flex align-items-center justify-content-between mt-2 mb-1">
-              <span class="small fw-semibold" id="preview-summary"></span>
-              <button class="btn btn-link btn-sm p-0 text-danger" id="btn-clear-file">
-                <i class="bi bi-trash me-1"></i>Clear
-              </button>
-            </div>
-            <table class="table table-sm table-bordered mb-0" id="csv-preview-table">
-              <thead class="table-dark">
-                <tr>
-                  <th>#</th><th>Email</th><th>First Name</th><th>Last Name</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="csv-preview-body"></tbody>
-            </table>
-            <div class="preview-legend">
-              <span><span class="legend-dot" style="background:#b6efca"></span>Matched in system</span>
-              <span><span class="legend-dot" style="background:#ffc9c9"></span>Not found / will skip</span>
-            </div>
-          </div>
-
-          <!-- Enrol button -->
-          <div class="mt-3" id="file-enroll-actions" style="display:none">
-            <button class="btn btn-dark btn-sm rounded-3" id="btn-do-file-enroll">
-              <i class="bi bi-upload me-1"></i>Add <span id="file-enroll-count">0</span> Matched Users
-            </button>
-          </div>
-
-        </div><!-- /pane-file -->
-
-        <div id="enroll-feedback" class="mt-3"></div>
-      </div><!-- /enroll-panel -->
-
-      <div class="section-panel mt-3" id="course-instructor-panel" style="display:none">
-        <div class="d-flex align-items-center justify-content-between mb-3">
-          <h6 class="fw-bold mb-0">Course Instructors</h6>
           <button class="btn btn-sm btn-outline-secondary rounded-3" id="btn-refresh-course-instructors">
             <i class="bi bi-arrow-clockwise"></i>
           </button>
@@ -292,7 +384,124 @@
           <p class="text-muted small mb-0">Loading course instructors...</p>
         </div>
       </div>
+    </div>
 
+    <div class="section-panel" id="enroll-panel" style="display:none">
+      <div class="org-section-header">
+        <div class="org-section-title">
+          <i class="bi bi-person-check"></i>
+          <div>
+            <h2 class="section-title mb-1">Add Learners</h2>
+            <p class="page-subtitle mb-0">Adding to <span id="enroll-org-name" class="fw-semibold text-dark"></span></p>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary rounded-3" id="btn-cancel-enroll">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <form id="invite-instructor-form" class="border rounded-3 p-3 mb-3">
+        <label class="form-label fw-semibold small" for="invite-instructor-email">Instructor email</label>
+        <div class="input-group input-group-sm">
+          <input
+            class="form-control"
+            id="invite-instructor-email"
+            type="email"
+            placeholder="instructor@example.com"
+            autocomplete="email"
+            required
+          >
+          <button class="btn btn-dark" id="btn-invite-instructor" type="submit">
+            <i class="bi bi-envelope-plus me-1"></i>Invite Instructor
+          </button>
+        </div>
+        <div id="invite-instructor-feedback" class="mt-2"></div>
+      </form>
+
+      <div class="org-enroll-toolbar">
+        <div>
+          <label class="form-label fw-semibold small">Role to assign</label>
+          <select class="form-select form-select-sm" id="enroll-role" style="max-width:220px">
+            <option value="Student">Student</option>
+            <option value="Instructor">Instructor (Lecturer)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="enroll-tabs">
+        <div class="enroll-tab active" id="tab-manual" onclick="switchTab('manual')">
+          <i class="bi bi-person-check me-1"></i>Select Manually
+        </div>
+        <div class="enroll-tab" id="tab-file" onclick="switchTab('file')">
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>Upload CSV / Excel
+        </div>
+      </div>
+
+      <div id="pane-manual">
+        <input type="text" class="form-control form-control-sm mb-2" id="enroll-search"
+               placeholder="Search by name or email...">
+        <div id="enroll-user-list" class="border rounded p-2 mb-3">
+          <p class="text-muted small mb-0">Loading available users...</p>
+        </div>
+        <button class="btn btn-dark btn-sm rounded-3" id="btn-do-enroll">
+          <i class="bi bi-check2-all me-1"></i>Add Selected
+        </button>
+      </div>
+
+      <div id="pane-file" style="display:none">
+        <div class="alert alert-light border small py-2 mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Your file needs an <strong>email</strong> column. Optionally include
+          <strong>first_name</strong> and <strong>last_name</strong>.
+          <a href="#" id="btn-download-template" class="ms-1 fw-semibold">Download template CSV</a>
+        </div>
+
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+          <i class="bi bi-cloud-arrow-up"></i>
+          <div class="fw-semibold">Drop your CSV or Excel file here</div>
+          <div class="text-muted small mt-1">or click to browse - .csv, .xlsx, .xls accepted</div>
+        </div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none">
+
+        <div id="upload-progress" class="mt-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span id="progress-label">Parsing file...</span>
+            <span id="progress-pct">0%</span>
+          </div>
+          <div class="progress" style="height:6px">
+            <div class="progress-bar bg-dark" id="progress-bar" style="width:0%"></div>
+          </div>
+        </div>
+
+        <div id="csv-preview-wrap" style="display:none">
+          <div class="d-flex align-items-center justify-content-between mt-2 mb-1">
+            <span class="small fw-semibold" id="preview-summary"></span>
+            <button class="btn btn-link btn-sm p-0 text-danger" id="btn-clear-file">
+              <i class="bi bi-trash me-1"></i>Clear
+            </button>
+          </div>
+          <table class="table table-sm table-bordered mb-0" id="csv-preview-table">
+            <thead class="table-dark">
+              <tr>
+                <th>#</th><th>Email</th><th>First Name</th><th>Last Name</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="csv-preview-body"></tbody>
+          </table>
+          <div class="preview-legend">
+            <span><span class="legend-dot" style="background:#b6efca"></span>Matched in system</span>
+            <span><span class="legend-dot" style="background:#ffc9c9"></span>Not found / will skip</span>
+          </div>
+        </div>
+
+        <div class="mt-3" id="file-enroll-actions" style="display:none">
+          <button class="btn btn-dark btn-sm rounded-3" id="btn-do-file-enroll">
+            <i class="bi bi-upload me-1"></i>Import <span id="file-enroll-count">0</span> Users
+          </button>
+        </div>
+      </div>
+
+      <div id="enroll-feedback" class="mt-3"></div>
     </div>
   </div>
 </div>
@@ -300,9 +509,7 @@
 {% endblock content %}
 
 {% block extra_js %}
-<!-- PapaParse for CSV -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<!-- SheetJS for Excel -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="/static/js/organisation.js?v=2"></script>
+<script src="/static/js/organisation.js?v=3"></script>
 {% endblock extra_js %}
