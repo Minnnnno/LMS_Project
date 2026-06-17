@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{delete, get, http::StatusCode, post, put, web, HttpResponse, Responder};
+use actix_web::{delete, get, http::header, post, put, web, HttpResponse, Responder};
 use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,7 @@ use crate::models::admin::{
 };
 
 use crate::services::auth_helpers::{require_admin, require_admin_page};
-use crate::ssr::pages::{render_page, render_page_with_status};
+use crate::ssr::pages::render_page;
 
 use crate::services::admin_service::{
     admin_enroll_user_service, admin_unenroll_user_service, approve_organisation_signup_request,
@@ -127,8 +127,10 @@ pub async fn admin_enrollments_page(session: Session) -> impl Responder {
 fn render_lms_admin_page(session: &Session) -> HttpResponse {
     match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
-        Err(response) if response.status() == StatusCode::FORBIDDEN => {
-            render_page_with_status("access_denied.html", &session, StatusCode::FORBIDDEN)
+        Err(response) if response.status() == actix_web::http::StatusCode::FORBIDDEN => {
+            HttpResponse::Found()
+                .insert_header((header::LOCATION, "/"))
+                .finish()
         }
         Err(response) => response,
     }

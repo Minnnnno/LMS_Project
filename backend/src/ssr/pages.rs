@@ -51,6 +51,12 @@ async fn downloads(session: Session) -> impl Responder {
     render_page("downloads.html", &session)
 }
 
+fn redirect_to_home() -> HttpResponse {
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, "/"))
+        .finish()
+}
+
 #[get("/course/{course_id}")]
 async fn course_details_page(
     db: web::Data<DatabaseConnection>,
@@ -89,12 +95,13 @@ async fn course_details_page(
     match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
         Ok(true) => return render_page("course_details.html", &session),
         Ok(false) => {}
+        Err(response) if response.status() == StatusCode::FORBIDDEN => return redirect_to_home(),
         Err(response) => return response,
     }
 
     match is_enrolled(db.get_ref(), user_id, course_id).await {
         Ok(true) => render_page("course_details.html", &session),
-        Ok(false) => HttpResponse::Forbidden().body("You must be enrolled to view course details"),
+        Ok(false) => redirect_to_home(),
         Err(response) => response,
     }
 }
@@ -136,7 +143,8 @@ async fn quiz_builder_page(
 
     match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
         Ok(true) => render_page("quiz_builder.html", &session),
-        Ok(false) => HttpResponse::Forbidden().body("You cannot manage quizzes for this course"),
+        Ok(false) => redirect_to_home(),
+        Err(response) if response.status() == StatusCode::FORBIDDEN => redirect_to_home(),
         Err(response) => response,
     }
 }
@@ -176,12 +184,13 @@ async fn quiz_attempt_page(
     match user_can_manage_course_content(db.get_ref(), &session, course_id, user_id).await {
         Ok(true) => return render_page("quiz_attempt.html", &session),
         Ok(false) => {}
+        Err(response) if response.status() == StatusCode::FORBIDDEN => return redirect_to_home(),
         Err(response) => return response,
     }
 
     match is_enrolled(db.get_ref(), user_id, course_id).await {
         Ok(true) => render_page("quiz_attempt.html", &session),
-        Ok(false) => HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz"),
+        Ok(false) => redirect_to_home(),
         Err(response) => response,
     }
 }
@@ -233,12 +242,13 @@ async fn module_content_page(
     match user_can_manage_course_content(db.get_ref(), &session, module.course_id, user_id).await {
         Ok(true) => return render_page("module_content.html", &session),
         Ok(false) => {}
+        Err(response) if response.status() == StatusCode::FORBIDDEN => return redirect_to_home(),
         Err(response) => return response,
     }
 
     match is_enrolled(db.get_ref(), user_id, module.course_id).await {
         Ok(true) => render_page("module_content.html", &session),
-        Ok(false) => HttpResponse::Forbidden().body("You must be enrolled to view this module"),
+        Ok(false) => redirect_to_home(),
         Err(response) => response,
     }
 }

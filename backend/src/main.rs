@@ -13,7 +13,7 @@ use actix_web::{
     App, HttpServer,
     cookie::Key,
     dev::ServiceResponse,
-    http::StatusCode,
+    http::{StatusCode, header},
     middleware::{ErrorHandlerResponse, ErrorHandlers, from_fn},
     web,
 };
@@ -41,6 +41,28 @@ fn render_browser_500<B>(
     ))
 }
 
+fn redirect_browser_403<B>(
+    response: ServiceResponse<B>,
+) -> actix_web::Result<ErrorHandlerResponse<B>> {
+    let path = response.request().path();
+
+    if path == "/api" || path.starts_with("/api/") {
+        return Ok(ErrorHandlerResponse::Response(
+            response.map_into_left_body(),
+        ));
+    }
+
+    let (request, _) = response.into_parts();
+    let redirect_response = actix_web::HttpResponse::Found()
+        .insert_header((header::LOCATION, "/"))
+        .finish();
+
+    Ok(ErrorHandlerResponse::Response(
+        ServiceResponse::new(request, redirect_response.map_into_boxed_body())
+            .map_into_right_body(),
+    ))
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::from_path(format!("{}/.env", env!("CARGO_MANIFEST_DIR")))
@@ -58,7 +80,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(actix_web::web::Data::new(app_state.clone()))
             .wrap(Cors::permissive())
             .wrap(
-                ErrorHandlers::new().handler(StatusCode::INTERNAL_SERVER_ERROR, render_browser_500),
+                ErrorHandlers::new()
+                    .handler(StatusCode::FORBIDDEN, redirect_browser_403)
+                    .handler(StatusCode::INTERNAL_SERVER_ERROR, render_browser_500),
             )
             .wrap(from_fn(remember_me_middleware))
             .wrap(
