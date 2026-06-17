@@ -63,6 +63,8 @@ let gradesLoaded = false;
 let isEnrolled = false;
 let currentAssignmentDetailsId = null;
 let currentQuizzes = [];
+let currentQuizAttemptsQuizId = null;
+let currentQuizAttemptRows = [];
 let moduleProgressById = new Map();
 let quizAttemptStatuses = {};
 let selectedCoursePresetImage = null;
@@ -413,6 +415,7 @@ async function loadQuizzes() {
             const adminButtons = isInstructor
                 ? `
                     <div class="module-actions">
+                        <button class="module-action-btn" onclick="openQuizAttempts(event, ${quiz.quiz_id})">Attempts</button>
                         <button class="module-action-btn edit-btn" onclick="editQuiz(event, ${quiz.quiz_id})">Edit</button>
                         <button class="module-action-btn delete-btn" onclick="deleteQuiz(event, ${quiz.quiz_id})">Delete</button>
                     </div>
@@ -657,7 +660,7 @@ function getGradeDateLabel(value, prefix) {
     return `${prefix}: ${formatAssignmentDate(value)}`;
 }
 
-function buildGradeRow({ title, meta, score, maxScore, feedback }) {
+function buildGradeRow({ title, meta, score, maxScore, feedback, actionHtml = "" }) {
     const hasScore = score !== null && score !== undefined;
     const percent = getGradePercent(score, maxScore);
     const percentLabel = percent === null ? "" : ` (${percent}%)`;
@@ -672,6 +675,7 @@ function buildGradeRow({ title, meta, score, maxScore, feedback }) {
                 ${formatGradeScore(score, maxScore)}${percentLabel}
             </div>
             ${feedback ? `<p class="grade-feedback"><strong>Feedback:</strong> ${escapeHtml(feedback)}</p>` : ""}
+            ${actionHtml}
         </div>
     `;
 }
@@ -731,13 +735,20 @@ function renderGrades(data) {
         });
     });
 
-    const quizRows = quizzes.map((quiz) => buildGradeRow({
-        title: quiz.title || "Untitled quiz",
-        meta: getGradeDateLabel(quiz.submitted_at, "Submitted") || (quiz.attempt_id ? "Attempt in progress" : ""),
-        score: quiz.total_score,
-        maxScore: quiz.max_score,
-        feedback: null,
-    }));
+    const quizRows = quizzes.map((quiz) => {
+        const canViewAnswers = quiz.is_graded && quiz.attempt_id;
+
+        return buildGradeRow({
+            title: quiz.title || "Untitled quiz",
+            meta: getGradeDateLabel(quiz.submitted_at, "Submitted") || (quiz.attempt_id ? "Attempt in progress" : ""),
+            score: quiz.total_score,
+            maxScore: quiz.max_score,
+            feedback: null,
+            actionHtml: canViewAnswers
+                ? `<button type="button" class="module-action-btn" onclick="openMyQuizAttemptReview(${quiz.attempt_id})">View Answers</button>`
+                : "",
+        });
+    });
 
     gradeList.innerHTML =
         renderGradeSection("Assignments", assignmentRows, "No assignments are available for this course.") +
@@ -2087,6 +2098,292 @@ function editQuiz(event, quizId) {
     window.location.href = `/course/${courseId}/quiz-builder?quiz_id=${quizId}`;
 }
 
+function renderStudentQuizReviewAnswer(answer) {
+    if (answer.question_type === "long_answer") {
+        return `
+            <div class="quiz-review-answer">
+                <h4>${escapeHtml(answer.question_text)}</h4>
+                <p class="grade-meta">Short answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
+                <p>${escapeHtml(answer.answer_text || "No answer submitted.")}</p>
+                <div class="staff-grade-readonly">
+                    <span>Score: ${escapeHtml(answer.score === null || answer.score === undefined ? "Not marked" : formatGradeNumber(answer.score))} / ${escapeHtml(answer.points)}</span>
+                    ${answer.feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(answer.feedback)}</p>` : ""}
+                </div>
+            </div>
+        `;
+    }
+
+    const isCorrect = answer.score !== null && Number(answer.score) === Number(answer.points);
+
+    return `
+        <div class="quiz-review-answer">
+            <h4>${escapeHtml(answer.question_text)}</h4>
+            <p class="grade-meta">MCQ</p>
+            <div class="staff-grade-readonly">
+                <span>Your answer: ${escapeHtml(answer.selected_option_text || "No option selected")}</span>
+                <span>Correct answer: ${escapeHtml(answer.correct_option_text || "No correct option set")}</span>
+                <span>Score: ${escapeHtml(answer.score === null || answer.score === undefined ? "0" : formatGradeNumber(answer.score))} / ${escapeHtml(answer.points)}</span>
+                <span>${isCorrect ? "Correct" : "Incorrect"}</span>
+            </div>
+        </div>
+    `;
+}
+
+function renderStudentQuizReview(review) {
+    const answers = Array.isArray(review.answers) ? review.answers : [];
+
+    return `
+        <div class="staff-submission-list">
+            <div class="staff-submission-item">
+                <div class="staff-submission-head">
+                    <div>
+                        <strong>Score: ${escapeHtml(formatGradeNumber(review.total_score ?? 0))} / ${escapeHtml(formatGradeNumber(review.max_score))}</strong>
+                        <span>${escapeHtml(formatAssignmentDate(review.submitted_at))}</span>
+                    </div>
+                </div>
+                ${answers.map(renderStudentQuizReviewAnswer).join("")}
+            </div>
+        </div>
+    `;
+}
+
+async function openMyQuizAttemptReview(attemptId, title = "Quiz") {
+    const modal = document.getElementById("quiz-attempts-modal");
+    const list = document.getElementById("quiz-attempts-list");
+    const heading = document.getElementById("quiz-attempts-title");
+
+    if (heading) {
+        heading.textContent = `${title} Answers`;
+    }
+
+    if (list) {
+        list.innerHTML = '<p class="grades-empty">Loading answers...</p>';
+    }
+
+    if (modal) {
+        modal.style.display = "flex";
+    }
+
+    try {
+        const response = await axios.get(`/api/quiz-attempts/my/${attemptId}/review`);
+        if (list) {
+            list.innerHTML = renderStudentQuizReview(response.data);
+        }
+    } catch (error) {
+        if (list) {
+            list.innerHTML = `<p class="grades-error">${escapeHtml(error.response?.data || "Unable to load quiz answers.")}</p>`;
+        }
+    }
+}
+
+function getQuizAttemptScoreLabel(attempt) {
+    if (attempt.total_score === null || attempt.total_score === undefined) {
+        return `Pending / ${attempt.max_score}`;
+    }
+
+    return `${formatGradeNumber(attempt.total_score)} / ${formatGradeNumber(attempt.max_score)}`;
+}
+
+function renderQuizAttemptAnswer(answer) {
+    const score = answer.score ?? "";
+    const feedback = answer.feedback || "";
+    const answerType = answer.question_type;
+
+    if (answerType === "long_answer") {
+        const gradeControls = answer.answer_id
+            ? `
+                <div class="staff-grade-form">
+                    <label for="quiz-answer-score-${answer.answer_id}">Score out of ${escapeHtml(answer.points)}</label>
+                    <input id="quiz-answer-score-${answer.answer_id}" type="number" min="0" max="${answer.points}" step="1" value="${escapeHtml(score)}">
+                    <label for="quiz-answer-feedback-${answer.answer_id}">Feedback</label>
+                    <textarea id="quiz-answer-feedback-${answer.answer_id}" rows="2">${escapeHtml(feedback)}</textarea>
+                    <div class="staff-grade-actions">
+                        <button type="button" onclick="saveQuizAnswerGrade(${answer.answer_id}, ${answer.points})">Save Mark</button>
+                    </div>
+                </div>
+            `
+            : '<div class="staff-grade-readonly"><span>No answer submitted.</span></div>';
+
+        return `
+            <div class="quiz-review-answer">
+                <h4>${escapeHtml(answer.question_text)}</h4>
+                <p class="grade-meta">Short answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
+                <p>${escapeHtml(answer.answer_text || "No answer submitted.")}</p>
+                ${gradeControls}
+            </div>
+        `;
+    }
+
+    const isCorrect = answer.score !== null && Number(answer.score) === Number(answer.points);
+    return `
+        <div class="quiz-review-answer">
+            <h4>${escapeHtml(answer.question_text)}</h4>
+            <p class="grade-meta">MCQ - auto marked</p>
+            <div class="staff-grade-readonly">
+                <span>Selected: ${escapeHtml(answer.selected_option_text || "No option selected")}</span>
+                <span>Correct: ${escapeHtml(answer.correct_option_text || "No correct option set")}</span>
+                <span>Score: ${escapeHtml(score === "" ? "0" : formatGradeNumber(score))} / ${escapeHtml(answer.points)}</span>
+                <span>${isCorrect ? "Correct" : "Incorrect"}</span>
+            </div>
+        </div>
+    `;
+}
+
+function renderQuizAttempts(attempts) {
+    const attemptRows = Array.isArray(attempts) ? attempts : [];
+
+    if (!attemptRows.length) {
+        return '<p class="grades-empty">No student attempts yet.</p>';
+    }
+
+    return `
+        <div class="staff-submission-list">
+            ${attemptRows.map((attempt) => {
+                return `
+                <button type="button" class="staff-submission-item quiz-attempt-summary" onclick="showQuizAttemptDetail(${attempt.attempt_id})">
+                    <div class="staff-submission-head">
+                        <div>
+                            <strong>${escapeHtml(attempt.student_name || "Student")}</strong>
+                            <span>Student ID: ${escapeHtml(attempt.user_id)}</span>
+                            <span>${escapeHtml(attempt.student_email || "")}</span>
+                        </div>
+                        <div class="staff-submission-meta">
+                            <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
+                            <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
+                            <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
+                            <span>${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                        </div>
+                    </div>
+                </button>
+            `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function renderQuizAttemptDetail(attempt) {
+    if (!attempt) {
+        return '<p class="grades-error">Attempt not found.</p>';
+    }
+
+    const answers = Array.isArray(attempt.answers) ? attempt.answers : [];
+
+    return `
+        <div class="staff-submission-list">
+            <button type="button" class="module-action-btn" onclick="showQuizAttemptList()">Back to Attempts</button>
+            <div class="staff-submission-item">
+                <div class="staff-submission-head">
+                    <div>
+                        <strong>${escapeHtml(attempt.student_name || "Student")}</strong>
+                        <span>Student ID: ${escapeHtml(attempt.user_id)}</span>
+                        <span>${escapeHtml(attempt.student_email || "")}</span>
+                    </div>
+                    <div class="staff-submission-meta">
+                        <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
+                        <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
+                        <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
+                        <span>${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                    </div>
+                </div>
+                ${answers.length ? answers.map(renderQuizAttemptAnswer).join("") : '<p class="grades-empty">No answers recorded for this attempt.</p>'}
+            </div>
+        </div>
+    `;
+}
+
+function showQuizAttemptList() {
+    const list = document.getElementById("quiz-attempts-list");
+    if (list) {
+        list.innerHTML = renderQuizAttempts(currentQuizAttemptRows);
+    }
+}
+
+function showQuizAttemptDetail(attemptId) {
+    const attempt = currentQuizAttemptRows.find((item) => Number(item.attempt_id) === Number(attemptId));
+    const list = document.getElementById("quiz-attempts-list");
+    if (list) {
+        list.innerHTML = renderQuizAttemptDetail(attempt);
+    }
+}
+
+async function openQuizAttempts(event, quizId) {
+    event.stopPropagation();
+    currentQuizAttemptsQuizId = quizId;
+    currentQuizAttemptRows = [];
+
+    const quiz = currentQuizzes.find((item) => Number(item.quiz_id) === Number(quizId));
+    const modal = document.getElementById("quiz-attempts-modal");
+    const list = document.getElementById("quiz-attempts-list");
+    const title = document.getElementById("quiz-attempts-title");
+
+    if (title) {
+        title.textContent = `${quiz?.title || "Quiz"} Attempts`;
+    }
+
+    if (list) {
+        list.innerHTML = '<p class="grades-empty">Loading student attempts...</p>';
+    }
+
+    if (modal) {
+        modal.style.display = "flex";
+    }
+
+    try {
+        const response = await axios.get(`/api/quiz-attempts/quiz/${quizId}`);
+        const attempts = Array.isArray(response.data) ? response.data : [];
+        currentQuizAttemptRows = attempts;
+        if (list) {
+            list.innerHTML = renderQuizAttempts(attempts);
+        }
+    } catch (error) {
+        console.error("Failed to load quiz attempts:", error);
+        if (list) {
+            list.innerHTML = `<p class="grades-error">${escapeHtml(error.response?.data || error.message || "Failed to load quiz attempts.")}</p>`;
+        }
+    }
+}
+
+function closeQuizAttempts() {
+    currentQuizAttemptsQuizId = null;
+    currentQuizAttemptRows = [];
+    const modal = document.getElementById("quiz-attempts-modal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+}
+
+async function saveQuizAnswerGrade(answerId, maxPoints) {
+    const scoreInput = document.getElementById(`quiz-answer-score-${answerId}`);
+    const feedbackInput = document.getElementById(`quiz-answer-feedback-${answerId}`);
+    const score = Number(scoreInput?.value);
+
+    if (!Number.isFinite(score) || score < 0) {
+        showActionMessage("Enter a score of 0 or higher.", "error");
+        return;
+    }
+
+    if (score > Number(maxPoints)) {
+        showActionMessage(`Marks awarded exceed how much this question is worth (${maxPoints}).`, "error");
+        return;
+    }
+
+    try {
+        await axios.put(`/api/quiz-answers/${answerId}/grade`, {
+            score,
+            feedback: feedbackInput?.value.trim() || "",
+        });
+
+        gradesLoaded = false;
+        showActionMessage("Quiz answer marked.", "success");
+
+        if (currentQuizAttemptsQuizId) {
+            await openQuizAttempts({ stopPropagation() {} }, currentQuizAttemptsQuizId);
+        }
+    } catch (error) {
+        showActionMessage(error.response?.data || "Failed to save quiz mark.", "error");
+    }
+}
+
 function openQuizAttempt(quizId) {
     if (!isInstructor) {
         const status = quizAttemptStatuses[quizId];
@@ -2327,6 +2624,7 @@ function bindInstructorControls() {
     document.getElementById("save-assignment-btn")?.addEventListener("click", saveAssignment);
     document.getElementById("close-assignment-modal-btn")?.addEventListener("click", closeAssignmentModal);
     document.getElementById("close-assignment-details-btn")?.addEventListener("click", closeAssignmentDetails);
+    document.getElementById("close-quiz-attempts-btn")?.addEventListener("click", closeQuizAttempts);
     document.getElementById("submit-assignment-dropbox-btn")?.addEventListener("click", submitAssignmentDropbox);
     document.getElementById("refresh-grades-btn")?.addEventListener("click", () => {
         gradesLoaded = false;

@@ -1,20 +1,17 @@
 use actix_session::Session;
 use actix_web::{delete, get, post, put, web, Responder};
 use sea_orm::DatabaseConnection;
+use serde::Deserialize;
 
-use crate::models::quiz_attempts::{CreateAttempt, MarkAttempt};
+use crate::models::quiz_attempts::CreateAttempt;
 use crate::services::quiz_attempt_service;
 
-// Staff only — see all attempts
-#[get("/quiz-attempts")]
-pub async fn get_quiz_attempts(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
-    quiz_attempt_service::list_attempts(db.get_ref(), &session).await
+#[derive(Deserialize)]
+pub struct SubmitAttemptQuery {
+    auto_submit: Option<bool>,
 }
 
-// Staff only — see all attempts for a quiz
+// Staff only: see all attempts for a quiz
 #[get("/quiz-attempts/quiz/{quiz_id}")]
 pub async fn get_attempts_by_quiz_id(
     db: web::Data<DatabaseConnection>,
@@ -33,6 +30,16 @@ pub async fn get_my_attempts(
     quiz_attempt_service::list_my_attempts(db.get_ref(), &session).await
 }
 
+// Students see their own graded attempt review
+#[get("/quiz-attempts/my/{attempt_id}/review")]
+pub async fn get_my_attempt_review(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>,
+    session: Session,
+) -> impl Responder {
+    quiz_attempt_service::get_my_attempt_review(db.get_ref(), &session, path.into_inner()).await
+}
+
 // Students see their own attempt availability for all quizzes in a course
 #[get("/quiz-attempts/my/course/{course_id}/status")]
 pub async fn get_my_attempt_statuses_by_course(
@@ -44,10 +51,11 @@ pub async fn get_my_attempt_statuses_by_course(
         db.get_ref(),
         &session,
         path.into_inner(),
-    ).await
+    )
+    .await
 }
 
-// Students create their own attempts; user_id is pulled from session, not the request body
+// Students create their own attempts; user_id is pulled from session
 #[post("/quiz-attempts")]
 pub async fn create_quiz_attempt(
     db: web::Data<DatabaseConnection>,
@@ -62,28 +70,19 @@ pub async fn create_quiz_attempt(
 pub async fn submit_quiz_attempt(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
+    query: web::Query<SubmitAttemptQuery>,
     session: Session,
 ) -> impl Responder {
-    quiz_attempt_service::submit_attempt(db.get_ref(), &session, path.into_inner()).await
-}
-
-// Staff only — grade an attempt
-#[put("/quiz-attempts/{attempt_id}/grade")]
-pub async fn grade_attempt(
-    db: web::Data<DatabaseConnection>,
-    path: web::Path<i32>,
-    body: web::Json<MarkAttempt>,
-    session: Session,
-) -> impl Responder {
-    quiz_attempt_service::grade_attempt(
+    quiz_attempt_service::submit_attempt(
         db.get_ref(),
         &session,
         path.into_inner(),
-        body.into_inner(),
-    ).await
+        query.auto_submit.unwrap_or(false),
+    )
+    .await
 }
 
-// Staff only — delete
+// Staff only: delete attempts
 #[delete("/quiz-attempts/{attempt_id}")]
 pub async fn delete_quiz_attempt(
     db: web::Data<DatabaseConnection>,

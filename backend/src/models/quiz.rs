@@ -18,10 +18,14 @@ pub struct Quiz {
 pub struct UpdateQuiz {
     pub course_id: Option<i32>,
     pub title: Option<String>,
-    pub description: Option<String>,
-    pub max_attempts: Option<i32>,
-    pub time_limit: Option<i32>,
-    pub starts_at: Option<NaiveDateTime>,
+    #[serde(default)]
+    pub description: Option<Option<String>>,
+    #[serde(default)]
+    pub max_attempts: Option<Option<i32>>,
+    #[serde(default)]
+    pub time_limit: Option<Option<i32>>,
+    #[serde(default)]
+    pub starts_at: Option<Option<NaiveDateTime>>,
     pub prerequisite_module_ids: Option<Vec<i32>>,
 }
 

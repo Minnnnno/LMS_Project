@@ -151,15 +151,36 @@ pub async fn get_my_course_grades(
         }
     };
 
+    let mut latest_graded_attempt_by_quiz = HashMap::new();
     let mut latest_attempt_by_quiz = HashMap::new();
     for attempt in attempts {
+        if attempt.is_graded {
+            latest_graded_attempt_by_quiz
+                .entry(attempt.quiz_id)
+                .and_modify(|current: &mut quiz_attempts::Model| {
+                    let current_time = current.submitted_at.unwrap_or(current.started_at);
+                    let attempt_time = attempt.submitted_at.unwrap_or(attempt.started_at);
+
+                    if attempt_time > current_time {
+                        *current = attempt.clone();
+                    }
+                })
+                .or_insert_with(|| attempt.clone());
+        }
+
         latest_attempt_by_quiz
             .entry(attempt.quiz_id)
             .and_modify(|current: &mut quiz_attempts::Model| {
-                let current_time = current.submitted_at.unwrap_or(current.started_at);
-                let attempt_time = attempt.submitted_at.unwrap_or(attempt.started_at);
+                let replace_current = match (current.submitted_at, attempt.submitted_at) {
+                    (Some(current_submitted_at), Some(attempt_submitted_at)) => {
+                        attempt_submitted_at > current_submitted_at
+                    }
+                    (None, Some(_)) => true,
+                    (Some(_), None) => false,
+                    (None, None) => attempt.started_at > current.started_at,
+                };
 
-                if attempt_time > current_time {
+                if replace_current {
                     *current = attempt.clone();
                 }
             })
@@ -169,15 +190,18 @@ pub async fn get_my_course_grades(
     let quiz_grades = course_quizzes
         .into_iter()
         .map(|quiz| {
-            let attempt = latest_attempt_by_quiz.get(&quiz.quiz_id);
+            let attempt = latest_graded_attempt_by_quiz
+                .get(&quiz.quiz_id)
+                .or_else(|| latest_attempt_by_quiz.get(&quiz.quiz_id));
 
             QuizGrade {
                 quiz_id: quiz.quiz_id,
                 title: quiz.title,
                 max_score: *max_score_by_quiz.get(&quiz.quiz_id).unwrap_or(&0),
-                total_score: attempt.and_then(|item| item.total_score),
+                total_score: attempt.and_then(|item| item.is_graded.then_some(item.total_score).flatten()),
                 submitted_at: attempt.and_then(|item| item.submitted_at),
                 attempt_id: attempt.map(|item| item.attempt_id),
+                is_graded: attempt.map(|item| item.is_graded).unwrap_or(false),
             }
         })
         .collect::<Vec<_>>();

@@ -7,33 +7,24 @@ class AssessmentsPage {
     }
 
     // ---------------------------------------------------------------------------
-    // Attempt status resolution
-    // ---------------------------------------------------------------------------
-
-    resolveStatus(quiz, attemptsForQuiz) {
-        const submitted = attemptsForQuiz.filter(a => a.submitted_at !== null);
-        const inProgress = attemptsForQuiz.filter(a => a.submitted_at === null);
-        const maxAttempts = quiz.max_attempts;
-
-        if (submitted.length > 0 && (maxAttempts === null || submitted.length < maxAttempts)) {
-            return { label: "Completed", badgeClass: "bg-success", canAttempt: true };
-        }
-        if (submitted.length > 0 && maxAttempts !== null && submitted.length >= maxAttempts) {
-            return { label: "Limit Reached", badgeClass: "bg-danger", canAttempt: false };
-        }
-        if (inProgress.length > 0) {
-            return { label: "In Progress", badgeClass: "bg-warning text-dark", canAttempt: true };
-        }
-        return { label: "Not Attempted", badgeClass: "bg-secondary", canAttempt: true };
-    }
-
-    // ---------------------------------------------------------------------------
     // Rendering
     // ---------------------------------------------------------------------------
 
-    renderQuizCard(courseId, quiz, allAttempts) {
-        const attemptsForQuiz = allAttempts.filter(a => a.quiz_id === quiz.quiz_id);
-        const status = this.resolveStatus(quiz, attemptsForQuiz);
+    getStatusBadge(status) {
+        if (!status) {
+            return { label: "Unavailable", badgeClass: "bg-secondary", canAttempt: false };
+        }
+
+        if (!status.can_attempt) {
+            return { label: status.message || "Unavailable", badgeClass: "bg-danger", canAttempt: false };
+        }
+
+        return { label: status.message || "Available", badgeClass: "bg-success", canAttempt: true };
+    }
+
+    renderQuizCard(courseId, quiz, statusesByQuiz) {
+        const status = statusesByQuiz[quiz.quiz_id] || null;
+        const badge = this.getStatusBadge(status);
 
         const timeLimitMeta = quiz.time_limit
             ? `<span class="badge bg-light text-dark border me-1">
@@ -42,13 +33,13 @@ class AssessmentsPage {
             : "";
         const maxAttemptsMeta = quiz.max_attempts
             ? `<span class="badge bg-light text-dark border me-1">
-                   <i class="bi bi-arrow-repeat me-1"></i>${attemptsForQuiz.filter(a => a.submitted_at).length}/${quiz.max_attempts} attempts
+                   <i class="bi bi-arrow-repeat me-1"></i>${status?.attempts_used ?? 0}/${quiz.max_attempts} attempts
                </span>`
             : "";
 
         let startBtn = "";
-        if (status.canAttempt) {
-            startBtn = `<a href="/course/${courseId}" class="btn btn-sm btn-dark">
+        if (badge.canAttempt) {
+            startBtn = `<a href="/course/${courseId}/quiz/${quiz.quiz_id}/attempt" class="btn btn-sm btn-dark">
                 <i class="bi bi-play-fill me-1"></i>Start Quiz
             </a>`;
         }
@@ -67,7 +58,7 @@ class AssessmentsPage {
                         <div class="d-flex flex-wrap gap-1 mt-1">
                             ${timeLimitMeta}
                             ${maxAttemptsMeta}
-                            <span class="badge ${status.badgeClass}">${status.label}</span>
+                            <span class="badge ${badge.badgeClass}">${HtmlUtils.escape(badge.label)}</span>
                         </div>
                     </div>
                     <div class="flex-shrink-0">${startBtn}</div>
@@ -75,10 +66,10 @@ class AssessmentsPage {
             </div>`;
     }
 
-    renderAccordion(courseQuizGroups, attempts) {
+    renderAccordion(courseQuizGroups) {
         return courseQuizGroups.map((group, i) => {
             const quizCards = group.quizzes.length
-                ? group.quizzes.map(q => this.renderQuizCard(group.courseId, q, attempts)).join("")
+                ? group.quizzes.map(q => this.renderQuizCard(group.courseId, q, group.statusesByQuiz || {})).join("")
                 : `<p class="text-muted small py-2 px-1 mb-0">No quizzes in this course yet.</p>`;
 
             const collapseId = `quiz-accordion-${i}`;
@@ -120,21 +111,24 @@ class AssessmentsPage {
                 return;
             }
 
-            const [quizResults, attempts] = await Promise.all([
-                Promise.all(
-                    courses.map(c =>
-                        LmsApi.safeGet(`/api/quiz/${c.course_id}`)
-                            .then(data => ({
-                                courseId:   c.course_id,
-                                courseName: c.name || `Course #${c.course_id}`,
-                                quizzes:    data || [],
-                            }))
-                    )
-                ),
-                LmsApi.safeGet("/api/quiz-attempts/my"),
-            ]);
+            const quizResults = await Promise.all(
+                courses.map(async (course) => {
+                    const [quizzes, statuses] = await Promise.all([
+                        LmsApi.safeGet(`/api/quiz/${course.course_id}`),
+                        LmsApi.safeGet(`/api/quiz-attempts/my/course/${course.course_id}/status`),
+                    ]);
 
-            const allAttempts = attempts || [];
+                    return {
+                        courseId: course.course_id,
+                        courseName: course.name || `Course #${course.course_id}`,
+                        quizzes: quizzes || [],
+                        statusesByQuiz: (statuses || []).reduce((map, status) => {
+                            map[status.quiz_id] = status;
+                            return map;
+                        }, {}),
+                    };
+                })
+            );
             const hasQuizzes  = quizResults.some(g => g.quizzes.length > 0);
 
             if (!hasQuizzes) {
@@ -144,7 +138,7 @@ class AssessmentsPage {
 
             this.state.html(`
                 <div class="accordion" id="assessments-accordion">
-                    ${this.renderAccordion(quizResults, allAttempts)}
+                    ${this.renderAccordion(quizResults)}
                 </div>`);
         } catch (error) {
             LmsApi.handleError(error);
@@ -158,3 +152,4 @@ document.addEventListener("DOMContentLoaded", () => {
         new AssessmentsPage().load();
     }
 });
+

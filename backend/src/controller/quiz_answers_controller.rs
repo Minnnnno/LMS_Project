@@ -5,14 +5,6 @@ use sea_orm::DatabaseConnection;
 use crate::models::quiz_answers::{SubmitMcqAnswer, SubmitLongAnswer, GradeQuizAnswer};
 use crate::services::quiz_answer_service;
 
-// GET /quiz-answers — staff only
-#[get("/quiz-answers")]
-pub async fn get_quiz_answers(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
-    quiz_answer_service::list_answers(db.get_ref(), &session).await
-}
 
 // GET /quiz-answers/attempt/{attempt_id}
 // staff: see any attempt's answers
@@ -71,3 +63,4 @@ pub async fn delete_quiz_answer(
 ) -> impl Responder {
     quiz_answer_service::delete_answer(db.get_ref(), &session, path.into_inner()).await
 }
+

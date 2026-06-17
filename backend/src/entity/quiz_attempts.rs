@@ -12,6 +12,7 @@ pub struct Model {
     pub started_at: NaiveDateTime,
     pub submitted_at: Option<NaiveDateTime>,
     pub total_score: Option<i32>,
+    pub is_graded: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

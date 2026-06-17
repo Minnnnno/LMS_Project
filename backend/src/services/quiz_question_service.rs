@@ -8,8 +8,30 @@ use crate::entity::quiz_questions::{
 };
 use crate::entity::{courses, quiz};
 use crate::models::quiz_questions::{CreateQuizQuestion, UpdateQuizQuestion};
-use crate::services::auth_helpers::get_user_id;
 use crate::services::course_service::can_manage_course;
+
+fn validate_question_fields(
+    question_text: Option<&str>,
+    position: Option<i32>,
+    points: Option<i32>,
+) -> Result<(), HttpResponse> {
+    if question_text
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Err(HttpResponse::BadRequest().body("Question text cannot be empty"));
+    }
+
+    if position.map(|value| value < 1).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Question position must be 1 or higher"));
+    }
+
+    if points.map(|value| value < 1).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Question points must be 1 or higher"));
+    }
+
+    Ok(())
+}
 
 async fn get_course_for_quiz(
     db: &DatabaseConnection,
@@ -50,26 +72,12 @@ async fn require_can_manage_quiz(
     }
 }
 
-pub async fn list_questions(db: &DatabaseConnection, session: &Session) -> HttpResponse {
-    if let Err(response) = get_user_id(session) {
-        return response;
-    }
-
-    match QuizQuestionEntity::find().all(db).await {
-        Ok(questions) if questions.is_empty() => {
-            HttpResponse::NotFound().body("No quiz questions found")
-        }
-        Ok(questions) => HttpResponse::Ok().json(questions),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
-    }
-}
-
 pub async fn list_questions_by_quiz(
     db: &DatabaseConnection,
     session: &Session,
     quiz_id: i32,
 ) -> HttpResponse {
-    if let Err(response) = get_user_id(session) {
+    if let Err(response) = require_can_manage_quiz(db, session, quiz_id).await {
         return response;
     }
 
@@ -91,6 +99,12 @@ pub async fn create_question(
     session: &Session,
     data: CreateQuizQuestion,
 ) -> HttpResponse {
+    if let Err(response) =
+        validate_question_fields(Some(&data.question_text), Some(data.position), data.points)
+    {
+        return response;
+    }
+
     if let Err(response) = require_can_manage_quiz(db, session, data.quiz_id).await {
         return response;
     }
@@ -116,6 +130,12 @@ pub async fn update_question(
     question_id: i32,
     data: UpdateQuizQuestion,
 ) -> HttpResponse {
+    if let Err(response) =
+        validate_question_fields(data.question_text.as_deref(), data.position, data.points)
+    {
+        return response;
+    }
+
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
             if let Err(response) = require_can_manage_quiz(db, session, question.quiz_id).await {

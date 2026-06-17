@@ -3,7 +3,7 @@
 {% block title %}Quiz Attempt | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/quiz_attempt.css?v=1">
+<link rel="stylesheet" href="/static/css/quiz_attempt.css?v=2">
 
 <div class="quiz-attempt-page">
     <header class="quiz-attempt-header">
@@ -24,6 +24,10 @@
     <main class="quiz-attempt-layout">
         <section id="quiz-question-list" class="quiz-question-list"></section>
         <aside class="quiz-attempt-side">
+            <div class="quiz-attempt-panel quiz-timer-panel">
+                <h2>Timer</h2>
+                <p id="quiz-timer-text" class="quiz-timer-text">Loading...</p>
+            </div>
             <div class="quiz-attempt-panel">
                 <h2>Progress</h2>
                 <p id="quiz-progress-text">0 answered</p>
@@ -33,5 +37,5 @@
     </main>
 </div>
 
-<script src="/static/js/quiz_attempt.js?v=1"></script>
+<script src="/static/js/quiz_attempt.js?v=3"></script>
 {% endblock content %}

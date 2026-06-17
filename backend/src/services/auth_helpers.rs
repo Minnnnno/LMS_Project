@@ -27,8 +27,12 @@ pub fn redirect_to_login() -> HttpResponse {
 }
 
 // true if user ONLY has student role — staff with student role still get staff access
+pub fn has_staff_role(role_ids: &[i32]) -> bool {
+    role_ids.iter().any(|role_id| [1, 2, 3].contains(role_id))
+}
+
 pub fn is_student_only(role_ids: &[i32]) -> bool {
-    role_ids.contains(&4) && !role_ids.iter().any(|r| [1, 2, 3].contains(r))
+    role_ids.contains(&4) && !has_staff_role(role_ids)
 }
 
 pub async fn is_enrolled(
@@ -48,7 +52,6 @@ pub async fn is_enrolled(
             .body(format!("Database error checking enrollment: {}", err))),
     }
 }
-
 
 pub fn require_admin(session: &Session) -> Result<(), HttpResponse> {
     let role_names = session

@@ -7,8 +7,22 @@ use crate::entity::quiz_options::{
 };
 use crate::entity::{courses, quiz, quiz_questions};
 use crate::models::quiz_options::{CreateQuizOption, UpdateQuizOption};
-use crate::services::auth_helpers::get_user_id;
 use crate::services::course_service::can_manage_course;
+
+fn validate_option_fields(
+    option_text: Option<&str>,
+    position: Option<i32>,
+) -> Result<(), HttpResponse> {
+    if option_text.map(|value| value.trim().is_empty()).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Option text cannot be empty"));
+    }
+
+    if position.map(|value| value < 1).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Option position must be 1 or higher"));
+    }
+
+    Ok(())
+}
 
 async fn get_course_for_question(
     db: &DatabaseConnection,
@@ -58,24 +72,12 @@ async fn require_can_manage_question(
     }
 }
 
-pub async fn list_options(db: &DatabaseConnection, session: &Session) -> HttpResponse {
-    if let Err(response) = get_user_id(session) {
-        return response;
-    }
-
-    match QuizOptionEntity::find().all(db).await {
-        Ok(options) if options.is_empty() => HttpResponse::NotFound().body("No quiz options found"),
-        Ok(options) => HttpResponse::Ok().json(options),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
-    }
-}
-
 pub async fn list_options_by_question(
     db: &DatabaseConnection,
     session: &Session,
     question_id: i32,
 ) -> HttpResponse {
-    if let Err(response) = get_user_id(session) {
+    if let Err(response) = require_can_manage_question(db, session, question_id).await {
         return response;
     }
 
@@ -95,6 +97,10 @@ pub async fn create_option(
     session: &Session,
     data: CreateQuizOption,
 ) -> HttpResponse {
+    if let Err(response) = validate_option_fields(Some(&data.option_text), Some(data.position)) {
+        return response;
+    }
+
     if let Err(response) = require_can_manage_question(db, session, data.question_id).await {
         return response;
     }
@@ -119,6 +125,10 @@ pub async fn update_option(
     option_id: i32,
     data: UpdateQuizOption,
 ) -> HttpResponse {
+    if let Err(response) = validate_option_fields(data.option_text.as_deref(), data.position) {
+        return response;
+    }
+
     match QuizOptionEntity::find_by_id(option_id).one(db).await {
         Ok(Some(option)) => {
             if let Err(response) =

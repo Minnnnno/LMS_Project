@@ -1,21 +1,45 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
-use serde::Serialize;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
+use serde::Serialize;
 
+use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
+use crate::entity::quiz_options::{Column as QuizOptionColumn, Entity as QuizOptionEntity};
+use crate::entity::quiz_questions::{
+    Column as QuizQuestionColumn, Entity as QuizQuestionEntity, QuestionType,
+};
 use crate::entity::{
     courses,
     quiz::{self, Entity as QuizEntity},
 };
-use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
-use crate::entity::quiz_options::{Column as QuizOptionColumn, Entity as QuizOptionEntity};
-use crate::entity::quiz_questions::{Column as QuizQuestionColumn, Entity as QuizQuestionEntity};
 use crate::models::quiz::{CreateQuiz, UpdateQuiz};
-use crate::services::auth_helpers::{get_role_ids, get_user_id, is_enrolled, is_student_only};
+use crate::services::auth_helpers::{
+    get_role_ids, get_user_id, has_staff_role, is_enrolled, is_student_only,
+};
 use crate::services::course_service::can_manage_course;
 use crate::services::prerequisite_service;
+
+fn validate_quiz_fields(
+    title: Option<&str>,
+    max_attempts: Option<i32>,
+    time_limit: Option<i32>,
+) -> Result<(), HttpResponse> {
+    if title.map(|value| value.trim().is_empty()).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Quiz title cannot be empty"));
+    }
+
+    if max_attempts.map(|value| value < 1).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Max attempts must be 1 or higher"));
+    }
+
+    if time_limit.map(|value| value < 1).unwrap_or(false) {
+        return Err(HttpResponse::BadRequest().body("Time limit must be 1 minute or higher"));
+    }
+
+    Ok(())
+}
 
 async fn require_can_manage_course(
     db: &DatabaseConnection,
@@ -61,6 +85,23 @@ struct AttemptQuizQuestion {
 struct AttemptQuizPayload {
     quiz: quiz::Model,
     questions: Vec<AttemptQuizQuestion>,
+    access: AttemptQuizAccess,
+    timer: AttemptQuizTimer,
+}
+
+#[derive(Serialize)]
+struct AttemptQuizAccess {
+    can_attempt: bool,
+    preview_only: bool,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct AttemptQuizTimer {
+    time_limit_minutes: Option<i32>,
+    expires_at: Option<String>,
+    remaining_seconds: Option<i64>,
+    message: String,
 }
 
 #[derive(Serialize)]
@@ -143,19 +184,42 @@ pub async fn get_quiz_for_attempt(
     let quiz = match QuizEntity::find_by_id(quiz_id).one(db).await {
         Ok(Some(quiz)) => quiz,
         Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
-    if let Some(starts_at) = quiz.starts_at {
-        if starts_at > chrono::Local::now().naive_local() {
-            return HttpResponse::Forbidden().body("This quiz is not open yet");
+    let role_ids = get_role_ids(session);
+    let access = if has_staff_role(&role_ids) {
+        if let Err(response) = require_can_manage_course(db, session, quiz.course_id).await {
+            return response;
         }
-    }
 
-    if is_student_only(&get_role_ids(session)) {
+        AttemptQuizAccess {
+            can_attempt: false,
+            preview_only: true,
+            message:
+                "You can view the questions, but instructors and admins cannot attempt quizzes."
+                    .to_string(),
+        }
+    } else if is_student_only(&role_ids) {
+        if let Some(starts_at) = quiz.starts_at {
+            if starts_at > chrono::Local::now().naive_local() {
+                return HttpResponse::Forbidden().body("This quiz is not open yet");
+            }
+        }
+
+        if let Some(ends_at) = quiz.ends_at {
+            if ends_at < chrono::Local::now().naive_local() {
+                return HttpResponse::Forbidden().body("This quiz is closed");
+            }
+        }
+
         match is_enrolled(db, user_id, quiz.course_id).await {
             Ok(true) => {}
-            Ok(false) => return HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz"),
+            Ok(false) => {
+                return HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz");
+            }
             Err(response) => return response,
         }
 
@@ -190,16 +254,29 @@ pub async fn get_quiz_for_attempt(
                 .await
             {
                 Ok(attempts) => {
-                    let has_open_attempt = attempts.iter().any(|attempt| attempt.submitted_at.is_none());
+                    let has_open_attempt = attempts
+                        .iter()
+                        .any(|attempt| attempt.submitted_at.is_none());
 
                     if attempts.len() >= max_attempts as usize && !has_open_attempt {
                         return HttpResponse::Forbidden().body("No attempts left");
                     }
                 }
-                Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+                Err(err) => {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Database error: {}", err));
+                }
             }
         }
-    }
+
+        AttemptQuizAccess {
+            can_attempt: true,
+            preview_only: false,
+            message: "You can attempt this quiz.".to_string(),
+        }
+    } else {
+        return HttpResponse::Forbidden().body("Student role required to attempt this quiz");
+    };
 
     let questions = match QuizQuestionEntity::find()
         .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
@@ -208,28 +285,42 @@ pub async fn get_quiz_for_attempt(
         .await
     {
         Ok(questions) => questions,
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
     let mut attempt_questions = Vec::with_capacity(questions.len());
 
     for question in questions {
-        let options = match QuizOptionEntity::find()
+        let option_rows = match QuizOptionEntity::find()
             .filter(QuizOptionColumn::QuestionId.eq(question.question_id))
             .order_by_asc(QuizOptionColumn::Position)
             .all(db)
             .await
         {
-            Ok(options) => options
-                .into_iter()
-                .map(|option| AttemptQuizOption {
-                    option_id: option.option_id,
-                    option_text: option.option_text,
-                    position: option.position,
-                })
-                .collect(),
-            Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+            Ok(options) => options,
+            Err(err) => {
+                return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+            }
         };
+
+        if !access.preview_only
+            && question.question_type == QuestionType::Mcq
+            && (option_rows.len() < 2 || !option_rows.iter().any(|option| option.is_correct))
+        {
+            return HttpResponse::Conflict()
+                .body("This quiz has an invalid MCQ question and cannot be attempted yet");
+        }
+
+        let options = option_rows
+            .into_iter()
+            .map(|option| AttemptQuizOption {
+                option_id: option.option_id,
+                option_text: option.option_text,
+                position: option.position,
+            })
+            .collect();
 
         attempt_questions.push(AttemptQuizQuestion {
             question_id: question.question_id,
@@ -242,6 +333,16 @@ pub async fn get_quiz_for_attempt(
     }
 
     HttpResponse::Ok().json(AttemptQuizPayload {
+        timer: AttemptQuizTimer {
+            time_limit_minutes: quiz.time_limit,
+            expires_at: None,
+            remaining_seconds: None,
+            message: quiz
+                .time_limit
+                .map(|minutes| format!("{} minute time limit", minutes))
+                .unwrap_or_else(|| "No time limit".to_string()),
+        },
+        access,
         quiz,
         questions: attempt_questions,
     })
@@ -252,6 +353,12 @@ pub async fn create_quiz(
     session: &Session,
     data: CreateQuiz,
 ) -> HttpResponse {
+    if let Err(response) =
+        validate_quiz_fields(Some(&data.title), data.max_attempts, data.time_limit)
+    {
+        return response;
+    }
+
     if let Err(response) = require_can_manage_course(db, session, data.course_id).await {
         return response;
     }
@@ -291,13 +398,21 @@ pub async fn update_quiz(
     quiz_id: i32,
     data: UpdateQuiz,
 ) -> HttpResponse {
+    if let Err(response) =
+        validate_quiz_fields(
+            data.title.as_deref(),
+            data.max_attempts.flatten(),
+            data.time_limit.flatten(),
+        )
+    {
+        return response;
+    }
+
     match QuizEntity::find_by_id(quiz_id).one(db).await {
         Ok(Some(updated_quiz)) => {
             let course_id = updated_quiz.course_id;
 
-            if let Err(response) =
-                require_can_manage_course(db, session, course_id).await
-            {
+            if let Err(response) = require_can_manage_course(db, session, course_id).await {
                 return response;
             }
 
@@ -314,16 +429,16 @@ pub async fn update_quiz(
                 active.title = Set(title);
             }
             if let Some(description) = data.description {
-                active.description = Set(Some(description));
+                active.description = Set(description);
             }
             if let Some(max_attempts) = data.max_attempts {
-                active.max_attempts = Set(Some(max_attempts));
+                active.max_attempts = Set(max_attempts);
             }
             if let Some(time_limit) = data.time_limit {
-                active.time_limit = Set(Some(time_limit));
+                active.time_limit = Set(time_limit);
             }
             if let Some(starts_at) = data.starts_at {
-                active.starts_at = Set(Some(starts_at));
+                active.starts_at = Set(starts_at);
             }
 
             match active.update(db).await {

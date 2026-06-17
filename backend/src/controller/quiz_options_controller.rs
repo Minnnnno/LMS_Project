@@ -5,14 +5,6 @@ use sea_orm::DatabaseConnection;
 use crate::models::quiz_options::{CreateQuizOption, UpdateQuizOption};
 use crate::services::quiz_option_service;
 
-#[get("/quiz-options")]
-pub async fn get_quiz_options(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
-    quiz_option_service::list_options(db.get_ref(), &session).await
-}
-
 // Fixed: route param renamed from {option_id} to {question_id} to match intent
 #[get("/quiz-options/by-question/{question_id}")]
 pub async fn get_options_by_qn_id(

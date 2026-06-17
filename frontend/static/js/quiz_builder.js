@@ -1,11 +1,13 @@
 const pathParts = window.location.pathname.split("/");
 const courseId = pathParts[2];
+const quizId = new URLSearchParams(window.location.search).get("quiz_id");
 const questionList = document.getElementById("question-list");
 const questionTemplate = document.getElementById("question-template");
 const optionTemplate = document.getElementById("option-template");
 
 let questionCounter = 0;
 let courseModules = [];
+let editingQuizId = quizId ? Number(quizId) : null;
 
 function populateQuizStartTimeOptions() {
     const timeSelect = document.getElementById("quiz-start-time-input");
@@ -111,6 +113,8 @@ function createQuestion(type = "mcq") {
 
     renumberQuestions();
     updateSummary();
+
+    return card;
 }
 
 function goBackToCourse() {
@@ -335,6 +339,118 @@ async function postJson(url, payload) {
     return response.json();
 }
 
+async function putJson(url, payload) {
+    const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Request failed.");
+    }
+
+    return response.text();
+}
+
+async function deleteRequest(url) {
+    const response = await fetch(url, { method: "DELETE" });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Request failed.");
+    }
+}
+
+async function getJson(url) {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Request failed.");
+    }
+
+    return response.json();
+}
+
+function setDateTimeInputs(value) {
+    if (!value) {
+        document.getElementById("quiz-start-date-input").value = "";
+        document.getElementById("quiz-start-time-input").value = "00:00";
+        return;
+    }
+
+    const normalized = String(value).replace(" ", "T");
+    const [date, time = "00:00"] = normalized.split("T");
+
+    document.getElementById("quiz-start-date-input").value = date || "";
+    document.getElementById("quiz-start-time-input").value = time.slice(0, 5) || "00:00";
+}
+
+function populateQuestion(question, options = []) {
+    const card = createQuestion(question.question_type || "mcq");
+
+    card.querySelector(".question-text-input").value = question.question_text || "";
+    card.querySelector(".question-points-input").value = question.points || 1;
+
+    if (question.question_type === "mcq") {
+        const optionsWrap = card.querySelector(".mcq-options");
+        optionsWrap.innerHTML = "";
+
+        const sortedOptions = [...options].sort((first, second) => Number(first.position) - Number(second.position));
+        sortedOptions.forEach((option) => {
+            createOption(card, option.option_text || "", Boolean(option.is_correct));
+        });
+    }
+
+    updateSummary();
+}
+
+async function loadExistingQuiz() {
+    if (!editingQuizId) {
+        return false;
+    }
+
+    setSaveStatus("Loading quiz...");
+
+    const quizzes = await getJson(`/api/quiz/${courseId}`);
+    const quiz = quizzes.find((item) => Number(item.quiz_id) === editingQuizId);
+
+    if (!quiz) {
+        throw new Error("Quiz not found for this course.");
+    }
+
+    document.querySelector(".quiz-builder-header h1").textContent = "Edit Quiz";
+    document.querySelector("#save-quiz-draft-btn span").textContent = "Save Changes";
+    document.getElementById("quiz-title-input").value = quiz.title || "";
+    document.getElementById("quiz-description-input").value = quiz.description || "";
+    document.getElementById("quiz-max-attempts-input").value = quiz.max_attempts ?? "";
+    document.getElementById("quiz-time-limit-input").value = quiz.time_limit ?? "";
+    setDateTimeInputs(quiz.starts_at);
+    renderQuizPrerequisiteOptions(quiz.prerequisite_module_ids || []);
+
+    const questions = await getJson(`/api/quiz-questions/${editingQuizId}`);
+    questionList.innerHTML = "";
+    questionCounter = 0;
+
+    for (const question of [...questions].sort((first, second) => Number(first.position) - Number(second.position))) {
+        const options = question.question_type === "mcq"
+            ? await getJson(`/api/quiz-options/by-question/${question.question_id}`)
+            : [];
+        populateQuestion(question, Array.isArray(options) ? options : []);
+    }
+
+    if (!questionList.querySelector(".question-card")) {
+        createQuestion("mcq");
+    }
+
+    setSaveStatus("");
+    return true;
+}
+
 async function saveDraft() {
     const draft = collectDraft();
     const validationMessage = validateDraft(draft);
@@ -348,7 +464,7 @@ async function saveDraft() {
         setSaving(true);
         setSaveStatus("Saving quiz draft...");
 
-        const quiz = await postJson("/api/quiz", {
+        const quizPayload = {
             course_id: draft.course_id,
             title: draft.title,
             description: draft.description || null,
@@ -356,7 +472,20 @@ async function saveDraft() {
             time_limit: draft.time_limit ? Number(draft.time_limit) : null,
             starts_at: draft.starts_at,
             prerequisite_module_ids: draft.prerequisite_module_ids,
-        });
+        };
+
+        const quiz = editingQuizId
+            ? { quiz_id: editingQuizId }
+            : await postJson("/api/quiz", quizPayload);
+
+        if (editingQuizId) {
+            await putJson(`/api/quiz/${editingQuizId}`, quizPayload);
+            const existingQuestions = await getJson(`/api/quiz-questions/${editingQuizId}`);
+
+            for (const question of existingQuestions) {
+                await deleteRequest(`/api/quiz-questions/${question.question_id}`);
+            }
+        }
 
         for (const question of draft.questions) {
             const savedQuestion = await postJson("/api/quiz-questions", {
@@ -379,7 +508,7 @@ async function saveDraft() {
             }
         }
 
-        setSaveStatus("Quiz draft saved.", "success");
+        setSaveStatus(editingQuizId ? "Quiz updated." : "Quiz draft saved.", "success");
         window.setTimeout(goBackToCourse, 700);
     } catch (error) {
         setSaveStatus(error.message || "Failed to save quiz draft.", "error");
@@ -387,11 +516,20 @@ async function saveDraft() {
     }
 }
 
-function init() {
+async function init() {
     document.getElementById("quiz-back-link").href = `/course/${courseId}`;
     populateQuizStartTimeOptions();
-    loadCourseModules();
-    createQuestion("mcq");
+    await loadCourseModules();
+
+    try {
+        const loadedExisting = await loadExistingQuiz();
+        if (!loadedExisting) {
+            createQuestion("mcq");
+        }
+    } catch (error) {
+        setSaveStatus(error.message || "Failed to load quiz.", "error");
+        createQuestion("mcq");
+    }
 
     document.getElementById("add-question-btn").addEventListener("click", () => {
         createQuestion("mcq");

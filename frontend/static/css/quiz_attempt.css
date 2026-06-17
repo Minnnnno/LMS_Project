@@ -163,3 +163,32 @@
         position: static;
     }
 }
+
+.quiz-timer-panel {
+    margin-bottom: 16px;
+}
+
+.quiz-timer-text {
+    margin: 0;
+    color: #101828;
+    font-size: 1.4rem;
+    font-weight: 900;
+}
+
+.quiz-timer-text.warning {
+    color: #b54708;
+}
+
+.quiz-timer-text.expired {
+    color: #b42318;
+}
+
+.quiz-option.readonly {
+    cursor: default;
+    background: #f9fafb;
+}
+
+.quiz-option input:disabled,
+.quiz-long-answer:disabled {
+    cursor: not-allowed;
+}

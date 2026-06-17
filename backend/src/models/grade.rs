@@ -28,4 +28,5 @@ pub struct QuizGrade {
     pub total_score: Option<i32>,
     pub submitted_at: Option<NaiveDateTime>,
     pub attempt_id: Option<i32>,
+    pub is_graded: bool,
 }

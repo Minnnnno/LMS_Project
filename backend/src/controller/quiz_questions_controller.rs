@@ -5,14 +5,6 @@ use sea_orm::DatabaseConnection;
 use crate::models::quiz_questions::{CreateQuizQuestion, UpdateQuizQuestion};
 use crate::services::quiz_question_service;
 
-#[get("/quiz-questions")]
-pub async fn get_quiz_questions(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
-    quiz_question_service::list_questions(db.get_ref(), &session).await
-}
-
 #[get("/quiz-questions/{quiz_id}")]
 pub async fn get_qns_by_quiz_id(
     db: web::Data<DatabaseConnection>,

@@ -9,16 +9,12 @@ pub struct QuizAttempt {
     pub started_at: NaiveDateTime,
     pub submitted_at: Option<NaiveDateTime>,
     pub total_score: Option<i32>,
+    pub is_graded: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SubmitAttempt {
     pub submitted_at: Option<NaiveDateTime>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct MarkAttempt {
-    pub total_score: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize)]
