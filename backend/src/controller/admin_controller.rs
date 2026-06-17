@@ -16,7 +16,7 @@ use crate::models::admin::{
     AdminEnrollmentForm,
 };
 
-use crate::services::auth_helpers::require_admin;
+use crate::services::auth_helpers::{require_admin, require_admin_page};
 use crate::ssr::pages::render_page;
 
 use crate::services::admin_service::{
@@ -104,7 +104,7 @@ pub async fn admin_get_roles(
 pub async fn admin_dashboard(
     session: Session,
 ) -> impl Responder {
-    match require_admin(&session) {
+    match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }
@@ -112,7 +112,7 @@ pub async fn admin_dashboard(
 
 #[get("/admin/analytics")]
 pub async fn admin_analytics_page(session: Session) -> impl Responder {
-    match require_admin(&session) {
+    match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }
@@ -120,7 +120,7 @@ pub async fn admin_analytics_page(session: Session) -> impl Responder {
 
 #[get("/admin/manage/organisations")]
 pub async fn admin_organisations_page(session: Session) -> impl Responder {
-    match require_admin(&session) {
+    match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }
@@ -128,7 +128,7 @@ pub async fn admin_organisations_page(session: Session) -> impl Responder {
 
 #[get("/admin/manage/users")]
 pub async fn admin_users_page(session: Session) -> impl Responder {
-    match require_admin(&session) {
+    match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }
@@ -136,7 +136,7 @@ pub async fn admin_users_page(session: Session) -> impl Responder {
 
 #[get("/admin/manage/courses")]
 pub async fn admin_courses_page(session: Session) -> impl Responder {
-    match require_admin(&session) {
+    match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }
@@ -144,7 +144,7 @@ pub async fn admin_courses_page(session: Session) -> impl Responder {
 
 #[get("/admin/manage/enrollments")]
 pub async fn admin_enrollments_page(session: Session) -> impl Responder {
-    match require_admin(&session) {
+    match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
     }

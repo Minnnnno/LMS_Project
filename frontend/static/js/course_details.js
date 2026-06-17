@@ -1061,49 +1061,153 @@ async function loadAssignmentSubmissions(assignmentId) {
     }
 }
 
-function renderStaffSubmissionList(submissions) {
+function getSubmissionStudentKey(submission) {
+    return String(submission.user_id ?? submission.student_email ?? submission.submission_id);
+}
+
+function getSubmissionStudentDomKey(submission) {
+    return getSubmissionStudentKey(submission).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function groupSubmissionsByStudent(submissions) {
+    const groups = new Map();
+
+    submissions.forEach((submission) => {
+        const key = getSubmissionStudentKey(submission);
+        const group = groups.get(key) || [];
+        group.push(submission);
+        groups.set(key, group);
+    });
+
+    return [...groups.values()].map((group) => {
+        const sorted = group.slice().sort((first, second) => {
+            const dateDiff = new Date(second.submitted_at).getTime() - new Date(first.submitted_at).getTime();
+
+            if (dateDiff !== 0) {
+                return dateDiff;
+            }
+
+            return Number(second.submission_id) - Number(first.submission_id);
+        });
+        const latest = sorted.find((submission) => submission.is_latest) || sorted[0];
+
+        return {
+            latest,
+            past: sorted.filter((submission) => submission.submission_id !== latest.submission_id),
+        };
+    });
+}
+
+function renderSubmissionFileLink(submission) {
+    return submission.file_url
+        ? `<a href="${escapeHtml(submission.file_url)}" target="_blank" rel="noopener">Open submitted file</a>`
+        : "<span>No file attached.</span>";
+}
+
+function renderStaffSubmissionReadonlyGrade(submission, maxScore) {
+    const hasScore = submission.score !== null && submission.score !== undefined;
+    const scoreLabel = hasScore
+        ? `Score: ${escapeHtml(formatGradeScore(submission.score, maxScore))}`
+        : "Not graded";
+    const feedback = submission.feedback
+        ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(submission.feedback)}</p>`
+        : "";
+
+    return `
+        <div class="staff-grade-readonly">
+            <span>${scoreLabel}</span>
+            ${feedback}
+        </div>
+    `;
+}
+
+function renderStaffPastSubmissions(pastSubmissions, maxScore, studentKey) {
+    if (!pastSubmissions.length) {
+        return "";
+    }
+
+    return `
+        <button type="button" class="staff-past-toggle" onclick="togglePastSubmissions('${escapeHtml(studentKey)}')">
+            View past submissions (${pastSubmissions.length})
+        </button>
+        <div id="staff-past-submissions-${escapeHtml(studentKey)}" class="staff-past-submissions" hidden>
+            ${pastSubmissions.map((submission) => {
+                const submittedAt = formatAssignmentDate(submission.submitted_at);
+                const note = submission.submission_text
+                    ? `<p class="dropbox-history-note">${escapeHtml(submission.submission_text)}</p>`
+                    : "";
+
+                return `
+                    <div class="staff-past-submission">
+                        <div class="dropbox-history-head">
+                            <span>Past submission</span>
+                            <span class="dropbox-history-date">Submitted: ${escapeHtml(submittedAt)}</span>
+                        </div>
+                        ${renderSubmissionFileLink(submission)}
+                        ${note}
+                        ${renderStaffSubmissionReadonlyGrade(submission, maxScore)}
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function togglePastSubmissions(studentKey) {
+    const history = document.getElementById(`staff-past-submissions-${studentKey}`);
+    const button = document.querySelector(`button[onclick="togglePastSubmissions('${studentKey}')"]`);
+
+    if (!history) {
+        return;
+    }
+
+    const willShow = history.hidden;
+    history.hidden = !willShow;
+
+    if (button) {
+        const count = history.querySelectorAll(".staff-past-submission").length;
+        button.textContent = willShow
+            ? `Hide past submissions (${count})`
+            : `View past submissions (${count})`;
+    }
+}
+
+function renderStaffSubmissionList(submissions, assignment) {
     if (!submissions.length) {
         return '<p class="grades-empty">No student submissions yet.</p>';
     }
 
+    const maxScore = assignment?.max_score;
+    const maxScoreLabel = formatGradeNumber(maxScore) || "Not set";
+    const submissionGroups = groupSubmissionsByStudent(submissions);
+
     return `
         <div class="staff-submission-list">
-            ${submissions.map((submission) => {
+            ${submissionGroups.map(({ latest: submission, past }) => {
+                const studentKey = getSubmissionStudentDomKey(submission);
                 const submittedAt = formatAssignmentDate(submission.submitted_at);
                 const score = submission.score ?? "";
                 const feedback = submission.feedback || "";
-                const fileLink = submission.file_url
-                    ? `<a href="${escapeHtml(submission.file_url)}" target="_blank" rel="noopener">Open submitted file</a>`
-                    : "<span>No file attached.</span>";
                 const note = submission.submission_text
                     ? `<p class="dropbox-history-note">${escapeHtml(submission.submission_text)}</p>`
                     : "";
-                const latestBadge = submission.is_latest
-                    ? '<span class="dropbox-history-pill">Latest</span>'
-                    : '<span class="dropbox-history-pill pending">Past submission</span>';
-                const gradeControls = submission.is_latest
-                    ? `
-                        <div class="staff-grade-form">
-                            <label>
-                                Score
-                                <input id="grade-score-${submission.submission_id}" type="number" min="0" step="0.01" value="${escapeHtml(score)}">
-                            </label>
-                            <label>
-                                Feedback
-                                <textarea id="grade-feedback-${submission.submission_id}" rows="2">${escapeHtml(feedback)}</textarea>
-                            </label>
-                            <div class="staff-grade-actions">
-                                <button type="button" onclick="saveSubmissionGrade(${submission.submission_id})">Save Grade</button>
-                                <button type="button" class="danger-btn" onclick="clearSubmissionGrade(${submission.submission_id})">Clear Grade</button>
-                            </div>
+                const maxAttribute = Number(maxScore) > 0 ? ` max="${escapeHtml(maxScore)}"` : "";
+                const gradeControls = `
+                    <div class="staff-grade-form">
+                        <label>
+                            Score / ${escapeHtml(maxScoreLabel)}
+                            <input id="grade-score-${submission.submission_id}" type="number" min="0"${maxAttribute} step="0.01" value="${escapeHtml(score)}">
+                        </label>
+                        <label>
+                            Feedback
+                            <textarea id="grade-feedback-${submission.submission_id}" rows="2">${escapeHtml(feedback)}</textarea>
+                        </label>
+                        <div class="staff-grade-actions">
+                            <button type="button" onclick="saveSubmissionGrade(${submission.submission_id})">Save Grade</button>
+                            <button type="button" class="danger-btn" onclick="clearSubmissionGrade(${submission.submission_id})">Clear Grade</button>
                         </div>
-                    `
-                    : `
-                        <div class="staff-grade-readonly">
-                            ${score !== "" ? `<span>Score: ${escapeHtml(formatGradeNumber(score))}</span>` : "<span>Not graded</span>"}
-                            ${feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(feedback)}</p>` : ""}
-                        </div>
-                    `;
+                    </div>
+                `;
 
                 return `
                     <div class="staff-submission-item">
@@ -1113,13 +1217,15 @@ function renderStaffSubmissionList(submissions) {
                                 <span>${escapeHtml(submission.student_email || "")}</span>
                             </div>
                             <div class="staff-submission-meta">
-                                ${latestBadge}
+                                <span class="dropbox-history-pill">Latest</span>
+                                <span class="dropbox-history-pill">Max: ${escapeHtml(maxScoreLabel)}</span>
                                 <span class="dropbox-history-date">Submitted: ${escapeHtml(submittedAt)}</span>
                             </div>
                         </div>
-                        ${fileLink}
+                        ${renderSubmissionFileLink(submission)}
                         ${note}
                         ${gradeControls}
+                        ${renderStaffPastSubmissions(past, maxScore, studentKey)}
                     </div>
                 `;
             }).join("")}
@@ -1138,7 +1244,8 @@ async function loadStaffAssignmentSubmissions(assignmentId) {
 
     try {
         const response = await axios.get(`/api/assignments/${assignmentId}/submissions`);
-        list.innerHTML = renderStaffSubmissionList(response.data || []);
+        const assignment = currentAssignments.find((item) => Number(item.assignment_id) === Number(assignmentId));
+        list.innerHTML = renderStaffSubmissionList(response.data || [], assignment);
     } catch (error) {
         const message = error.response?.data || "Failed to load student submissions.";
         list.innerHTML = `<p class="grades-error">${escapeHtml(message)}</p>`;
@@ -1157,6 +1264,13 @@ async function saveSubmissionGrade(submissionId) {
 
     if (score === "" || Number(score) < 0) {
         alert("Please enter a score of 0 or higher");
+        return;
+    }
+
+    const maxScore = Number(scoreInput.max);
+
+    if (Number.isFinite(maxScore) && maxScore >= 0 && Number(score) > maxScore) {
+        alert(`Score cannot be greater than ${formatGradeNumber(maxScore)}`);
         return;
     }
 

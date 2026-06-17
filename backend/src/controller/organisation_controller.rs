@@ -21,6 +21,7 @@ use crate::models::organisation::{
     CourseInstructorSummaryDto, CreateOrganisationForm, InviteInstructorForm, MassEnrollForm,
     OrgMemberDto, OrganisationSignupForm,
 };
+use crate::services::auth_helpers::redirect_to_login;
 use crate::services::course_service::{get_session_user_org_id, has_role};
 use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::organisation_service;
@@ -36,6 +37,15 @@ const ORG_DASHBOARD_PATH: &str = "/organisation";
 
 #[get("/organisation")]
 pub async fn organisation_page(session: Session) -> impl Responder {
+    match session.get::<i32>("user_id") {
+        Ok(Some(_)) => {}
+        Ok(None) => return redirect_to_login(),
+        Err(err) => {
+            println!("Session user lookup error: {:?}", err);
+            return HttpResponse::InternalServerError().body("Unable to read session.");
+        }
+    }
+
     if !has_role(&session, "Organisation Admin") {
         return HttpResponse::Forbidden().body("Organisation Admin role required");
     }

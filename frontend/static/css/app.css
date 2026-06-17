@@ -644,6 +644,47 @@ a {
     gap: 0.9rem;
 }
 
+.analytics-line-chart {
+    min-height: 18rem;
+    width: 100%;
+}
+
+.analytics-line-svg {
+    width: 100%;
+    min-height: 18rem;
+    display: block;
+}
+
+.analytics-line-guide {
+    stroke: #e4e7ec;
+    stroke-width: 1;
+}
+
+.analytics-line-area {
+    fill: rgba(37, 99, 235, 0.12);
+}
+
+.analytics-line-stroke {
+    fill: none;
+    stroke: #2563eb;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 4;
+}
+
+.analytics-line-point {
+    fill: #ffffff;
+    stroke: #111827;
+    stroke-width: 3;
+}
+
+.analytics-line-axis-label,
+.analytics-line-x-label {
+    fill: var(--skillup-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 .analytics-pie-layout {
     display: grid;
     grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
@@ -746,7 +787,7 @@ a {
 .analytics-bar-fill {
     height: 100%;
     border-radius: inherit;
-    background: var(--skillup-dark);
+    background: #2563eb;
 }
 
 .analytics-list-item {

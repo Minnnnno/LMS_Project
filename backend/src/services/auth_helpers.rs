@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::HttpResponse;
+use actix_web::{http::header, HttpResponse};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::entity::enrollments;
@@ -18,6 +18,12 @@ pub fn get_role_ids(session: &Session) -> Vec<i32> {
         .ok()
         .flatten()
         .unwrap_or_default()
+}
+
+pub fn redirect_to_login() -> HttpResponse {
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, "/login"))
+        .finish()
 }
 
 // true if user ONLY has student role — staff with student role still get staff access
@@ -57,5 +63,13 @@ pub fn require_admin(session: &Session) -> Result<(), HttpResponse> {
         Ok(())
     } else {
         Err(HttpResponse::Forbidden().body("LMS Admin access required"))
+    }
+}
+
+pub fn require_admin_page(session: &Session) -> Result<(), HttpResponse> {
+    match session.get::<i32>("user_id") {
+        Ok(Some(_)) => require_admin(session),
+        Ok(None) => Err(redirect_to_login()),
+        Err(_) => Err(HttpResponse::InternalServerError().body("Session error")),
     }
 }

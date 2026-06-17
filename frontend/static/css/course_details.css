@@ -580,6 +580,40 @@
     font-weight: 700;
 }
 
+.staff-past-toggle {
+    justify-self: start;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    padding: 8px 11px;
+    background: #ffffff;
+    color: #1d4ed8;
+    font-size: 0.84rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.staff-past-toggle:hover {
+    background: #eef4ff;
+}
+
+.staff-past-submissions {
+    display: grid;
+    gap: 10px;
+}
+
+.staff-past-submissions[hidden] {
+    display: none;
+}
+
+.staff-past-submission {
+    display: grid;
+    gap: 8px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 10px;
+    background: #f8fafc;
+}
+
 .assignment-modal-tabs {
     display: flex;
     gap: 6px;
