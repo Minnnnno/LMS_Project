@@ -1,45 +1,35 @@
 use actix_web::HttpResponse;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use serde::Serialize;
+use serde_json::json;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use validator::Validate;
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 
-use crate::entity::{
-    organisation_signup_requests,
-    organisations,
-    users,
-    courses,
-    enrollments,
-    payments,
-    roles,
-    user_roles,
-};
 use crate::entity::courses::CourseStatus;
+use crate::entity::{
+    courses, enrollments, organisation_signup_requests, organisations, payments, roles, user_roles,
+    users,
+};
 
 use crate::models::admin::{
-    CreateOrganisationForm,
+    AdminEnrollmentForm, CreateAdminCourseForm, CreateAdminUserForm, CreateOrganisationForm,
+    RejectOrganisationSignupRequestForm, UpdateAdminCourseForm, UpdateAdminUserForm,
     UpdateOrganisationForm,
-    RejectOrganisationSignupRequestForm,
-    CreateAdminUserForm,
-    UpdateAdminUserForm,
-    CreateAdminCourseForm,
-    UpdateAdminCourseForm,
-    AdminEnrollmentForm,
 };
 use crate::services::email_verification_service::{
-    create_email_verification_token,
-    verification_url,
+    create_email_verification_token, verification_url,
 };
+use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::organisation_service::delete_organisation_and_dependents;
-use crate::services::mailer_service::{send_mail_message, MailRequest};
 // Password Hash Helper
 fn hash_password(password: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -51,8 +41,8 @@ fn hash_password(password: &str) -> Result<String, String> {
 }
 
 fn singapore_now() -> DateTime<FixedOffset> {
-    let singapore_offset = FixedOffset::east_opt(8 * 60 * 60)
-        .expect("Singapore UTC offset must be valid");
+    let singapore_offset =
+        FixedOffset::east_opt(8 * 60 * 60).expect("Singapore UTC offset must be valid");
 
     Utc::now().with_timezone(&singapore_offset)
 }
@@ -65,6 +55,49 @@ fn required_trimmed(value: &str, field_name: &str) -> Result<String, HttpRespons
     } else {
         Ok(value.to_string())
     }
+}
+
+fn optional_trimmed_string(
+    value: Option<String>,
+    field_name: &str,
+    max_len: usize,
+) -> Result<Option<String>, HttpResponse> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    let value = value.trim();
+
+    if value.is_empty() {
+        return Ok(None);
+    }
+
+    if value.len() > max_len {
+        return Err(HttpResponse::BadRequest().body(format!(
+            "{} must not exceed {} characters",
+            field_name, max_len
+        )));
+    }
+
+    Ok(Some(value.to_string()))
+}
+
+fn optional_normalized_slug(value: Option<String>) -> Result<Option<String>, HttpResponse> {
+    let Some(value) = optional_trimmed_string(value, "Organisation slug", 255)? else {
+        return Ok(None);
+    };
+    let normalized = value.to_lowercase();
+    let has_valid_chars = normalized
+        .chars()
+        .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+
+    if !has_valid_chars || normalized.starts_with('-') || normalized.ends_with('-') {
+        return Err(HttpResponse::BadRequest().body(
+            "Organisation slug may only contain lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen",
+        ));
+    }
+
+    Ok(Some(normalized))
 }
 
 async fn email_is_used_by_another_user(
@@ -82,19 +115,137 @@ async fn email_is_used_by_another_user(
         .one(db)
         .await
         .map(|user| user.is_some())
-        .map_err(|err| HttpResponse::InternalServerError().body(format!("Email lookup error: {}", err)))
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Email lookup error: {}", err))
+        })
 }
 
-fn validate_optional_website_url(website_url: Option<&str>) -> Result<(), HttpResponse> {
-    let Some(website_url) = website_url.map(str::trim).filter(|value| !value.is_empty()) else {
+async fn organisation_name_is_used_by_another_org(
+    db: &DatabaseConnection,
+    org_name: &str,
+    excluded_org_id: Option<i32>,
+) -> Result<bool, HttpResponse> {
+    let organisations = organisations::Entity::find().all(db).await.map_err(|err| {
+        HttpResponse::InternalServerError().body(format!("Organisation lookup error: {}", err))
+    })?;
+
+    Ok(organisations.into_iter().any(|organisation| {
+        organisation.org_name.eq_ignore_ascii_case(org_name)
+            && Some(organisation.org_id) != excluded_org_id
+    }))
+}
+
+async fn organisation_slug_is_used_by_another_org(
+    db: &DatabaseConnection,
+    org_slug: &str,
+    excluded_org_id: Option<i32>,
+) -> Result<bool, HttpResponse> {
+    let mut query = organisations::Entity::find().filter(organisations::Column::OrgSlug.eq(org_slug));
+
+    if let Some(org_id) = excluded_org_id {
+        query = query.filter(organisations::Column::OrgId.ne(org_id));
+    }
+
+    query
+        .one(db)
+        .await
+        .map(|organisation| organisation.is_some())
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Organisation slug lookup error: {}", err))
+        })
+}
+
+async fn ensure_organisation_exists(
+    db: &DatabaseConnection,
+    org_id: Option<i32>,
+) -> Result<(), HttpResponse> {
+    let Some(org_id) = org_id else {
         return Ok(());
     };
 
-    if website_url.starts_with("https://") || website_url.starts_with("http://") {
+    if org_id <= 0 {
+        return Err(HttpResponse::BadRequest().body("Organisation must be a valid record"));
+    }
+
+    match organisations::Entity::find_by_id(org_id).one(db).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(HttpResponse::BadRequest().body("Selected organisation does not exist")),
+        Err(err) => Err(HttpResponse::InternalServerError()
+            .body(format!("Organisation lookup error: {}", err))),
+    }
+}
+
+async fn ensure_role_exists(db: &DatabaseConnection, role_id: Option<i32>) -> Result<(), HttpResponse> {
+    let Some(role_id) = role_id else {
+        return Ok(());
+    };
+
+    if role_id <= 0 {
+        return Err(HttpResponse::BadRequest().body("Role must be a valid record"));
+    }
+
+    match roles::Entity::find_by_id(role_id).one(db).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(HttpResponse::BadRequest().body("Selected role does not exist")),
+        Err(err) => Err(HttpResponse::InternalServerError().body(format!("Role lookup error: {}", err))),
+    }
+}
+
+async fn ensure_user_exists(db: &DatabaseConnection, user_id: Option<i32>, label: &str) -> Result<(), HttpResponse> {
+    let Some(user_id) = user_id else {
+        return Ok(());
+    };
+
+    if user_id <= 0 {
+        return Err(HttpResponse::BadRequest().body(format!("{} must be a valid record", label)));
+    }
+
+    match users::Entity::find_by_id(user_id).one(db).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(HttpResponse::BadRequest().body(format!("Selected {} does not exist", label.to_lowercase()))),
+        Err(err) => Err(HttpResponse::InternalServerError().body(format!("{} lookup error: {}", label, err))),
+    }
+}
+
+async fn ensure_course_exists(db: &DatabaseConnection, course_id: Option<i32>) -> Result<(), HttpResponse> {
+    let Some(course_id) = course_id else {
+        return Ok(());
+    };
+
+    if course_id <= 0 {
+        return Err(HttpResponse::BadRequest().body("Course must be a valid record"));
+    }
+
+    match courses::Entity::find_by_id(course_id).one(db).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(HttpResponse::BadRequest().body("Selected course does not exist")),
+        Err(err) => Err(HttpResponse::InternalServerError().body(format!("Course lookup error: {}", err))),
+    }
+}
+
+fn validate_optional_http_url(value: Option<&str>, field_name: &str) -> Result<(), HttpResponse> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+
+    if value.len() > 2048 {
+        return Err(
+            HttpResponse::BadRequest().body(format!("{} must not exceed 2048 characters", field_name))
+        );
+    }
+
+    if value.starts_with("https://") || value.starts_with("http://") {
         Ok(())
     } else {
-        Err(HttpResponse::BadRequest().body("Website URL must start with http:// or https://"))
+        Err(HttpResponse::BadRequest().body(format!(
+            "{} must start with http:// or https://",
+            field_name
+        )))
     }
+}
+
+fn validate_optional_website_url(website_url: Option<&str>) -> Result<(), HttpResponse> {
+    validate_optional_http_url(website_url, "Website URL")
 }
 
 #[derive(Serialize)]
@@ -232,20 +383,22 @@ fn validate_course_payment(
 
     if is_paid.unwrap_or(false) {
         if !price_cents.is_some_and(|price| price > 0) {
-            return Err(HttpResponse::BadRequest().body("Paid courses must have a price greater than zero"));
+            return Err(
+                HttpResponse::BadRequest().body("Paid courses must have a price greater than zero")
+            );
         }
 
         if !currency.is_some_and(|value| value.eq_ignore_ascii_case("SGD")) {
             return Err(HttpResponse::BadRequest().body("Paid courses currently support SGD only"));
         }
     } else if price_cents.is_some() || currency.is_some() {
-        return Err(HttpResponse::BadRequest()
-            .body("Unpaid courses must not have a price or currency"));
+        return Err(
+            HttpResponse::BadRequest().body("Unpaid courses must not have a price or currency")
+        );
     }
 
     Ok(())
 }
-
 
 fn parse_course_status(status: Option<String>) -> Result<CourseStatus, HttpResponse> {
     match status
@@ -256,38 +409,389 @@ fn parse_course_status(status: Option<String>) -> Result<CourseStatus, HttpRespo
         "draft" => Ok(CourseStatus::Draft),
         "published" => Ok(CourseStatus::Published),
         "archived" => Ok(CourseStatus::Archived),
-        _ => Err(
-            HttpResponse::BadRequest()
-                .body("Invalid course status. Use draft, published, or archived")
-        ),
+        _ => Err(HttpResponse::BadRequest()
+            .body("Invalid course status. Use draft, published, or archived")),
     }
 }
 
+fn course_status_label(status: &CourseStatus) -> &'static str {
+    match status {
+        CourseStatus::Draft => "draft",
+        CourseStatus::Published => "published",
+        CourseStatus::Archived => "archived",
+    }
+}
+
+fn cents_to_sgd(cents: i32) -> String {
+    format!("{:.2}", cents as f64 / 100.0)
+}
+
+fn analytics_month_label(year: i32, month: u32) -> String {
+    let month_name = match month {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => "Unknown",
+    };
+
+    format!("{} {:02}", month_name, year.rem_euclid(100))
+}
 
 // Organisation CRUD
-pub async fn get_all_organisations(
-    db: &DatabaseConnection,
-) -> HttpResponse {
+pub async fn get_all_organisations(db: &DatabaseConnection) -> HttpResponse {
     match organisations::Entity::find().all(db).await {
         Ok(orgs) => HttpResponse::Ok().json(orgs),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
-pub async fn get_all_roles(
-    db: &DatabaseConnection,
-) -> HttpResponse {
+pub async fn get_all_roles(db: &DatabaseConnection) -> HttpResponse {
     match roles::Entity::find().all(db).await {
         Ok(role_list) => HttpResponse::Ok().json(role_list),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
-pub async fn get_organisation_signup_requests(
+pub async fn get_admin_analytics_data(
     db: &DatabaseConnection,
+    selected_org_id: Option<i32>,
 ) -> HttpResponse {
+    let (organisations_result, courses_result, enrollments_result, payments_result) = tokio::join!(
+        organisations::Entity::find().all(db),
+        courses::Entity::find().all(db),
+        enrollments::Entity::find().all(db),
+        payments::Entity::find().all(db),
+    );
+
+    let organisations = match organisations_result {
+        Ok(items) => items,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Organisation analytics lookup error: {}", err));
+        }
+    };
+    let courses = match courses_result {
+        Ok(items) => items,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Course analytics lookup error: {}", err));
+        }
+    };
+    let enrollments = match enrollments_result {
+        Ok(items) => items,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Enrollment analytics lookup error: {}", err));
+        }
+    };
+    let payments = match payments_result {
+        Ok(items) => items,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Payment analytics lookup error: {}", err));
+        }
+    };
+
+    let organisation_options = organisations
+        .iter()
+        .map(|organisation| {
+            json!({
+                "orgId": organisation.org_id,
+                "orgName": organisation.org_name,
+            })
+        })
+        .collect::<Vec<_>>();
+    let organisation_names = organisations
+        .iter()
+        .map(|organisation| (organisation.org_id, organisation.org_name.clone()))
+        .collect::<HashMap<_, _>>();
+    let selected_org_ids = selected_org_id
+        .map(|org_id| HashSet::from([org_id]))
+        .unwrap_or_else(|| {
+            organisations
+                .iter()
+                .map(|organisation| organisation.org_id)
+                .collect()
+        });
+    let filtered_courses = courses
+        .iter()
+        .filter(|course| {
+            selected_org_id.is_none()
+                || course
+                    .org_id
+                    .is_some_and(|org_id| selected_org_ids.contains(&org_id))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let filtered_course_ids = filtered_courses
+        .iter()
+        .map(|course| course.course_id)
+        .collect::<HashSet<_>>();
+    let filtered_enrollments = enrollments
+        .iter()
+        .filter(|enrollment| filtered_course_ids.contains(&enrollment.course_id))
+        .collect::<Vec<_>>();
+    let filtered_payments = payments
+        .iter()
+        .filter(|payment| filtered_course_ids.contains(&payment.course_id))
+        .collect::<Vec<_>>();
+    let successful_payments = filtered_payments
+        .iter()
+        .filter(|payment| payment.payment_status.eq_ignore_ascii_case("SUCCEEDED"))
+        .collect::<Vec<_>>();
+    let enrollments_by_course =
+        filtered_enrollments
+            .iter()
+            .fold(HashMap::new(), |mut map, enrollment| {
+                *map.entry(enrollment.course_id).or_insert(0usize) += 1;
+                map
+            });
+    let successful_payments_by_course =
+        successful_payments
+            .iter()
+            .fold(HashMap::new(), |mut map, payment| {
+                *map.entry(payment.course_id).or_insert(0i32) += payment.amount_cents;
+                map
+            });
+
+    let mut course_analytics = filtered_courses
+        .iter()
+        .map(|course| {
+            let enrollment_count = *enrollments_by_course.get(&course.course_id).unwrap_or(&0);
+            let is_paid = course.is_paid.unwrap_or(false);
+            let price_cents = course.price_cents.unwrap_or(0);
+            let confirmed_revenue_cents = *successful_payments_by_course
+                .get(&course.course_id)
+                .unwrap_or(&0);
+            let projected_revenue_cents = if is_paid {
+                enrollment_count as i32 * price_cents
+            } else {
+                0
+            };
+            let org_name = course
+                .org_id
+                .and_then(|org_id| organisation_names.get(&org_id).cloned())
+                .unwrap_or_else(|| "No organisation".to_string());
+
+            json!({
+                "courseId": course.course_id,
+                "courseName": course.name.clone().unwrap_or_else(|| format!("Course #{}", course.course_id)),
+                "orgId": course.org_id,
+                "orgName": org_name,
+                "status": course_status_label(&course.status),
+                "isPaid": is_paid,
+                "currency": course.currency.clone().unwrap_or_else(|| "SGD".to_string()),
+                "enrollmentCount": enrollment_count,
+                "confirmedRevenueCents": confirmed_revenue_cents,
+                "grossProfitCents": confirmed_revenue_cents,
+                "projectedRevenueCents": projected_revenue_cents,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    course_analytics.sort_by(|a, b| {
+        b["enrollmentCount"]
+            .as_u64()
+            .cmp(&a["enrollmentCount"].as_u64())
+            .then_with(|| {
+                b["confirmedRevenueCents"]
+                    .as_i64()
+                    .cmp(&a["confirmedRevenueCents"].as_i64())
+            })
+    });
+
+    let mut organisation_analytics = organisations
+        .iter()
+        .filter(|organisation| {
+            selected_org_id.is_none() || Some(organisation.org_id) == selected_org_id
+        })
+        .map(|organisation| {
+            let org_courses = course_analytics
+                .iter()
+                .filter(|course| course["orgId"].as_i64() == Some(organisation.org_id as i64))
+                .collect::<Vec<_>>();
+            let course_count = org_courses.len();
+            let enrollment_count = org_courses
+                .iter()
+                .map(|course| course["enrollmentCount"].as_u64().unwrap_or(0) as usize)
+                .sum::<usize>();
+            let confirmed_revenue_cents = org_courses
+                .iter()
+                .map(|course| course["confirmedRevenueCents"].as_i64().unwrap_or(0) as i32)
+                .sum::<i32>();
+            let projected_revenue_cents = org_courses
+                .iter()
+                .map(|course| course["projectedRevenueCents"].as_i64().unwrap_or(0) as i32)
+                .sum::<i32>();
+
+            json!({
+                "orgId": organisation.org_id,
+                "orgName": organisation.org_name,
+                "courseCount": course_count,
+                "enrollmentCount": enrollment_count,
+                "confirmedRevenueCents": confirmed_revenue_cents,
+                "grossProfitCents": confirmed_revenue_cents,
+                "projectedRevenueCents": projected_revenue_cents,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    organisation_analytics.sort_by(|a, b| {
+        b["confirmedRevenueCents"]
+            .as_i64()
+            .cmp(&a["confirmedRevenueCents"].as_i64())
+            .then_with(|| {
+                b["enrollmentCount"]
+                    .as_u64()
+                    .cmp(&a["enrollmentCount"].as_u64())
+            })
+    });
+
+    let paid_enrollments = course_analytics
+        .iter()
+        .filter(|course| course["isPaid"].as_bool().unwrap_or(false))
+        .map(|course| course["enrollmentCount"].as_u64().unwrap_or(0) as usize)
+        .sum::<usize>();
+    let paid_courses = course_analytics
+        .iter()
+        .filter(|course| course["isPaid"].as_bool().unwrap_or(false))
+        .count();
+    let free_courses = course_analytics.len().saturating_sub(paid_courses);
+    let confirmed_revenue_cents = course_analytics
+        .iter()
+        .map(|course| course["confirmedRevenueCents"].as_i64().unwrap_or(0) as i32)
+        .sum::<i32>();
+    let course_statuses = course_analytics
+        .iter()
+        .fold(BTreeMap::new(), |mut map, course| {
+            let status = course["status"].as_str().unwrap_or("unknown").to_string();
+            *map.entry(status).or_insert(0usize) += 1;
+            map
+        })
+        .into_iter()
+        .map(|(status, count)| json!({ "status": status, "count": count }))
+        .collect::<Vec<_>>();
+    let revenue_trend = successful_payments
+        .iter()
+        .fold(BTreeMap::new(), |mut map, payment| {
+            let date = payment.paid_at.unwrap_or(payment.created_at);
+            *map.entry((date.year(), date.month())).or_insert(0i32) += payment.amount_cents;
+            map
+        })
+        .into_iter()
+        .rev()
+        .take(8)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|((year, month), revenue_cents)| {
+            json!({
+                "label": analytics_month_label(year, month),
+                "revenueCents": revenue_cents,
+            })
+        })
+        .collect::<Vec<_>>();
+    let summary_rows = organisation_analytics
+        .iter()
+        .map(|item| {
+            let confirmed = item["confirmedRevenueCents"].as_i64().unwrap_or(0) as i32;
+            let gross = item["grossProfitCents"].as_i64().unwrap_or(0) as i32;
+            let projected = item["projectedRevenueCents"].as_i64().unwrap_or(0) as i32;
+
+            json!({
+                "organisation": item["orgName"].as_str().unwrap_or(""),
+                "courses": item["courseCount"].as_u64().unwrap_or(0),
+                "enrollments": item["enrollmentCount"].as_u64().unwrap_or(0),
+                "confirmed_revenue_sgd": cents_to_sgd(confirmed),
+                "gross_profit_sgd": cents_to_sgd(gross),
+                "projected_revenue_sgd": cents_to_sgd(projected),
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut detail_rows = course_analytics
+        .iter()
+        .map(|course| {
+            let confirmed = course["confirmedRevenueCents"].as_i64().unwrap_or(0) as i32;
+            let projected = course["projectedRevenueCents"].as_i64().unwrap_or(0) as i32;
+
+            json!({
+                "record_type": "course",
+                "organisation": course["orgName"].as_str().unwrap_or("No organisation"),
+                "course": course["courseName"].as_str().unwrap_or("Course"),
+                "course_status": course["status"].as_str().unwrap_or(""),
+                "is_paid_course": if course["isPaid"].as_bool().unwrap_or(false) { "yes" } else { "no" },
+                "enrollments": course["enrollmentCount"].as_u64().unwrap_or(0),
+                "confirmed_revenue_sgd": cents_to_sgd(confirmed),
+                "projected_revenue_sgd": cents_to_sgd(projected),
+                "payment_id": "",
+                "payment_status": "",
+                "paid_at": "",
+            })
+        })
+        .collect::<Vec<_>>();
+    let courses_by_id = course_analytics
+        .iter()
+        .filter_map(|course| {
+            course["courseId"]
+                .as_i64()
+                .map(|id| (id as i32, course.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+
+    detail_rows.extend(filtered_payments.iter().map(|payment| {
+        let course = courses_by_id.get(&payment.course_id);
+        let confirmed = if payment.payment_status.eq_ignore_ascii_case("SUCCEEDED") {
+            payment.amount_cents
+        } else {
+            0
+        };
+
+        json!({
+            "record_type": "payment",
+            "organisation": course.and_then(|course| course["orgName"].as_str()).unwrap_or("No organisation"),
+            "course": course.and_then(|course| course["courseName"].as_str()).unwrap_or("Course"),
+            "course_status": course.and_then(|course| course["status"].as_str()).unwrap_or(""),
+            "is_paid_course": if course.and_then(|course| course["isPaid"].as_bool()).unwrap_or(false) { "yes" } else { "no" },
+            "enrollments": enrollments_by_course.get(&payment.course_id).copied().unwrap_or(0),
+            "confirmed_revenue_sgd": cents_to_sgd(confirmed),
+            "projected_revenue_sgd": "",
+            "payment_id": payment.payment_id.to_string(),
+            "payment_status": payment.payment_status,
+            "paid_at": payment.paid_at.map(|date| date.to_rfc3339()).unwrap_or_else(|| payment.created_at.to_rfc3339()),
+        })
+    }));
+
+    HttpResponse::Ok().json(json!({
+        "selectedOrgId": selected_org_id,
+        "organisations": organisation_options,
+        "totals": {
+            "totalEnrollments": filtered_enrollments.len(),
+            "paidEnrollments": paid_enrollments,
+            "paidCourses": paid_courses,
+            "freeCourses": free_courses,
+            "totalCourses": course_analytics.len(),
+            "successfulPaymentCount": successful_payments.len(),
+            "confirmedRevenueCents": confirmed_revenue_cents,
+        },
+        "courseAnalytics": course_analytics,
+        "organisationAnalytics": organisation_analytics,
+        "courseStatuses": course_statuses,
+        "revenueTrend": revenue_trend,
+        "summaryRows": summary_rows,
+        "detailRows": detail_rows,
+    }))
+}
+
+pub async fn get_organisation_signup_requests(db: &DatabaseConnection) -> HttpResponse {
     match organisation_signup_requests::Entity::find()
         .order_by_desc(organisation_signup_requests::Column::CreatedAt)
         .all(db)
@@ -299,8 +803,7 @@ pub async fn get_organisation_signup_requests(
                 .map(OrganisationSignupRequestDto::from)
                 .collect::<Vec<_>>(),
         ),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -376,7 +879,8 @@ pub async fn approve_organisation_signup_request(
         };
 
         if user.org_id.is_some() {
-            return HttpResponse::BadRequest().body("Requesting user already belongs to an organisation");
+            return HttpResponse::BadRequest()
+                .body("Requesting user already belongs to an organisation");
         }
 
         let mut active_user = user.into_active_model();
@@ -471,13 +975,11 @@ pub async fn approve_organisation_signup_request(
     active_request.updated_at = Set(Some(singapore_now()));
 
     if let Err(err) = active_request.update(&txn).await {
-        return HttpResponse::InternalServerError()
-            .body(format!("Request update error: {}", err));
+        return HttpResponse::InternalServerError().body(format!("Request update error: {}", err));
     }
 
     if let Err(err) = txn.commit().await {
-        return HttpResponse::InternalServerError()
-            .body(format!("Approval commit error: {}", err));
+        return HttpResponse::InternalServerError().body(format!("Approval commit error: {}", err));
     }
 
     if let Err(err) = send_organisation_approval_email(
@@ -539,8 +1041,9 @@ pub async fn reject_organisation_signup_request(
 
             HttpResponse::Ok().body("Organisation signup request rejected")
         }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Request update error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Request update error: {}", err))
+        }
     }
 }
 
@@ -549,14 +1052,20 @@ pub async fn create_organisation_service(
     body: CreateOrganisationForm,
 ) -> HttpResponse {
     if let Err(errors) = body.validate() {
-        return HttpResponse::BadRequest()
-            .body(format!("Validation error: {}", errors));
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
     }
 
     let org_name = match required_trimmed(&body.org_name, "Organisation name") {
         Ok(name) => name,
         Err(response) => return response,
     };
+
+    match organisation_name_is_used_by_another_org(db, &org_name, None).await {
+        Ok(true) => return HttpResponse::Conflict().body("An organisation with this name already exists"),
+        Ok(false) => {}
+        Err(response) => return response,
+    }
+
     let now = singapore_now();
     let new_org = organisations::ActiveModel {
         org_name: Set(org_name),
@@ -567,8 +1076,9 @@ pub async fn create_organisation_service(
 
     match new_org.insert(db).await {
         Ok(org) => HttpResponse::Ok().json(org),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Create organisation error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Create organisation error: {}", err))
+        }
     }
 }
 
@@ -578,16 +1088,14 @@ pub async fn update_organisation_service(
     body: UpdateOrganisationForm,
 ) -> HttpResponse {
     if let Err(errors) = body.validate() {
-        return HttpResponse::BadRequest()
-            .body(format!("Validation error: {}", errors));
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
     }
 
     let org = match organisations::Entity::find_by_id(org_id).one(db).await {
         Ok(Some(org)) => org,
         Ok(None) => return HttpResponse::NotFound().body("Organisation not found"),
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Database error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
         }
     };
 
@@ -595,65 +1103,59 @@ pub async fn update_organisation_service(
         Ok(name) => name,
         Err(response) => return response,
     };
-    let mut active_org = org.into_active_model();
-    active_org.org_name = Set(org_name);
-    if let Some(org_slug) = body.org_slug {
-        active_org.org_slug = Set({
-            let value = org_slug.trim().to_lowercase();
-            (!value.is_empty()).then_some(value)
-        });
+    match organisation_name_is_used_by_another_org(db, &org_name, Some(org_id)).await {
+        Ok(true) => return HttpResponse::Conflict().body("An organisation with this name already exists"),
+        Ok(false) => {}
+        Err(response) => return response,
     }
-    if let Err(response) = validate_optional_website_url(body.website_url.as_deref()) {
+
+    let org_slug = match optional_normalized_slug(body.org_slug) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if let Some(org_slug) = org_slug.as_deref() {
+        match organisation_slug_is_used_by_another_org(db, org_slug, Some(org_id)).await {
+            Ok(true) => return HttpResponse::Conflict().body("Organisation slug already exists"),
+            Ok(false) => {}
+            Err(response) => return response,
+        }
+    }
+    let org_type = match optional_trimmed_string(body.org_type, "Organisation type", 100) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let website_url = match optional_trimmed_string(body.website_url, "Website URL", 2048) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_optional_website_url(website_url.as_deref()) {
         return response;
     }
-    if let Some(org_type) = body.org_type {
-        active_org.org_type = Set({
-            let value = org_type.trim().to_string();
-            (!value.is_empty()).then_some(value)
-        });
-    }
-    if let Some(website_url) = body.website_url {
-        active_org.website_url = Set({
-            let value = website_url.trim().to_string();
-            (!value.is_empty()).then_some(value)
-        });
-    }
+
+    let mut active_org = org.into_active_model();
+    active_org.org_name = Set(org_name);
+    active_org.org_slug = Set(org_slug);
+    active_org.org_type = Set(org_type);
+    active_org.website_url = Set(website_url);
     active_org.updated_at = Set(Some(singapore_now()));
 
     match active_org.update(db).await {
         Ok(updated_org) => HttpResponse::Ok().json(updated_org),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Update organisation error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Update organisation error: {}", err))
+        }
     }
 }
 
-pub async fn delete_organisation_service(
-    db: &DatabaseConnection,
-    org_id: i32,
-) -> HttpResponse {
+pub async fn delete_organisation_service(db: &DatabaseConnection, org_id: i32) -> HttpResponse {
     delete_organisation_and_dependents(db, org_id).await
 }
 
 // User CRUD
-pub async fn get_all_users(
-    db: &DatabaseConnection,
-) -> HttpResponse {
+pub async fn get_all_users(db: &DatabaseConnection) -> HttpResponse {
     match users::Entity::find().all(db).await {
         Ok(users_list) => HttpResponse::Ok().json(users_list),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
-    }
-}
-
-pub async fn get_user_by_id_service(
-    db: &DatabaseConnection,
-    user_id: i32,
-) -> HttpResponse {
-    match users::Entity::find_by_id(user_id).one(db).await {
-        Ok(Some(user)) => HttpResponse::Ok().json(user),
-        Ok(None) => HttpResponse::NotFound().body("User not found"),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -662,8 +1164,7 @@ pub async fn create_user_service(
     body: CreateAdminUserForm,
 ) -> HttpResponse {
     if let Err(errors) = body.validate() {
-        return HttpResponse::BadRequest()
-            .body(format!("Validation error: {}", errors));
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
     }
 
     let first_name = match required_trimmed(&body.first_name, "First name") {
@@ -681,6 +1182,12 @@ pub async fn create_user_service(
         Ok(false) => {}
         Err(response) => return response,
     }
+    if let Err(response) = ensure_organisation_exists(db, body.org_id).await {
+        return response;
+    }
+    if let Err(response) = ensure_role_exists(db, body.role_id).await {
+        return response;
+    }
 
     let password_hash = match hash_password(&body.password) {
         Ok(hash) => hash,
@@ -692,6 +1199,13 @@ pub async fn create_user_service(
 
     let role_id = body.role_id;
     let now = singapore_now();
+    let txn = match db.begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Create user transaction error: {}", err));
+        }
+    };
 
     let new_user = users::ActiveModel {
         first_name: Set(first_name),
@@ -706,11 +1220,10 @@ pub async fn create_user_service(
         ..Default::default()
     };
 
-    let inserted_user = match new_user.insert(db).await {
+    let inserted_user = match new_user.insert(&txn).await {
         Ok(user) => user,
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Create user error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Create user error: {}", err));
         }
     };
 
@@ -720,15 +1233,18 @@ pub async fn create_user_service(
             role_id: Set(role_id),
         };
 
-        if let Err(err) = new_user_role.insert(db).await {
+        if let Err(err) = new_user_role.insert(&txn).await {
             return HttpResponse::InternalServerError()
                 .body(format!("User created, but failed to assign role: {}", err));
         }
     }
 
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError().body(format!("Create user commit error: {}", err));
+    }
+
     HttpResponse::Ok().json(inserted_user)
 }
-
 
 pub async fn update_user_service(
     db: &DatabaseConnection,
@@ -736,8 +1252,7 @@ pub async fn update_user_service(
     body: UpdateAdminUserForm,
 ) -> HttpResponse {
     if let Err(errors) = body.validate() {
-        return HttpResponse::BadRequest()
-            .body(format!("Validation error: {}", errors));
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
     }
 
     let first_name = match required_trimmed(&body.first_name, "First name") {
@@ -755,13 +1270,15 @@ pub async fn update_user_service(
         Ok(false) => {}
         Err(response) => return response,
     }
+    if let Err(response) = ensure_organisation_exists(db, body.org_id).await {
+        return response;
+    }
 
     let user = match users::Entity::find_by_id(user_id).one(db).await {
         Ok(Some(user)) => user,
         Ok(None) => return HttpResponse::NotFound().body("User not found"),
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Database error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
         }
     };
 
@@ -775,16 +1292,11 @@ pub async fn update_user_service(
 
     match active_user.update(db).await {
         Ok(updated_user) => HttpResponse::Ok().json(updated_user),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Update user error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Update user error: {}", err)),
     }
-} 
+}
 
-
-pub async fn delete_user_service(
-    db: &DatabaseConnection,
-    user_id: i32,
-) -> HttpResponse {
+pub async fn delete_user_service(db: &DatabaseConnection, user_id: i32) -> HttpResponse {
     match users::Entity::delete_by_id(user_id).exec(db).await {
         Ok(result) => {
             if result.rows_affected == 0 {
@@ -793,31 +1305,15 @@ pub async fn delete_user_service(
                 HttpResponse::Ok().body("User deleted successfully")
             }
         }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Delete user error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Delete user error: {}", err)),
     }
 }
 
 // Course CRUD
-pub async fn get_all_courses(
-    db: &DatabaseConnection,
-) -> HttpResponse {
+pub async fn get_all_courses(db: &DatabaseConnection) -> HttpResponse {
     match courses::Entity::find().all(db).await {
         Ok(course_list) => HttpResponse::Ok().json(course_list),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
-    }
-}
-
-pub async fn get_course_by_id_service(
-    db: &DatabaseConnection,
-    course_id: i32,
-) -> HttpResponse {
-    match courses::Entity::find_by_id(course_id).one(db).await {
-        Ok(Some(course)) => HttpResponse::Ok().json(course),
-        Ok(None) => HttpResponse::NotFound().body("Course not found"),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -826,10 +1322,19 @@ pub async fn create_course_service(
     body: CreateAdminCourseForm,
 ) -> HttpResponse {
     if let Err(errors) = body.validate() {
-        return HttpResponse::BadRequest()
-            .body(format!("Validation error: {}", errors));
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
     }
-    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, body.currency.as_deref()) {
+    let currency = match optional_trimmed_string(body.currency, "Currency", 3) {
+        Ok(value) => value.map(|value| value.to_uppercase()),
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, currency.as_deref()) {
+        return response;
+    }
+    if let Err(response) = ensure_organisation_exists(db, body.org_id).await {
+        return response;
+    }
+    if let Err(response) = ensure_user_exists(db, body.instructor_id, "Instructor").await {
         return response;
     }
 
@@ -841,6 +1346,20 @@ pub async fn create_course_service(
         Ok(name) => name,
         Err(response) => return response,
     };
+    let description = match optional_trimmed_string(body.description, "Description", 10_000) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let background_image_url =
+        match optional_trimmed_string(body.background_image_url, "Background image URL", 2048) {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    if let Err(response) =
+        validate_optional_http_url(background_image_url.as_deref(), "Background image URL")
+    {
+        return response;
+    }
     let now = singapore_now();
 
     let new_course = courses::ActiveModel {
@@ -849,10 +1368,10 @@ pub async fn create_course_service(
         instructor_id: Set(body.instructor_id),
         status: Set(status),
         price_cents: Set(body.price_cents),
-        currency: Set(body.currency),
+        currency: Set(currency),
         is_paid: Set(Some(body.is_paid.unwrap_or(false))),
-        description: Set(body.description),
-        background_image_url: Set(body.background_image_url),
+        description: Set(description),
+        background_image_url: Set(background_image_url),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
         ..Default::default()
@@ -860,8 +1379,9 @@ pub async fn create_course_service(
 
     match new_course.insert(db).await {
         Ok(course) => HttpResponse::Ok().json(course),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Create course error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Create course error: {}", err))
+        }
     }
 }
 pub async fn update_course_service(
@@ -870,10 +1390,19 @@ pub async fn update_course_service(
     body: UpdateAdminCourseForm,
 ) -> HttpResponse {
     if let Err(errors) = body.validate() {
-        return HttpResponse::BadRequest()
-            .body(format!("Validation error: {}", errors));
+        return HttpResponse::BadRequest().body(format!("Validation error: {}", errors));
     }
-    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, body.currency.as_deref()) {
+    let currency = match optional_trimmed_string(body.currency, "Currency", 3) {
+        Ok(value) => value.map(|value| value.to_uppercase()),
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, currency.as_deref()) {
+        return response;
+    }
+    if let Err(response) = ensure_organisation_exists(db, body.org_id).await {
+        return response;
+    }
+    if let Err(response) = ensure_user_exists(db, body.instructor_id, "Instructor").await {
         return response;
     }
 
@@ -881,8 +1410,7 @@ pub async fn update_course_service(
         Ok(Some(course)) => course,
         Ok(None) => return HttpResponse::NotFound().body("Course not found"),
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Database error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
         }
     };
 
@@ -890,6 +1418,20 @@ pub async fn update_course_service(
         Ok(name) => name,
         Err(response) => return response,
     };
+    let description = match optional_trimmed_string(body.description, "Description", 10_000) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let background_image_url =
+        match optional_trimmed_string(body.background_image_url, "Background image URL", 2048) {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    if let Err(response) =
+        validate_optional_http_url(background_image_url.as_deref(), "Background image URL")
+    {
+        return response;
+    }
     let mut active_course = course.into_active_model();
 
     active_course.name = Set(Some(course_name));
@@ -910,28 +1452,26 @@ pub async fn update_course_service(
 
         if is_paid {
             active_course.price_cents = Set(body.price_cents);
-            active_course.currency = Set(body.currency);
+            active_course.currency = Set(currency);
         } else {
             active_course.price_cents = Set(None);
             active_course.currency = Set(None);
         }
     }
 
-    active_course.description = Set(body.description);
-    active_course.background_image_url = Set(body.background_image_url);
+    active_course.description = Set(description);
+    active_course.background_image_url = Set(background_image_url);
     active_course.updated_at = Set(Some(singapore_now()));
 
     match active_course.update(db).await {
         Ok(updated_course) => HttpResponse::Ok().json(updated_course),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Update course error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Update course error: {}", err))
+        }
     }
 }
 
-pub async fn delete_course_service(
-    db: &DatabaseConnection,
-    course_id: i32,
-) -> HttpResponse {
+pub async fn delete_course_service(db: &DatabaseConnection, course_id: i32) -> HttpResponse {
     match courses::Entity::delete_by_id(course_id).exec(db).await {
         Ok(result) => {
             if result.rows_affected == 0 {
@@ -940,30 +1480,17 @@ pub async fn delete_course_service(
                 HttpResponse::Ok().body("Course deleted successfully")
             }
         }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Delete course error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Delete course error: {}", err))
+        }
     }
 }
-
 
 // Enrollment Admin CRUD
-pub async fn get_all_enrollments(
-    db: &DatabaseConnection,
-) -> HttpResponse {
+pub async fn get_all_enrollments(db: &DatabaseConnection) -> HttpResponse {
     match enrollments::Entity::find().all(db).await {
         Ok(enrollment_list) => HttpResponse::Ok().json(enrollment_list),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
-    }
-}
-
-pub async fn get_all_payments(
-    db: &DatabaseConnection,
-) -> HttpResponse {
-    match payments::Entity::find().all(db).await {
-        Ok(payment_list) => HttpResponse::Ok().json(payment_list),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Database error: {}", err)),
+        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
 
@@ -971,50 +1498,19 @@ pub async fn admin_enroll_user_service(
     db: &DatabaseConnection,
     body: AdminEnrollmentForm,
 ) -> HttpResponse {
-    // 1. Check if user exists
-    let user_exists = match users::Entity::find_by_id(body.user_id)
-        .one(db)
-        .await
-    {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("User check error: {}", err));
-        }
-    };
-
-    if !user_exists {
-        return HttpResponse::NotFound()
-            .body("User not found");
+    if let Err(response) = ensure_user_exists(db, Some(body.user_id), "User").await {
+        return response;
+    }
+    if let Err(response) = ensure_course_exists(db, Some(body.course_id)).await {
+        return response;
     }
 
-    // 2. Check if course exists
-    let course_exists = match courses::Entity::find_by_id(body.course_id)
-        .one(db)
-        .await
-    {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Course check error: {}", err));
-        }
-    };
-
-    if !course_exists {
-        return HttpResponse::NotFound()
-            .body("Course not found");
-    }
-
-    // 3. Check if user is already enrolled
     match enrollments::Entity::find_by_id((body.user_id, body.course_id))
         .one(db)
         .await
     {
         Ok(Some(_)) => {
-            return HttpResponse::BadRequest()
-                .body("User is already enrolled in this course");
+            return HttpResponse::BadRequest().body("User is already enrolled in this course");
         }
         Ok(None) => {}
         Err(err) => {
@@ -1023,7 +1519,6 @@ pub async fn admin_enroll_user_service(
         }
     }
 
-    // 4. Create enrollment
     let now = singapore_now();
     let new_enrollment = enrollments::ActiveModel {
         user_id: Set(body.user_id),
@@ -1035,8 +1530,9 @@ pub async fn admin_enroll_user_service(
 
     match new_enrollment.insert(db).await {
         Ok(enrollment) => HttpResponse::Ok().json(enrollment),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Create enrollment error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Create enrollment error: {}", err))
+        }
     }
 }
 
@@ -1045,6 +1541,10 @@ pub async fn admin_unenroll_user_service(
     user_id: i32,
     course_id: i32,
 ) -> HttpResponse {
+    if user_id <= 0 || course_id <= 0 {
+        return HttpResponse::BadRequest().body("User and course must be valid records");
+    }
+
     match enrollments::Entity::delete_by_id((user_id, course_id))
         .exec(db)
         .await
@@ -1056,7 +1556,8 @@ pub async fn admin_unenroll_user_service(
                 HttpResponse::Ok().body("User unenrolled successfully")
             }
         }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Delete enrollment error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Delete enrollment error: {}", err))
+        }
     }
 }

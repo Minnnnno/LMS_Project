@@ -62,7 +62,7 @@
                     <i class="bi bi-graph-up-arrow fs-3"></i>
                     <h2 class="section-title mt-3 mb-1">Analytics</h2>
                     <p class="page-subtitle">Track course enrollments, revenue, and gross profit signals.</p>
-                    <strong class="d-block mt-3" data-admin-total="analytics">View business statistics</strong>
+                    <strong class="d-block mt-3">View business statistics</strong>
                 </div>
             </a>
         </div>
@@ -764,7 +764,7 @@ const adminRecords = {
     users: [],
     courses: [],
     enrollments: [],
-    payments: [],
+    analyticsData: null,
 };
 let adminStats = null;
 
@@ -849,7 +849,7 @@ document.querySelectorAll("[data-table-search]").forEach((input) => {
 });
 
 if (analyticsOrgFilter) {
-    analyticsOrgFilter.addEventListener("change", renderAnalytics);
+    analyticsOrgFilter.addEventListener("change", loadAdminAnalytics);
 }
 
 analyticsExportSummaryButton?.addEventListener("click", () => exportAnalyticsCsv("summary"));
@@ -1028,10 +1028,6 @@ function analyticsStatusColor(status) {
     return colors[String(status || "").toLowerCase()] || "#2563eb";
 }
 
-function isPaidCourse(course) {
-    return course.is_paid === true || course.is_paid === 1 || String(course.is_paid).toLowerCase() === "true";
-}
-
 function selectedAnalyticsOrgId() {
     if (!analyticsOrgFilter || !analyticsOrgFilter.value) {
         return null;
@@ -1050,7 +1046,7 @@ function renderAnalyticsOrgFilter(organisations) {
     analyticsOrgFilter.innerHTML = [
         '<option value="">All organisations</option>',
         ...organisations.map((organisation) => (
-            `<option value="${escapeHtml(organisation.org_id)}">${escapeHtml(organisation.org_name)}</option>`
+            `<option value="${escapeHtml(organisation.orgId)}">${escapeHtml(organisation.orgName)}</option>`
         )),
     ].join("");
 
@@ -1068,14 +1064,13 @@ function renderCourseEnrollmentPie(pieElement, legendElement, courseAnalytics, t
 
     const topEnrollmentCourses = [...courseAnalytics]
         .filter((item) => item.enrollmentCount > 0)
-        .sort((a, b) => b.enrollmentCount - a.enrollmentCount || b.confirmedRevenueCents - a.confirmedRevenueCents)
         .slice(0, 5);
-    const shownCourseIds = new Set(topEnrollmentCourses.map((item) => item.course.course_id));
+    const shownCourseIds = new Set(topEnrollmentCourses.map((item) => item.courseId));
     const otherEnrollmentCount = courseAnalytics
-        .filter((item) => item.enrollmentCount > 0 && !shownCourseIds.has(item.course.course_id))
+        .filter((item) => item.enrollmentCount > 0 && !shownCourseIds.has(item.courseId))
         .reduce((sum, item) => sum + item.enrollmentCount, 0);
     const pieItems = otherEnrollmentCount > 0
-        ? [...topEnrollmentCourses, { course: { name: "Other courses" }, enrollmentCount: otherEnrollmentCount }]
+        ? [...topEnrollmentCourses, { courseName: "Other courses", enrollmentCount: otherEnrollmentCount }]
         : topEnrollmentCourses;
 
     if (pieItems.length && totalEnrollments > 0) {
@@ -1092,7 +1087,7 @@ function renderCourseEnrollmentPie(pieElement, legendElement, courseAnalytics, t
             <div class="analytics-legend-item">
                 <span class="analytics-legend-swatch" style="background:${analyticsChartColor(index)}"></span>
                 <div>
-                    <strong>${escapeHtml(item.course.name || `Course #${item.course.course_id}`)}</strong>
+                    <strong>${escapeHtml(item.courseName || `Course #${item.courseId}`)}</strong>
                     <span>${item.enrollmentCount} enrollment${item.enrollmentCount === 1 ? "" : "s"} &middot; ${analyticsPercent(item.enrollmentCount, totalEnrollments)}</span>
                 </div>
             </div>
@@ -1103,16 +1098,13 @@ function renderCourseEnrollmentPie(pieElement, legendElement, courseAnalytics, t
     }
 }
 
-function renderCourseStatusBars(target, statusCounts, totalCourses) {
+function renderCourseStatusBars(target, courseStatuses, totalCourses) {
     if (!target) {
         return;
     }
 
-    const statusItems = [...statusCounts.entries()]
-        .sort(([first], [second]) => first.localeCompare(second));
-
-    target.innerHTML = statusItems.length
-        ? statusItems.map(([status, count]) => renderAnalyticsBar(
+    target.innerHTML = courseStatuses.length
+        ? courseStatuses.map(({ status, count }) => renderAnalyticsBar(
             status.charAt(0).toUpperCase() + status.slice(1),
             count,
             totalCourses,
@@ -1123,109 +1115,7 @@ function renderCourseStatusBars(target, statusCounts, totalCourses) {
 }
 
 function buildAnalyticsData() {
-    const { organisations, courses, enrollments, payments } = adminRecords;
-    const selectedOrgId = selectedAnalyticsOrgId();
-    const filteredOrganisations = selectedOrgId === null
-        ? organisations
-        : organisations.filter((organisation) => organisation.org_id === selectedOrgId);
-    const filteredCourses = selectedOrgId === null
-        ? courses
-        : courses.filter((course) => course.org_id === selectedOrgId);
-    const filteredCourseIds = new Set(filteredCourses.map((course) => course.course_id));
-    const filteredEnrollments = enrollments.filter((enrollment) => filteredCourseIds.has(enrollment.course_id));
-    const filteredPayments = payments.filter((payment) => filteredCourseIds.has(payment.course_id));
-    const successfulPayments = filteredPayments.filter(
-        (payment) => String(payment.payment_status || "").toUpperCase() === "SUCCEEDED",
-    );
-    const successfulPaymentsByCourse = successfulPayments.reduce((map, payment) => {
-        const current = map.get(payment.course_id) || 0;
-        map.set(payment.course_id, current + (Number(payment.amount_cents) || 0));
-        return map;
-    }, new Map());
-    const enrollmentsByCourse = filteredEnrollments.reduce((map, enrollment) => {
-        const current = map.get(enrollment.course_id) || 0;
-        map.set(enrollment.course_id, current + 1);
-        return map;
-    }, new Map());
-
-    const courseAnalytics = filteredCourses.map((course) => {
-        const enrollmentCount = enrollmentsByCourse.get(course.course_id) || 0;
-        const priceCents = Number(course.price_cents) || 0;
-        const isPaid = isPaidCourse(course);
-        const confirmedRevenueCents = successfulPaymentsByCourse.get(course.course_id) || 0;
-        const projectedRevenueCents = isPaid ? enrollmentCount * priceCents : 0;
-
-        return {
-            course,
-            enrollmentCount,
-            priceCents,
-            isPaid,
-            confirmedRevenueCents,
-            grossProfitCents: confirmedRevenueCents,
-            projectedRevenueCents,
-        };
-    });
-    const organisationAnalytics = filteredOrganisations.map((organisation) => {
-        const orgCourses = courseAnalytics.filter((item) => item.course.org_id === organisation.org_id);
-        const enrollmentCount = orgCourses.reduce((sum, item) => sum + item.enrollmentCount, 0);
-        const confirmedRevenueCents = orgCourses.reduce((sum, item) => sum + item.confirmedRevenueCents, 0);
-        const projectedRevenueCents = orgCourses.reduce((sum, item) => sum + item.projectedRevenueCents, 0);
-
-        return {
-            organisation,
-            courseCount: orgCourses.length,
-            enrollmentCount,
-            confirmedRevenueCents,
-            grossProfitCents: confirmedRevenueCents,
-            projectedRevenueCents,
-        };
-    });
-
-    const paidEnrollments = courseAnalytics.reduce(
-        (sum, item) => sum + (item.isPaid ? item.enrollmentCount : 0),
-        0,
-    );
-    const paidCourses = courseAnalytics.filter((item) => item.isPaid).length;
-    const freeCourses = courseAnalytics.length - paidCourses;
-    const totalConfirmedRevenueCents = courseAnalytics.reduce((sum, item) => sum + item.confirmedRevenueCents, 0);
-    const statusCounts = courseAnalytics.reduce((map, item) => {
-        const status = item.course.status || "unknown";
-        map.set(status, (map.get(status) || 0) + 1);
-        return map;
-    }, new Map());
-    const revenueByMonth = successfulPayments.reduce((map, payment) => {
-        const date = new Date(payment.paid_at || payment.created_at);
-        const key = Number.isNaN(date.getTime())
-            ? "Unknown"
-            : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const current = map.get(key) || 0;
-        map.set(key, current + (Number(payment.amount_cents) || 0));
-        return map;
-    }, new Map());
-    const revenueTrend = [...revenueByMonth.entries()]
-        .sort(([first], [second]) => first.localeCompare(second))
-        .slice(-8)
-        .map(([key, value]) => ({
-            label: key === "Unknown" ? "Unknown" : new Date(`${key}-01T00:00:00`).toLocaleString("en-SG", { month: "short", year: "2-digit" }),
-            revenueCents: value,
-        }));
-
-    return {
-        selectedOrgId,
-        filteredOrganisations,
-        filteredCourses,
-        filteredEnrollments,
-        filteredPayments,
-        successfulPayments,
-        courseAnalytics,
-        organisationAnalytics,
-        paidEnrollments,
-        paidCourses,
-        freeCourses,
-        totalConfirmedRevenueCents,
-        statusCounts,
-        revenueTrend,
-    };
+    return adminRecords.analyticsData;
 }
 
 function renderAnalytics() {
@@ -1233,84 +1123,47 @@ function renderAnalytics() {
         return;
     }
 
-    renderAnalyticsOrgFilter(adminRecords.organisations);
-
     const analyticsData = buildAnalyticsData();
+
+    if (!analyticsData) {
+        return;
+    }
+
+    renderAnalyticsOrgFilter(analyticsData.organisations || []);
+
     const {
-        filteredEnrollments,
-        successfulPayments,
         courseAnalytics,
         organisationAnalytics,
-        paidEnrollments,
-        paidCourses,
-        freeCourses,
-        totalConfirmedRevenueCents,
-        statusCounts,
+        courseStatuses,
         revenueTrend,
+        totals,
     } = analyticsData;
 
-    setAnalyticsText("[data-analytics-value='paidEnrollments']", analyticsNumber(paidEnrollments, 0));
+    setAnalyticsText("[data-analytics-value='paidEnrollments']", analyticsNumber(totals.paidEnrollments, 0));
     setAnalyticsText(
         "[data-analytics-note='paidEnrollmentShare']",
-        `${analyticsPercent(paidEnrollments, filteredEnrollments.length)} of enrollments`,
+        `${analyticsPercent(totals.paidEnrollments, totals.totalEnrollments)} of enrollments`,
     );
-    setAnalyticsText("[data-analytics-value='freeCourses']", analyticsNumber(freeCourses, 0));
-    setAnalyticsText("[data-analytics-value='paidCourses']", analyticsNumber(paidCourses, 0));
+    setAnalyticsText("[data-analytics-value='freeCourses']", analyticsNumber(totals.freeCourses, 0));
+    setAnalyticsText("[data-analytics-value='paidCourses']", analyticsNumber(totals.paidCourses, 0));
     setAnalyticsText(
         "[data-analytics-note='freeCourseShare']",
-        `${analyticsPercent(freeCourses, courseAnalytics.length)} of courses`,
+        `${analyticsPercent(totals.freeCourses, totals.totalCourses)} of courses`,
     );
     setAnalyticsText(
         "[data-analytics-note='paidCourseShare']",
-        `${analyticsPercent(paidCourses, courseAnalytics.length)} of courses`,
+        `${analyticsPercent(totals.paidCourses, totals.totalCourses)} of courses`,
     );
-    setAnalyticsText("[data-analytics-value='totalEnrollments']", analyticsNumber(filteredEnrollments.length, 0));
-    setAnalyticsText("[data-dashboard-analytics-value='totalEnrollments']", analyticsNumber(filteredEnrollments.length, 0));
-    setAnalyticsText("[data-analytics-value='confirmedRevenue']", formatPrice(totalConfirmedRevenueCents, "SGD"));
+    setAnalyticsText("[data-analytics-value='totalEnrollments']", analyticsNumber(totals.totalEnrollments, 0));
+    setAnalyticsText("[data-dashboard-analytics-value='totalEnrollments']", analyticsNumber(totals.totalEnrollments, 0));
+    setAnalyticsText("[data-analytics-value='confirmedRevenue']", formatPrice(totals.confirmedRevenueCents, "SGD"));
     setAnalyticsText(
         "[data-analytics-note='successfulPaymentCount']",
-        `${analyticsNumber(successfulPayments.length, 0)} successful payment${successfulPayments.length === 1 ? "" : "s"}`,
+        `${analyticsNumber(totals.successfulPaymentCount, 0)} successful payment${totals.successfulPaymentCount === 1 ? "" : "s"}`,
     );
 
-    renderCourseEnrollmentPie(dashboardCoursePie, dashboardCourseLegend, courseAnalytics, filteredEnrollments.length);
-
-    if (analyticsCoursePie && analyticsCourseLegend) {
-        const topEnrollmentCourses = [...courseAnalytics]
-            .filter((item) => item.enrollmentCount > 0)
-            .sort((a, b) => b.enrollmentCount - a.enrollmentCount || b.confirmedRevenueCents - a.confirmedRevenueCents)
-            .slice(0, 5);
-        const shownCourseIds = new Set(topEnrollmentCourses.map((item) => item.course.course_id));
-        const otherEnrollmentCount = courseAnalytics
-            .filter((item) => item.enrollmentCount > 0 && !shownCourseIds.has(item.course.course_id))
-            .reduce((sum, item) => sum + item.enrollmentCount, 0);
-        const pieItems = otherEnrollmentCount > 0
-            ? [...topEnrollmentCourses, { course: { name: "Other courses" }, enrollmentCount: otherEnrollmentCount }]
-            : topEnrollmentCourses;
-
-        if (pieItems.length) {
-            let currentPercent = 0;
-            const gradientStops = pieItems.map((item, index) => {
-                const percent = (item.enrollmentCount / filteredEnrollments.length) * 100;
-                const start = currentPercent;
-                currentPercent += percent;
-                return `${analyticsChartColor(index)} ${start}% ${currentPercent}%`;
-            });
-
-            analyticsCoursePie.style.background = `conic-gradient(${gradientStops.join(", ")})`;
-            analyticsCourseLegend.innerHTML = pieItems.map((item, index) => `
-                <div class="analytics-legend-item">
-                    <span class="analytics-legend-swatch" style="background:${analyticsChartColor(index)}"></span>
-                    <div>
-                        <strong>${escapeHtml(item.course.name || `Course #${item.course.course_id}`)}</strong>
-                        <span>${item.enrollmentCount} enrollment${item.enrollmentCount === 1 ? "" : "s"} &middot; ${analyticsPercent(item.enrollmentCount, filteredEnrollments.length)}</span>
-                    </div>
-                </div>
-            `).join("");
-        } else {
-            analyticsCoursePie.style.background = "#eef2f6";
-            analyticsCourseLegend.innerHTML = '<div class="text-secondary">No course enrollments yet.</div>';
-        }
-    }
+    renderCourseEnrollmentPie(dashboardCoursePie, dashboardCourseLegend, courseAnalytics, totals.totalEnrollments);
+    renderCourseEnrollmentPie(analyticsCoursePie, analyticsCourseLegend, courseAnalytics, totals.totalEnrollments);
 
     if (analyticsTopOrgEnrollments) {
         const topOrganisations = [...organisationAnalytics]
@@ -1323,7 +1176,7 @@ function renderAnalytics() {
                 <div class="analytics-list-item">
                     <span class="analytics-rank">${index + 1}</span>
                     <div>
-                        <strong>${escapeHtml(item.organisation.org_name)}</strong>
+                        <strong>${escapeHtml(item.orgName)}</strong>
                         <span>${item.enrollmentCount} enrollment${item.enrollmentCount === 1 ? "" : "s"} &middot; ${item.courseCount} course${item.courseCount === 1 ? "" : "s"}</span>
                     </div>
                 </div>
@@ -1347,10 +1200,10 @@ function renderAnalytics() {
         );
     }
 
-    renderCourseStatusBars(dashboardCourseStatusBars, statusCounts, courseAnalytics.length);
+    renderCourseStatusBars(dashboardCourseStatusBars, courseStatuses, totals.totalCourses);
 
     if (analyticsCourseStatusBars) {
-        renderCourseStatusBars(analyticsCourseStatusBars, statusCounts, courseAnalytics.length);
+        renderCourseStatusBars(analyticsCourseStatusBars, courseStatuses, totals.totalCourses);
     }
 
     if (analyticsOrgProfitBars) {
@@ -1365,7 +1218,7 @@ function renderAnalytics() {
 
         analyticsOrgProfitBars.innerHTML = profitLeaders.length
             ? profitLeaders.map((item, index) => renderAnalyticsBar(
-                item.organisation.org_name,
+                item.orgName,
                 Math.max(item.grossProfitCents, item.projectedRevenueCents),
                 maxProfitCents,
                 `${formatPrice(item.grossProfitCents, "SGD")} confirmed`,
@@ -1386,10 +1239,10 @@ function renderAnalytics() {
 
         analyticsCourseRevenueBars.innerHTML = courseRevenueLeaders.length
             ? courseRevenueLeaders.map((item, index) => renderAnalyticsBar(
-                item.course.name || `Course #${item.course.course_id}`,
+                item.courseName || `Course #${item.courseId}`,
                 Math.max(item.confirmedRevenueCents, item.projectedRevenueCents),
                 maxCourseRevenueCents,
-                `${formatPrice(item.confirmedRevenueCents, item.course.currency || "SGD")} confirmed`,
+                `${formatPrice(item.confirmedRevenueCents, item.currency || "SGD")} confirmed`,
                 analyticsChartColor(index),
             )).join("")
             : '<div class="text-secondary">No course revenue yet.</div>';
@@ -1399,7 +1252,7 @@ function renderAnalytics() {
         const rows = [...organisationAnalytics]
             .sort((a, b) => b.confirmedRevenueCents - a.confirmedRevenueCents || b.enrollmentCount - a.enrollmentCount)
             .map((item) => tableRow([
-                escapeHtml(item.organisation.org_name),
+                escapeHtml(item.orgName),
                 escapeHtml(item.enrollmentCount),
                 escapeHtml(formatPrice(item.confirmedRevenueCents, "SGD")),
                 escapeHtml(formatPrice(item.grossProfitCents, "SGD")),
@@ -1450,8 +1303,8 @@ function analyticsExportScopeLabel(analyticsData) {
         return "all-organisations";
     }
 
-    const organisation = adminRecords.organisations.find((item) => item.org_id === analyticsData.selectedOrgId);
-    return (organisation?.org_name || `organisation-${analyticsData.selectedOrgId}`)
+    const organisation = (analyticsData.organisations || []).find((item) => item.orgId === analyticsData.selectedOrgId);
+    return (organisation?.orgName || `organisation-${analyticsData.selectedOrgId}`)
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "") || "organisation";
@@ -1467,31 +1320,15 @@ function buildAnalyticsSummaryCsv() {
         "gross_profit_sgd",
         "projected_revenue_sgd",
     ];
-    const rows = analyticsData.organisationAnalytics
-        .sort((a, b) => b.confirmedRevenueCents - a.confirmedRevenueCents || b.enrollmentCount - a.enrollmentCount)
-        .map((item) => ({
-            organisation: item.organisation.org_name,
-            courses: item.courseCount,
-            enrollments: item.enrollmentCount,
-            confirmed_revenue_sgd: (item.confirmedRevenueCents / 100).toFixed(2),
-            gross_profit_sgd: (item.grossProfitCents / 100).toFixed(2),
-            projected_revenue_sgd: (item.projectedRevenueCents / 100).toFixed(2),
-        }));
 
     return {
         filename: `lms-analytics-summary-${analyticsExportScopeLabel(analyticsData)}.csv`,
-        content: csvRows(headers, rows),
+        content: csvRows(headers, analyticsData.summaryRows || []),
     };
 }
 
 function buildAnalyticsDetailCsv() {
     const analyticsData = buildAnalyticsData();
-    const organisationsById = new Map(adminRecords.organisations.map((organisation) => [organisation.org_id, organisation]));
-    const coursesById = new Map(adminRecords.courses.map((course) => [course.course_id, course]));
-    const enrollmentsByCourse = analyticsData.filteredEnrollments.reduce((map, enrollment) => {
-        map.set(enrollment.course_id, (map.get(enrollment.course_id) || 0) + 1);
-        return map;
-    }, new Map());
     const headers = [
         "record_type",
         "organisation",
@@ -1505,51 +1342,19 @@ function buildAnalyticsDetailCsv() {
         "payment_status",
         "paid_at",
     ];
-    const courseRows = analyticsData.courseAnalytics
-        .sort((a, b) => b.confirmedRevenueCents - a.confirmedRevenueCents || b.enrollmentCount - a.enrollmentCount)
-        .map((item) => ({
-            record_type: "course",
-            organisation: organisationsById.get(item.course.org_id)?.org_name || "No organisation",
-            course: item.course.name || `Course #${item.course.course_id}`,
-            course_status: item.course.status || "",
-            is_paid_course: item.isPaid ? "yes" : "no",
-            enrollments: item.enrollmentCount,
-            confirmed_revenue_sgd: (item.confirmedRevenueCents / 100).toFixed(2),
-            projected_revenue_sgd: (item.projectedRevenueCents / 100).toFixed(2),
-            payment_id: "",
-            payment_status: "",
-            paid_at: "",
-        }));
-    const paymentRows = analyticsData.filteredPayments
-        .sort((a, b) => new Date(b.paid_at || b.created_at).getTime() - new Date(a.paid_at || a.created_at).getTime())
-        .map((payment) => {
-            const course = coursesById.get(payment.course_id);
-            const organisation = course ? organisationsById.get(course.org_id) : null;
-
-            return {
-                record_type: "payment",
-                organisation: organisation?.org_name || "No organisation",
-                course: course?.name || `Course #${payment.course_id}`,
-                course_status: course?.status || "",
-                is_paid_course: course && isPaidCourse(course) ? "yes" : "no",
-                enrollments: enrollmentsByCourse.get(payment.course_id) || 0,
-                confirmed_revenue_sgd: String(payment.payment_status || "").toUpperCase() === "SUCCEEDED"
-                    ? ((Number(payment.amount_cents) || 0) / 100).toFixed(2)
-                    : "0.00",
-                projected_revenue_sgd: "",
-                payment_id: payment.payment_id,
-                payment_status: payment.payment_status || "",
-                paid_at: payment.paid_at || payment.created_at || "",
-            };
-        });
 
     return {
         filename: `lms-analytics-detail-${analyticsExportScopeLabel(analyticsData)}.csv`,
-        content: csvRows(headers, [...courseRows, ...paymentRows]),
+        content: csvRows(headers, analyticsData.detailRows || []),
     };
 }
 
 function exportAnalyticsCsv(type) {
+    if (!buildAnalyticsData()) {
+        setAdminMessage("Analytics data is still loading.", "warning");
+        return;
+    }
+
     const exportData = type === "detail"
         ? buildAnalyticsDetailCsv()
         : buildAnalyticsSummaryCsv();
@@ -1599,10 +1404,6 @@ function priceInCents(formData, key) {
 
     if (price === null) {
         return null;
-    }
-
-    if (price < 0) {
-        throw new Error("Price cannot be negative.");
     }
 
     return Math.round((price + Number.EPSILON) * 100);
@@ -1818,6 +1619,24 @@ async function loadTable(url) {
     return response.json();
 }
 
+async function loadAdminAnalytics() {
+    if (!isAnalyticsVisibleDomain()) {
+        return;
+    }
+
+    const orgId = selectedAnalyticsOrgId();
+    const analyticsUrl = orgId
+        ? `/admin/analytics-data?org_id=${encodeURIComponent(orgId)}`
+        : "/admin/analytics-data";
+
+    try {
+        adminRecords.analyticsData = await loadTable(analyticsUrl);
+        renderAnalytics();
+    } catch (error) {
+        setAdminMessage(error.message || "Unable to load analytics.", "danger");
+    }
+}
+
 function formatRoleName(roleName) {
     const labels = {
         LmsAdmin: "LMS Admin",
@@ -1979,21 +1798,21 @@ async function loadAdminTables() {
         const isAnalytics = domain === "analytics";
         const isDashboard = domain === "dashboard";
         const needsAnalyticsData = isAnalytics || isDashboard;
-        const needsOrganisations = needsAnalyticsData || ["organisations", "users", "courses"].includes(domain);
-        const needsOrganisationRequests = isAnalytics || domain === "organisations";
+        const needsOrganisations = ["organisations", "users", "courses"].includes(domain);
+        const needsOrganisationRequests = domain === "organisations";
         const needsRoles = domain === "users";
-        const needsUsers = needsAnalyticsData || ["users", "courses", "enrollments"].includes(domain);
-        const needsCourses = needsAnalyticsData || ["courses", "enrollments"].includes(domain);
-        const needsEnrollments = needsAnalyticsData || domain === "enrollments";
+        const needsUsers = ["users", "courses", "enrollments"].includes(domain);
+        const needsCourses = ["courses", "enrollments"].includes(domain);
+        const needsEnrollments = domain === "enrollments";
 
-        const [organisationRequests, organisations, roles, users, courses, enrollments, payments] = await Promise.all([
+        const [organisationRequests, organisations, roles, users, courses, enrollments, analyticsData] = await Promise.all([
             needsOrganisationRequests ? loadTable("/admin/organisation-signup-requests") : Promise.resolve([]),
             needsOrganisations ? loadTable("/admin/organisations") : Promise.resolve([]),
             needsRoles ? loadTable("/admin/roles") : Promise.resolve([]),
             needsUsers ? loadTable("/admin/users") : Promise.resolve([]),
             needsCourses ? loadTable("/admin/courses") : Promise.resolve([]),
             needsEnrollments ? loadTable("/admin/enrollments") : Promise.resolve([]),
-            needsAnalyticsData ? loadTable("/admin/payments") : Promise.resolve([]),
+            needsAnalyticsData ? loadTable("/admin/analytics-data") : Promise.resolve(null),
         ]);
 
         adminRecords.organisationRequests = organisationRequests;
@@ -2001,7 +1820,7 @@ async function loadAdminTables() {
         adminRecords.users = users;
         adminRecords.courses = courses;
         adminRecords.enrollments = enrollments;
-        adminRecords.payments = payments;
+        adminRecords.analyticsData = analyticsData;
 
         const organisationNames = new Map(
             organisations.map((organisation) => [organisation.org_id, organisation.org_name]),
@@ -2353,14 +2172,6 @@ async function saveInlineEdit(domain, id, row) {
             throw new Error("Course name is required.");
         }
 
-        if (isPaid && (!Number.isFinite(price) || price <= 0)) {
-            throw new Error("Paid courses must have a price greater than zero.");
-        }
-
-        if (!isPaid && priceInput.value.trim() !== "") {
-            throw new Error("Unpaid courses must not have a price.");
-        }
-
         payload = {
             name,
             org_id: Number(row.querySelector("[name='org_id']").value) || null,
@@ -2405,10 +2216,6 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
                 const imageFile = form.querySelector("[name='background_image_file']")?.files[0];
                 let backgroundImageUrl = fieldValue(formData, "background_image_url");
                 const priceCents = isPaid ? priceInCents(formData, "price") : null;
-
-                if (isPaid && (!Number.isFinite(priceCents) || priceCents <= 0)) {
-                    throw new Error("Paid courses must have a price greater than zero.");
-                }
 
                 if (imageFile) {
                     setAdminMessage("Uploading course background image...", "info");

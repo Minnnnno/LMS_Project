@@ -319,6 +319,14 @@ pub fn build_page_context(session: &Session) -> Context {
 }
 
 pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
+    render_page_with_status(template_name, session, actix_web::http::StatusCode::OK)
+}
+
+pub fn render_page_with_status(
+    template_name: &str,
+    session: &Session,
+    status: actix_web::http::StatusCode,
+) -> HttpResponse {
     if session
         .get::<bool>("must_change_password")
         .ok()
@@ -338,5 +346,5 @@ pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
         .render(template_name, &context)
         .expect("Failed to render template");
 
-    HttpResponse::Ok().content_type("text/html").body(html)
+    HttpResponse::build(status).content_type("text/html").body(html)
 }

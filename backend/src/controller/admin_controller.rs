@@ -1,50 +1,27 @@
 use actix_session::Session;
-use actix_web::{delete, get, post, put, web, Responder};
+use actix_web::{delete, get, http::StatusCode, post, put, web, HttpResponse, Responder};
 use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::entity::{courses, enrollments, organisations, users};
 use crate::models::admin::{
-    CreateOrganisationForm,
+    AdminEnrollmentForm, CreateAdminCourseForm, CreateAdminUserForm, CreateOrganisationForm,
+    RejectOrganisationSignupRequestForm, UpdateAdminCourseForm, UpdateAdminUserForm,
     UpdateOrganisationForm,
-    RejectOrganisationSignupRequestForm,
-    CreateAdminUserForm,
-    UpdateAdminUserForm,
-    CreateAdminCourseForm,
-    UpdateAdminCourseForm,
-    AdminEnrollmentForm,
 };
 
 use crate::services::auth_helpers::{require_admin, require_admin_page};
-use crate::ssr::pages::render_page;
+use crate::ssr::pages::{render_page, render_page_with_status};
 
 use crate::services::admin_service::{
-    get_all_organisations,
-    get_all_roles,
-    get_organisation_signup_requests,
-    approve_organisation_signup_request,
-    reject_organisation_signup_request,
-    create_organisation_service,
-    update_organisation_service,
-    delete_organisation_service,
-
-    get_all_users,
-    get_user_by_id_service,
-    create_user_service,
-    update_user_service,
-    delete_user_service,
-
-    get_all_courses,
-    get_course_by_id_service,
-    create_course_service,
-    update_course_service,
-    delete_course_service,
-
-    get_all_enrollments,
-    get_all_payments,
-    admin_enroll_user_service,
-    admin_unenroll_user_service,
+    admin_enroll_user_service, admin_unenroll_user_service, approve_organisation_signup_request,
+    create_course_service, create_organisation_service, create_user_service, delete_course_service,
+    delete_organisation_service, delete_user_service,
+    get_admin_analytics_data as get_admin_analytics_data_service, get_all_courses,
+    get_all_enrollments, get_all_organisations, get_all_roles, get_all_users,
+    get_organisation_signup_requests, reject_organisation_signup_request, update_course_service,
+    update_organisation_service, update_user_service,
 };
 
 #[derive(Serialize)]
@@ -55,6 +32,11 @@ struct AdminStats {
     total_organisations: u64,
     total_courses: u64,
     total_enrollments: u64,
+}
+
+#[derive(Deserialize)]
+pub struct AdminAnalyticsQuery {
+    org_id: Option<i32>,
 }
 
 #[get("/admin/stats")]
@@ -100,52 +82,54 @@ pub async fn admin_get_roles(
     }
 }
 
-#[get("/admin/dashboard")]
-pub async fn admin_dashboard(
+#[get("/admin/analytics-data")]
+pub async fn admin_get_analytics_data(
+    db: web::Data<DatabaseConnection>,
     session: Session,
+    query: web::Query<AdminAnalyticsQuery>,
 ) -> impl Responder {
-    match require_admin_page(&session) {
-        Ok(_) => render_page("admin_dashboard.html", &session),
+    match require_admin(&session) {
+        Ok(_) => get_admin_analytics_data_service(db.get_ref(), query.org_id).await,
         Err(response) => response,
     }
+}
+
+#[get("/admin/dashboard")]
+pub async fn admin_dashboard(session: Session) -> impl Responder {
+    render_lms_admin_page(&session)
 }
 
 #[get("/admin/analytics")]
 pub async fn admin_analytics_page(session: Session) -> impl Responder {
-    match require_admin_page(&session) {
-        Ok(_) => render_page("admin_dashboard.html", &session),
-        Err(response) => response,
-    }
+    render_lms_admin_page(&session)
 }
 
 #[get("/admin/manage/organisations")]
 pub async fn admin_organisations_page(session: Session) -> impl Responder {
-    match require_admin_page(&session) {
-        Ok(_) => render_page("admin_dashboard.html", &session),
-        Err(response) => response,
-    }
+    render_lms_admin_page(&session)
 }
 
 #[get("/admin/manage/users")]
 pub async fn admin_users_page(session: Session) -> impl Responder {
-    match require_admin_page(&session) {
-        Ok(_) => render_page("admin_dashboard.html", &session),
-        Err(response) => response,
-    }
+    render_lms_admin_page(&session)
 }
 
 #[get("/admin/manage/courses")]
 pub async fn admin_courses_page(session: Session) -> impl Responder {
-    match require_admin_page(&session) {
-        Ok(_) => render_page("admin_dashboard.html", &session),
-        Err(response) => response,
-    }
+    render_lms_admin_page(&session)
 }
 
 #[get("/admin/manage/enrollments")]
 pub async fn admin_enrollments_page(session: Session) -> impl Responder {
+    render_lms_admin_page(&session)
+}
+
+fn render_lms_admin_page(session: &Session) -> HttpResponse {
     match require_admin_page(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
+        Err(response) if response.status() == StatusCode::FORBIDDEN => {
+            render_page_with_status("access_denied.html", &session, StatusCode::FORBIDDEN)
+        }
         Err(response) => response,
     }
 }
@@ -265,20 +249,6 @@ pub async fn admin_get_users(
     }
 }
 
-#[get("/admin/users/{user_id}")]
-pub async fn admin_get_user_by_id(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-    path: web::Path<i32>,
-) -> impl Responder {
-    let user_id = path.into_inner();
-
-    match require_admin(&session) {
-        Ok(_) => get_user_by_id_service(db.get_ref(), user_id).await,
-        Err(response) => response,
-    }
-}
-
 #[post("/admin/users")]
 pub async fn admin_create_user(
     db: web::Data<DatabaseConnection>,
@@ -332,20 +302,6 @@ pub async fn admin_get_courses(
     }
 }
 
-#[get("/admin/courses/{course_id}")]
-pub async fn admin_get_course_by_id(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-    path: web::Path<i32>,
-) -> impl Responder {
-    let course_id = path.into_inner();
-
-    match require_admin(&session) {
-        Ok(_) => get_course_by_id_service(db.get_ref(), course_id).await,
-        Err(response) => response,
-    }
-}
-
 #[post("/admin/courses")]
 pub async fn admin_create_course(
     db: web::Data<DatabaseConnection>,
@@ -395,17 +351,6 @@ pub async fn admin_get_enrollments(
 ) -> impl Responder {
     match require_admin(&session) {
         Ok(_) => get_all_enrollments(db.get_ref()).await,
-        Err(response) => response,
-    }
-}
-
-#[get("/admin/payments")]
-pub async fn admin_get_payments(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
-    match require_admin(&session) {
-        Ok(_) => get_all_payments(db.get_ref()).await,
         Err(response) => response,
     }
 }
