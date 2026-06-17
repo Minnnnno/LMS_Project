@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found | SkillUp LMS{% endblock title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/error_pages.css">
+{% endblock extra_css %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-page__content">
+        <p class="error-page__code">404</p>
+        <h1>pspspsps the content you're looking for is not available</h1>
+        <p class="error-page__copy">The page may have moved, been removed, or never existed.</p>
+        <div class="error-page__actions">
+            <a class="btn btn-dark" href="/">Back to dashboard</a>
+            <a class="btn btn-outline-dark" href="/courses">View courses</a>
+        </div>
+    </div>
+</div>
+{% endblock content %}

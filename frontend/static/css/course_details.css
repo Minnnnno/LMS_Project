@@ -581,6 +581,30 @@
     color: #b42318;
 }
 
+.quiz-answer-save-status {
+    min-height: 0;
+    margin: 0;
+    border-radius: 8px;
+    padding: 0;
+    color: #475467;
+    font-size: 0.88rem;
+    font-weight: 800;
+}
+
+.quiz-answer-save-status.success {
+    border: 1px solid #bbf7d0;
+    padding: 10px 12px;
+    background: #dcfce7;
+    color: #166534;
+}
+
+.quiz-answer-save-status.error {
+    border: 1px solid #fecaca;
+    padding: 10px 12px;
+    background: #fef2f2;
+    color: #b42318;
+}
+
 .staff-grade-readonly {
     display: grid;
     gap: 6px;

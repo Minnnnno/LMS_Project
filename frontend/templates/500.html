@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error | SkillUp LMS{% endblock title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/error_pages.css">
+{% endblock extra_css %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-page__content">
+        <p class="error-page__code">500</p>
+        <h1>pspspsps something went wrong on our end</h1>
+        <p class="error-page__copy">Try again in a moment. If it keeps happening, the server needs a look.</p>
+        <div class="error-page__actions">
+            <a class="btn btn-dark" href="/">Back to dashboard</a>
+            <a class="btn btn-outline-dark" href="/courses">View courses</a>
+        </div>
+    </div>
+</div>
+{% endblock content %}

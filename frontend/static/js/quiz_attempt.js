@@ -108,6 +108,77 @@ function disableQuestionInputs() {
         });
 }
 
+function renderQuestionNavigation() {
+    const navList = document.getElementById("quiz-question-nav-list");
+
+    if (!navList) {
+        return;
+    }
+
+    navList.innerHTML = quizPayload.questions.map((question, index) => `
+        <button
+            class="quiz-question-nav-btn"
+            type="button"
+            data-question-id="${question.question_id}"
+            aria-label="Go to question ${index + 1}"
+        >
+            ${index + 1}
+        </button>
+    `).join("");
+}
+
+function updateQuestionNavigation() {
+    const answers = collectAnswers();
+    const answeredQuestionIds = new Set(
+        answers
+            .filter((answer) => {
+                if (answer.question_type === "mcq") {
+                    return answer.selected_option_id !== null;
+                }
+
+                return Boolean(answer.answer_text);
+            })
+            .map((answer) => answer.question_id)
+    );
+
+    document.querySelectorAll(".quiz-question-nav-btn").forEach((button) => {
+        const questionId = Number(button.dataset.questionId);
+        button.classList.toggle("answered", answeredQuestionIds.has(questionId));
+    });
+}
+
+function setActiveQuestionNavigation(questionId) {
+    document.querySelectorAll(".quiz-question-nav-btn").forEach((button) => {
+        button.classList.toggle("active", Number(button.dataset.questionId) === questionId);
+    });
+}
+
+function setupQuestionNavigation() {
+    const navList = document.getElementById("quiz-question-nav-list");
+
+    if (!navList) {
+        return;
+    }
+
+    navList.addEventListener("click", (event) => {
+        const button = event.target.closest(".quiz-question-nav-btn");
+
+        if (!button) {
+            return;
+        }
+
+        const questionId = Number(button.dataset.questionId);
+        const card = document.querySelector(`.quiz-question-card[data-question-id="${questionId}"]`);
+
+        if (!card) {
+            return;
+        }
+
+        card.scrollIntoView({ behavior: "smooth", block: "start" });
+        setActiveQuestionNavigation(questionId);
+    });
+}
+
 function renderQuiz() {
     const quiz = quizPayload.quiz;
     const questionList = document.getElementById("quiz-question-list");
@@ -158,8 +229,13 @@ function renderQuiz() {
         `;
     }).join("");
 
+    renderQuestionNavigation();
+    if (quizPayload.questions.length > 0) {
+        setActiveQuestionNavigation(quizPayload.questions[0].question_id);
+    }
     questionList.addEventListener("input", updateProgress);
     questionList.addEventListener("change", updateProgress);
+    setupQuestionNavigation();
     updateProgress();
 }
 
@@ -186,6 +262,7 @@ function collectAnswers() {
 function updateProgress() {
     if (!canAttemptQuiz()) {
         document.getElementById("quiz-progress-text").textContent = "Preview only";
+        updateQuestionNavigation();
         return;
     }
 
@@ -200,6 +277,7 @@ function updateProgress() {
 
     document.getElementById("quiz-progress-text").textContent =
         `${answered} of ${answers.length} answered`;
+    updateQuestionNavigation();
 }
 
 function formatRemainingTime(totalSeconds) {

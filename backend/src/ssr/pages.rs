@@ -1,5 +1,9 @@
 use actix_session::Session;
-use actix_web::{HttpResponse, Responder, get, http::header, web};
+use actix_web::{
+    HttpRequest, HttpResponse, Responder, get,
+    http::{StatusCode, header},
+    web,
+};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use tera::{Context, Tera};
 
@@ -151,8 +155,7 @@ async fn quiz_attempt_page(
                 .finish();
         }
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err));
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
         }
     };
 
@@ -186,6 +189,14 @@ async fn quiz_attempt_page(
 #[get("/pdf-viewer")]
 async fn pdf_viewer_page(session: Session) -> impl Responder {
     render_page("pdf_viewer.html", &session)
+}
+
+pub async fn not_found_page(req: HttpRequest, session: Session) -> impl Responder {
+    if req.path() == "/api" || req.path().starts_with("/api/") {
+        return HttpResponse::NotFound().body("Not found");
+    }
+
+    render_error_page("404.html", StatusCode::NOT_FOUND, Some(&session))
 }
 
 #[get("/module-content/{module_id}")]
@@ -318,6 +329,68 @@ pub fn build_page_context(session: &Session) -> Context {
     context
 }
 
+fn build_anonymous_page_context() -> Context {
+    let mut context = Context::new();
+    let role_names: Vec<String> = Vec::new();
+    let role_ids: Vec<i32> = Vec::new();
+
+    context.insert("is_logged_in", &false);
+    context.insert("email_verified", &false);
+    context.insert("must_change_password", &false);
+    context.insert("role_names", &role_names);
+    context.insert("role_ids", &role_ids);
+    context.insert("is_instructor_managed_only", &false);
+    context
+}
+
+fn render_template_response(
+    template_name: &str,
+    context: &Context,
+    status: StatusCode,
+    fallback_message: &'static str,
+) -> HttpResponse {
+    let fallback_status = if status == StatusCode::OK {
+        StatusCode::INTERNAL_SERVER_ERROR
+    } else {
+        status
+    };
+
+    let tera = match Tera::new("../frontend/templates/**/*") {
+        Ok(tera) => tera,
+        Err(_) => {
+            return HttpResponse::build(fallback_status)
+                .content_type("text/plain")
+                .body(fallback_message);
+        }
+    };
+
+    match tera.render(template_name, context) {
+        Ok(html) => HttpResponse::build(status)
+            .content_type("text/html")
+            .body(html),
+        Err(_) => HttpResponse::build(fallback_status)
+            .content_type("text/plain")
+            .body(fallback_message),
+    }
+}
+
+pub fn render_error_page(
+    template_name: &str,
+    status: StatusCode,
+    session: Option<&Session>,
+) -> HttpResponse {
+    let context = session
+        .map(build_page_context)
+        .unwrap_or_else(build_anonymous_page_context);
+
+    render_template_response(
+        template_name,
+        &context,
+        status,
+        "pspspsps something went wrong on our end",
+    )
+}
+
 pub fn render_page(template_name: &str, session: &Session) -> HttpResponse {
     render_page_with_status(template_name, session, actix_web::http::StatusCode::OK)
 }
@@ -338,13 +411,12 @@ pub fn render_page_with_status(
             .finish();
     }
 
-    let tera: Tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
-
     let context = build_page_context(session);
 
-    let html: String = tera
-        .render(template_name, &context)
-        .expect("Failed to render template");
-
-    HttpResponse::build(status).content_type("text/html").body(html)
+    render_template_response(
+        template_name,
+        &context,
+        status,
+        "pspspsps something went wrong on our end",
+    )
 }

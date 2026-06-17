@@ -1,41 +1,50 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Attempt | SkillUp LMS</title>
 
-{% block title %}Quiz Attempt | SkillUp LMS{% endblock title %}
-
-{% block content %}
-<link rel="stylesheet" href="/static/css/quiz_attempt.css?v=2">
-
-<div class="quiz-attempt-page">
-    <header class="quiz-attempt-header">
-        <div>
-            <a id="quiz-course-link" class="quiz-course-link" href="/courses">
-                <i class="bi bi-arrow-left" aria-hidden="true"></i>
-                <span>Back to course</span>
-            </a>
-            <h1 id="quiz-attempt-title">Loading quiz...</h1>
-            <p id="quiz-attempt-meta" class="quiz-attempt-meta"></p>
-        </div>
-        <button id="submit-quiz-btn" class="submit-quiz-btn" type="button" disabled>
-            <i class="bi bi-send" aria-hidden="true"></i>
-            <span>Submit Quiz</span>
-        </button>
-    </header>
-
-    <main class="quiz-attempt-layout">
-        <section id="quiz-question-list" class="quiz-question-list"></section>
-        <aside class="quiz-attempt-side">
-            <div class="quiz-attempt-panel quiz-timer-panel">
-                <h2>Timer</h2>
-                <p id="quiz-timer-text" class="quiz-timer-text">Loading...</p>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/quiz_attempt.css?v=4">
+</head>
+<body>
+    <div class="quiz-attempt-page">
+        <header class="quiz-attempt-header">
+            <div>
+                <a id="quiz-course-link" class="quiz-course-link" href="/courses">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                    <span>Back to course</span>
+                </a>
+                <h1 id="quiz-attempt-title">Loading quiz...</h1>
+                <p id="quiz-attempt-meta" class="quiz-attempt-meta"></p>
             </div>
-            <div class="quiz-attempt-panel">
-                <h2>Progress</h2>
-                <p id="quiz-progress-text">0 answered</p>
-                <p id="quiz-attempt-status" class="quiz-attempt-status" role="status" aria-live="polite"></p>
-            </div>
-        </aside>
-    </main>
-</div>
+            <button id="submit-quiz-btn" class="submit-quiz-btn" type="button" disabled>
+                <i class="bi bi-send" aria-hidden="true"></i>
+                <span>Submit Quiz</span>
+            </button>
+        </header>
 
-<script src="/static/js/quiz_attempt.js?v=3"></script>
-{% endblock content %}
+        <main class="quiz-attempt-layout">
+            <section id="quiz-question-list" class="quiz-question-list"></section>
+            <aside class="quiz-attempt-side">
+                <div class="quiz-attempt-panel quiz-timer-panel">
+                    <h2>Timer</h2>
+                    <p id="quiz-timer-text" class="quiz-timer-text">Loading...</p>
+                </div>
+                <div class="quiz-attempt-panel">
+                    <h2>Progress</h2>
+                    <p id="quiz-progress-text">0 answered</p>
+                    <p id="quiz-attempt-status" class="quiz-attempt-status" role="status" aria-live="polite"></p>
+                </div>
+                <nav class="quiz-attempt-panel quiz-question-nav" aria-label="Quiz questions">
+                    <h2>Questions</h2>
+                    <div id="quiz-question-nav-list" class="quiz-question-nav-list"></div>
+                </nav>
+            </aside>
+        </main>
+    </div>
+
+    <script src="/static/js/quiz_attempt.js?v=4"></script>
+</body>
+</html>
