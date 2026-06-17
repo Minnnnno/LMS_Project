@@ -5,6 +5,7 @@ const questionTemplate = document.getElementById("question-template");
 const optionTemplate = document.getElementById("option-template");
 
 let questionCounter = 0;
+let courseModules = [];
 
 function populateQuizStartTimeOptions() {
     const timeSelect = document.getElementById("quiz-start-time-input");
@@ -153,6 +154,7 @@ function collectDraft() {
             : null,
         max_attempts: document.getElementById("quiz-max-attempts-input").value.trim(),
         time_limit: document.getElementById("quiz-time-limit-input").value.trim(),
+        prerequisite_module_ids: getSelectedQuizPrerequisiteIds(),
         questions: [...questionList.querySelectorAll(".question-card")].map((card, index) => ({
             position: index + 1,
             question_type: card.dataset.questionType,
@@ -167,6 +169,63 @@ function collectDraft() {
                 : [],
         })),
     };
+}
+
+function renderQuizPrerequisiteOptions(selectedIds = []) {
+    const prerequisiteInput = document.getElementById("quiz-prerequisites-input");
+
+    if (!prerequisiteInput) {
+        return;
+    }
+
+    const selected = new Set(selectedIds.map(Number));
+
+    const options = courseModules
+        .sort((first, second) => Number(first.position) - Number(second.position))
+        .map((module) => {
+            const moduleId = Number(module.module_id);
+            const checked = selected.has(moduleId) ? "checked" : "";
+            const label = `${module.position}. ${module.title || "Untitled module"}`;
+
+            return `
+                <label class="prerequisite-option">
+                    <input type="checkbox" value="${moduleId}" ${checked}>
+                    <span>${escapeHtml(label)}</span>
+                </label>
+            `;
+        })
+        .join("");
+
+    prerequisiteInput.innerHTML = options || '<p class="prerequisite-empty">No modules available.</p>';
+}
+
+function getSelectedQuizPrerequisiteIds() {
+    const prerequisiteInput = document.getElementById("quiz-prerequisites-input");
+
+    if (!prerequisiteInput) {
+        return [];
+    }
+
+    return [...prerequisiteInput.querySelectorAll('input[type="checkbox"]:checked')]
+        .map((input) => Number(input.value));
+}
+
+async function loadCourseModules() {
+    try {
+        const response = await fetch(`/api/modules/${courseId}`);
+
+        if (!response.ok) {
+            courseModules = [];
+            renderQuizPrerequisiteOptions();
+            return;
+        }
+
+        courseModules = await response.json();
+        renderQuizPrerequisiteOptions();
+    } catch (error) {
+        courseModules = [];
+        renderQuizPrerequisiteOptions();
+    }
 }
 
 function validateDraft(draft) {
@@ -296,6 +355,7 @@ async function saveDraft() {
             max_attempts: draft.max_attempts ? Number(draft.max_attempts) : null,
             time_limit: draft.time_limit ? Number(draft.time_limit) : null,
             starts_at: draft.starts_at,
+            prerequisite_module_ids: draft.prerequisite_module_ids,
         });
 
         for (const question of draft.questions) {
@@ -330,6 +390,7 @@ async function saveDraft() {
 function init() {
     document.getElementById("quiz-back-link").href = `/course/${courseId}`;
     populateQuizStartTimeOptions();
+    loadCourseModules();
     createQuestion("mcq");
 
     document.getElementById("add-question-btn").addEventListener("click", () => {

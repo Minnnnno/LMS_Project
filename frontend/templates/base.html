@@ -55,6 +55,7 @@
             <nav class="nav nav-pills flex-column gap-1 sidebar-nav">
                 {% if role_names and "LMS Admin" in role_names %}
                 <a href="/admin/dashboard" class="nav-link"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+                <a href="/admin/analytics" class="nav-link"><i class="bi bi-graph-up-arrow"></i><span>Analytics</span></a>
                 <a href="/admin/manage/organisations" class="nav-link"><i class="bi bi-buildings"></i><span>Organisations</span></a>
                 <a href="/admin/manage/users" class="nav-link"><i class="bi bi-people"></i><span>Users</span></a>
                 <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
@@ -94,6 +95,7 @@
             <nav class="nav nav-pills flex-column gap-1 sidebar-nav">
                 {% if role_names and "LMS Admin" in role_names %}
                 <a href="/admin/dashboard" class="nav-link"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+                <a href="/admin/analytics" class="nav-link"><i class="bi bi-graph-up-arrow"></i><span>Analytics</span></a>
                 <a href="/admin/manage/organisations" class="nav-link"><i class="bi bi-buildings"></i><span>Organisations</span></a>
                 <a href="/admin/manage/users" class="nav-link"><i class="bi bi-people"></i><span>Users</span></a>
                 <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
@@ -197,17 +199,6 @@
                 if (!document.hidden) {
                     sendViewerHeartbeat();
                 }
-            });
-            window.addEventListener("pagehide", (event) => {
-                if (event.persisted) {
-                    return;
-                }
-
-                const payload = new Blob(
-                    [JSON.stringify({ viewer_id: viewerId })],
-                    { type: "application/json" },
-                );
-                navigator.sendBeacon("/api/viewers/disconnect", payload);
             });
         })();
     </script>

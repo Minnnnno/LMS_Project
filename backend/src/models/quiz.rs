@@ -22,6 +22,7 @@ pub struct UpdateQuiz {
     pub max_attempts: Option<i32>,
     pub time_limit: Option<i32>,
     pub starts_at: Option<NaiveDateTime>,
+    pub prerequisite_module_ids: Option<Vec<i32>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,4 +33,5 @@ pub struct CreateQuiz {
     pub max_attempts: Option<i32>,
     pub time_limit: Option<i32>,
     pub starts_at: Option<NaiveDateTime>,
+    pub prerequisite_module_ids: Option<Vec<i32>>,
 }

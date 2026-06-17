@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=13">
+<link rel="stylesheet" href="/static/css/course_details.css?v=17">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -139,8 +139,31 @@
         <label for="course-description-input">Description</label>
         <textarea id="course-description-input" rows="4"></textarea>
 
-        <label for="course-image-input">Background image</label>
-        <input type="file" id="course-image-input" accept="image/*">
+        <label for="course-visibility-input">Visibility</label>
+        <select id="course-visibility-input">
+            <option value="public">Public - everyone can view and enroll</option>
+            <option value="private">Private - only my organisation</option>
+        </select>
+
+        <div class="course-image-picker">
+            <div>
+                <label>Background image</label>
+                <div id="course-image-preview" class="course-image-preview">
+                    <span>No image selected</span>
+                </div>
+            </div>
+
+            <div>
+                <label>Choose a preset</label>
+                <div id="course-image-preset-grid" class="course-preset-grid"></div>
+            </div>
+
+            <div>
+                <label for="course-image-input">Upload image</label>
+                <input type="file" id="course-image-input" accept="image/*">
+                <p class="course-image-help">Use a 16:9 image, at least 1200 x 675, up to 5 MB.</p>
+            </div>
+        </div>
 
         <div id="course-paid-fields" class="form-row" hidden>
             <div>
@@ -192,6 +215,9 @@
             step="1"
             placeholder="1"
         >
+
+        <label for="module-prerequisites-input">Prerequisites</label>
+        <div id="module-prerequisites-input" class="prerequisite-checklist"></div>
 
         <div class="modal-actions">
             <button id="save-module-btn">Save</button>
@@ -331,5 +357,5 @@
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="/static/js/course_details.js?v=27"></script>
+<script src="/static/js/course_details.js?v=32"></script>
 {% endblock content %}

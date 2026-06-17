@@ -109,6 +109,23 @@ pub async fn get_module_content_by_id(
         Err(response) => return response,
     }
 
+    match module_progress_service::get_first_incomplete_previous_module(
+        db.get_ref(),
+        &session,
+        module_id,
+    )
+    .await
+    {
+        Ok(Some(prerequisite)) => {
+            return HttpResponse::Forbidden().body(format!(
+                "Complete {} before opening this module",
+                prerequisite.title
+            ));
+        }
+        Ok(None) => {}
+        Err(response) => return response,
+    }
+
     let result = module_contents::Entity::find()
         .filter(module_contents::Column::ModuleId.eq(module_id))
         .all(db.get_ref())

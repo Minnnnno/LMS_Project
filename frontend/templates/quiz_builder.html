@@ -3,7 +3,7 @@
 {% block title %}Quiz Builder | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/quiz_builder.css?v=1">
+<link rel="stylesheet" href="/static/css/quiz_builder.css?v=4">
 
 <div class="quiz-builder-page">
     <header class="quiz-builder-header">
@@ -58,6 +58,9 @@
                         <input id="quiz-time-limit-input" type="number" min="1" step="1" placeholder="Minutes">
                     </div>
                 </div>
+
+                <label for="quiz-prerequisites-input">Prerequisites</label>
+                <div id="quiz-prerequisites-input" class="prerequisite-checklist"></div>
 
                 <p id="quiz-save-status" class="quiz-save-status" role="status" aria-live="polite"></p>
             </div>
@@ -157,5 +160,5 @@
     </div>
 </template>
 
-<script src="/static/js/quiz_builder.js?v=1"></script>
+<script src="/static/js/quiz_builder.js?v=4"></script>
 {% endblock content %}

@@ -1,6 +1,7 @@
 use actix_web::web;
 
 use crate::controller::admin_controller::{
+    admin_analytics_page,
     admin_dashboard,
     admin_organisations_page,
     admin_users_page,
@@ -30,12 +31,14 @@ use crate::controller::admin_controller::{
     admin_delete_course,
 
     admin_get_enrollments,
+    admin_get_payments,
     admin_enroll_user,
     admin_unenroll_user,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(admin_dashboard);
+    cfg.service(admin_analytics_page);
     cfg.service(admin_organisations_page);
     cfg.service(admin_users_page);
     cfg.service(admin_courses_page);
@@ -64,6 +67,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(admin_delete_course);
 
     cfg.service(admin_get_enrollments);
+    cfg.service(admin_get_payments);
     cfg.service(admin_enroll_user);
     cfg.service(admin_unenroll_user);
 }

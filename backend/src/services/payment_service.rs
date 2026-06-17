@@ -16,6 +16,7 @@ use stripe::{
 };
 
 use crate::entity::{courses, enrollments, payments, users};
+use crate::services::course_service::can_view_course;
 
 const PENDING_PAYMENT_TTL_SECONDS: u64 = 30 * 60;
 const STRIPE_CHECKOUT_EXPIRY_SECONDS: i64 = 30 * 60;
@@ -97,6 +98,15 @@ pub async fn create_checkout_session(
 
     if !course.is_paid.unwrap_or(false) {
         return HttpResponse::BadRequest().body("This course is free, no checkout session needed");
+    }
+
+    match can_view_course(db, session, &course).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::Forbidden()
+                .body("This course is private to its organisation");
+        }
+        Err(response) => return response,
     }
 
     let payment = payments::ActiveModel {

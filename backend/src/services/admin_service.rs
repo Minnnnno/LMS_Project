@@ -18,6 +18,7 @@ use crate::entity::{
     users,
     courses,
     enrollments,
+    payments,
     roles,
     user_roles,
 };
@@ -37,6 +38,7 @@ use crate::services::email_verification_service::{
     create_email_verification_token,
     verification_url,
 };
+use crate::services::organisation_service::delete_organisation_and_dependents;
 use crate::services::mailer_service::{send_mail_message, MailRequest};
 // Password Hash Helper
 fn hash_password(password: &str) -> Result<String, String> {
@@ -629,17 +631,7 @@ pub async fn delete_organisation_service(
     db: &DatabaseConnection,
     org_id: i32,
 ) -> HttpResponse {
-    match organisations::Entity::delete_by_id(org_id).exec(db).await {
-        Ok(result) => {
-            if result.rows_affected == 0 {
-                HttpResponse::NotFound().body("Organisation not found")
-            } else {
-                HttpResponse::Ok().body("Organisation deleted successfully")
-            }
-        }
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Delete organisation error: {}", err)),
-    }
+    delete_organisation_and_dependents(db, org_id).await
 }
 
 // User CRUD
@@ -960,6 +952,16 @@ pub async fn get_all_enrollments(
 ) -> HttpResponse {
     match enrollments::Entity::find().all(db).await {
         Ok(enrollment_list) => HttpResponse::Ok().json(enrollment_list),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error: {}", err)),
+    }
+}
+
+pub async fn get_all_payments(
+    db: &DatabaseConnection,
+) -> HttpResponse {
+    match payments::Entity::find().all(db).await {
+        Ok(payment_list) => HttpResponse::Ok().json(payment_list),
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Database error: {}", err)),
     }

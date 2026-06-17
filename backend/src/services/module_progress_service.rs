@@ -11,6 +11,7 @@ use crate::entity::{courses, module_progress, modules};
 use crate::models::module_progress::{CourseModuleProgress, CourseProgress, ModuleProgress};
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
 use crate::services::course_service::can_manage_course;
+use crate::services::prerequisite_service;
 
 async fn get_module_course(
     db: &DatabaseConnection,
@@ -37,6 +38,28 @@ async fn get_module_course(
     Ok((module, course))
 }
 
+pub async fn get_first_incomplete_previous_module(
+    db: &DatabaseConnection,
+    session: &Session,
+    module_id: i32,
+) -> Result<Option<modules::Model>, HttpResponse> {
+    let user_id = get_user_id(session)?;
+    let (_module, course) = get_module_course(db, module_id).await?;
+
+    if can_manage_course(db, session, &course).await? {
+        return Ok(None);
+    }
+
+    if !is_enrolled(db, user_id, course.course_id).await? {
+        return Err(HttpResponse::Forbidden().body("You must be enrolled to view module content"));
+    }
+
+    let prerequisite_ids =
+        prerequisite_service::get_module_prerequisite_ids(db, module_id).await?;
+
+    prerequisite_service::get_first_incomplete_required_module(db, user_id, prerequisite_ids).await
+}
+
 pub async fn mark_module_completed(
     db: &DatabaseConnection,
     session: &Session,
@@ -50,6 +73,15 @@ pub async fn mark_module_completed(
             opened: false,
             progress_percent: 0,
         });
+    }
+
+    if let Some(prerequisite) =
+        get_first_incomplete_previous_module(db, session, module_id).await?
+    {
+        return Err(HttpResponse::Forbidden().body(format!(
+            "Complete {} before opening this module",
+            prerequisite.title
+        )));
     }
 
     let completed_at = Utc::now();

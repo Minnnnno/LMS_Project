@@ -549,3 +549,15 @@ SELECT course_id, instructor_id
 FROM courses
 WHERE instructor_id IS NOT NULL
 ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token_id   SERIAL PRIMARY KEY,
+  user_id    INT NOT NULL,
+  token_hash VARCHAR(255) NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used_at    TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE
+);

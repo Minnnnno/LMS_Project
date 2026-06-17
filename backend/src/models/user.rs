@@ -29,3 +29,21 @@ pub struct LoginForm {
 
     pub remember_me: Option<String>,
 }
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct ForgotPasswordForm {
+    #[validate(email(message = "Please enter a valid email address."))]
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct ResetPasswordForm {
+    #[validate(length(min = 1, message = "Token is required."))]
+    pub token: String,
+
+    #[validate(length(min = 8, max = 128, message = "Password must be between 8 and 128 characters."))]
+    pub password: String,
+
+    #[validate(length(min = 8, max = 128, message = "Confirm password must be between 8 and 128 characters."))]
+    pub confirm_password: String,
+}

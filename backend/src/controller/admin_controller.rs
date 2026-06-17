@@ -42,6 +42,7 @@ use crate::services::admin_service::{
     delete_course_service,
 
     get_all_enrollments,
+    get_all_payments,
     admin_enroll_user_service,
     admin_unenroll_user_service,
 };
@@ -103,6 +104,14 @@ pub async fn admin_get_roles(
 pub async fn admin_dashboard(
     session: Session,
 ) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => render_page("admin_dashboard.html", &session),
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/analytics")]
+pub async fn admin_analytics_page(session: Session) -> impl Responder {
     match require_admin(&session) {
         Ok(_) => render_page("admin_dashboard.html", &session),
         Err(response) => response,
@@ -386,6 +395,17 @@ pub async fn admin_get_enrollments(
 ) -> impl Responder {
     match require_admin(&session) {
         Ok(_) => get_all_enrollments(db.get_ref()).await,
+        Err(response) => response,
+    }
+}
+
+#[get("/admin/payments")]
+pub async fn admin_get_payments(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    match require_admin(&session) {
+        Ok(_) => get_all_payments(db.get_ref()).await,
         Err(response) => response,
     }
 }

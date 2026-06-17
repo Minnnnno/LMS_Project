@@ -1,6 +1,6 @@
 use crate::entity::{roles, user_roles, users};
 use crate::models::student::ChangePasswordForm;
-use crate::models::user::{LoginForm, RegisterForm};
+use crate::models::user::{ForgotPasswordForm, LoginForm, RegisterForm, ResetPasswordForm};
 use actix_session::Session;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
@@ -13,6 +13,9 @@ use serde::Deserialize;
 use crate::ssr::pages::{build_page_context, render_page};
 use crate::services::email_verification_service::{
     create_email_verification_token, send_verification_email, verify_email_token, VerifyEmailError,
+};
+use crate::services::password_reset_service::{
+    create_password_reset_token, reset_password_with_token, send_reset_email, ResetPasswordError,
 };
 use crate::services::remember_me_service::{
     create_remember_me_cookie, forget_remember_me_cookie, revoke_remember_me_token,
@@ -1215,6 +1218,211 @@ pub async fn lecturer_signup(
         .finish()
 }
 
+
+// ---------------------------------------------------------------------------
+// Forgot password — step 1: request reset email
+// ---------------------------------------------------------------------------
+
+#[get("/forgot-password")]
+pub async fn forgot_password_page(session: Session) -> impl Responder {
+    if is_logged_in(&session) {
+        return redirect_home();
+    }
+
+    let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
+    let mut context = build_page_context(&session);
+
+    if let Ok(Some(success)) = session.get::<String>("flash_success") {
+        context.insert("success", &success);
+        session.remove("flash_success");
+    }
+    if let Ok(Some(error)) = session.get::<String>("flash_error") {
+        context.insert("error", &error);
+        session.remove("flash_error");
+    }
+
+    let html = tera
+        .render("forgot_password.html", &context)
+        .expect("Failed to render forgot_password.html");
+
+    HttpResponse::Ok().content_type("text/html").body(html)
+}
+
+#[post("/forgot-password")]
+pub async fn forgot_password_submit(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    form: web::Form<ForgotPasswordForm>,
+) -> impl Responder {
+    // Always show the same success message regardless of whether the email exists.
+    // This prevents user enumeration attacks.
+    let generic_success = "If that email address is registered, you will receive a password reset link shortly.";
+
+    if let Err(_) = form.validate() {
+        let _ = session.insert("flash_error", "Please enter a valid email address.");
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/forgot-password"))
+            .finish();
+    }
+
+    let email = form.email.trim().to_lowercase();
+
+    let user = match users::Entity::find()
+        .filter(users::Column::Email.eq(&email))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            // No account found — still show the generic message.
+            let _ = session.insert("flash_success", generic_success);
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/forgot-password"))
+                .finish();
+        }
+        Err(err) => {
+            println!("Forgot-password user lookup error: {:?}", err);
+            let _ = session.insert("flash_error", "Unable to process your request right now.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/forgot-password"))
+                .finish();
+        }
+    };
+
+    // Google-only accounts have no password to reset.
+    if user.auth_provider == "google" && user.password_hash.is_none() {
+        let _ = session.insert(
+            "flash_success",
+            "This account uses Google Sign-In. Please sign in with Google instead.",
+        );
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/login"))
+            .finish();
+    }
+
+    let token = match create_password_reset_token(db.get_ref(), user.user_id).await {
+        Ok(t) => t,
+        Err(err) => {
+            println!("Create password reset token error: {:?}", err);
+            let _ = session.insert("flash_error", "Unable to process your request right now.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/forgot-password"))
+                .finish();
+        }
+    };
+
+    match send_reset_email(&user.email, &token) {
+        Ok(_) => {}
+        Err(err) => {
+            println!("Password reset email send error: {}", err);
+            // Don't expose the send failure to the user.
+        }
+    }
+
+    let _ = session.insert("flash_success", generic_success);
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, "/forgot-password"))
+        .finish()
+}
+
+// ---------------------------------------------------------------------------
+// Forgot password — step 2: set new password using token
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordQuery {
+    token: Option<String>,
+}
+
+#[get("/auth/reset-password")]
+pub async fn reset_password_page(
+    session: Session,
+    query: web::Query<ResetPasswordQuery>,
+) -> impl Responder {
+    if is_logged_in(&session) {
+        return redirect_home();
+    }
+
+    let token = match query.token.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => t.to_string(),
+        None => {
+            let _ = session.insert("flash_error", "Password reset link is missing a token.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/forgot-password"))
+                .finish();
+        }
+    };
+
+    let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
+    let mut context = build_page_context(&session);
+    context.insert("token", &token);
+
+    if let Ok(Some(error)) = session.get::<String>("flash_error") {
+        context.insert("error", &error);
+        session.remove("flash_error");
+    }
+
+    let html = tera
+        .render("reset_password.html", &context)
+        .expect("Failed to render reset_password.html");
+
+    HttpResponse::Ok().content_type("text/html").body(html)
+}
+
+#[post("/auth/reset-password")]
+pub async fn reset_password_submit(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    form: web::Form<ResetPasswordForm>,
+) -> impl Responder {
+    let form = form.into_inner();
+
+    let render_error = |session: &Session, message: &str, token: &str| {
+        let _ = session.insert("flash_error", message);
+        HttpResponse::Found()
+            .insert_header((
+                header::LOCATION,
+                format!("/auth/reset-password?token={}", token),
+            ))
+            .finish()
+    };
+
+    if let Err(_) = form.validate() {
+        return render_error(&session, "Password must be between 8 and 128 characters.", &form.token);
+    }
+
+    if form.password != form.confirm_password {
+        return render_error(&session, "Passwords do not match.", &form.token);
+    }
+
+    match reset_password_with_token(db.get_ref(), &form.token, form.password).await {
+        Ok(_) => {
+            let _ = session.insert(
+                "flash_success",
+                "Password reset successfully. You can now sign in.",
+            );
+            HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish()
+        }
+        Err(ResetPasswordError::InvalidOrExpired) => {
+            render_error(&session, "This reset link is invalid or has expired. Please request a new one.", &form.token)
+        }
+        Err(ResetPasswordError::GoogleAccount) => {
+            let _ = session.insert(
+                "flash_error",
+                "This account uses Google Sign-In and does not have a password.",
+            );
+            HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish()
+        }
+        Err(ResetPasswordError::Database(err)) => {
+            println!("Reset password database error: {:?}", err);
+            render_error(&session, "Unable to reset your password right now. Please try again.", &form.token)
+        }
+    }
+}
 
 #[get("/debug-session")]
 async fn debug_session(session: Session) -> impl Responder {
