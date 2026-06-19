@@ -1058,6 +1058,7 @@ pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> imp
                 .trim()
                 .to_string();
             context.insert("user_full_name", &user_full_name);
+            context.insert("has_password", &user.password_hash.is_some());
             let _ = session.insert("email_verified", user.email_verified);
         }
         Ok(None) => {
@@ -1113,6 +1114,112 @@ pub async fn logout(
     }
 
     response
+}
+
+#[post("/profile/update-password")]
+pub async fn update_password_submit(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    form: web::Form<ChangePasswordForm>,
+) -> impl Responder {
+    let user_id = match session.get::<i32>("user_id").ok().flatten() {
+        Some(user_id) => user_id,
+        None => {
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+    };
+
+    let form = form.into_inner();
+    if let Err(_) = form.validate() {
+        let _ = session.insert("profile_error", "Please check your password details.");
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/profile"))
+            .finish();
+    }
+
+    if form.new_password != form.confirm_password {
+        let _ = session.insert("profile_error", "New password and confirm password do not match.");
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/profile"))
+            .finish();
+    }
+
+    let user = match users::Entity::find_by_id(user_id).one(db.get_ref()).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            session.purge();
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/login"))
+                .finish();
+        }
+        Err(err) => {
+            println!("Update password user lookup error: {:?}", err);
+            let _ = session.insert("profile_error", "Unable to load your account right now.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/profile"))
+                .finish();
+        }
+    };
+
+    let password_hash = match &user.password_hash {
+        Some(h) => h.clone(),
+        None => {
+            let _ = session.insert("profile_error", "This account uses Google Sign-In and does not have a password.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/profile"))
+                .finish();
+        }
+    };
+
+    let parsed_hash = match PasswordHash::new(&password_hash) {
+        Ok(hash) => hash,
+        Err(err) => {
+            println!("Update password hash parse error: {:?}", err);
+            let _ = session.insert("profile_error", "Unable to verify your current password.");
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/profile"))
+                .finish();
+        }
+    };
+
+    if Argon2::default()
+        .verify_password(form.current_password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
+        let _ = session.insert("profile_error", "Current password is incorrect.");
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/profile"))
+            .finish();
+    }
+
+    let new_password_hash = match hash_password(form.new_password).await {
+        Ok(hash) => hash,
+        Err(message) => {
+            let _ = session.insert("profile_error", &message);
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, "/profile"))
+                .finish();
+        }
+    };
+
+    let mut active_user = user.into_active_model();
+    active_user.password_hash = Set(Some(new_password_hash));
+
+    match active_user.update(db.get_ref()).await {
+        Ok(_) => {
+            let _ = session.insert("profile_success", "Password updated successfully.");
+        }
+        Err(err) => {
+            println!("Update password save error: {:?}", err);
+            let _ = session.insert("profile_error", "Unable to update your password right now.");
+        }
+    }
+
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, "/profile"))
+        .finish()
 }
 
 #[post("/profile/lecturer-signup")]

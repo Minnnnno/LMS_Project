@@ -7,6 +7,7 @@ use crate::controller::user_controller::{
     google_auth, google_callback,
     lecturer_signup, login, logout, profile, register, register_submit, resend_verification_email,
     reset_password_page, reset_password_submit,
+    update_password_submit,
     verify_email,
 };
 
@@ -28,5 +29,6 @@ pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(resend_verification_email);
     cfg.service(logout);
     cfg.service(lecturer_signup);
+    cfg.service(update_password_submit);
     cfg.service(debug_session);
 }
