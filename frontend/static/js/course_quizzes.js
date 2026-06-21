@@ -219,6 +219,13 @@ function getQuizAttemptScoreLabel(attempt) {
     return `${formatGradeNumber(attempt.total_score)} / ${formatGradeNumber(attempt.max_score)}`;
 }
 
+function isPerfectQuizAttempt(attempt) {
+    return Boolean(attempt?.is_graded)
+        && attempt.total_score !== null
+        && attempt.total_score !== undefined
+        && Number(attempt.total_score) === Number(attempt.max_score);
+}
+
 function groupQuizAttemptsByStudent(attempts) {
     const groups = new Map();
 
@@ -342,7 +349,7 @@ function renderQuizAttempts(attempts) {
                         </div>
                         <div class="staff-submission-meta">
                             <span>${group.attempts.length} attempt${group.attempts.length === 1 ? "" : "s"}</span>
-                            <span>Best: ${escapeHtml(getBestAttemptLabel(group))}</span>
+                            <span class="${isPerfectQuizAttempt(group.best_attempt) ? "quiz-perfect-score" : ""}">Best: ${escapeHtml(getBestAttemptLabel(group))}</span>
                             <span>View breakdown</span>
                         </div>
                     </div>
@@ -368,7 +375,7 @@ function renderQuizStudentAttempts(group, savedAnswerId = null) {
                 </div>
                 <div>
                     <span>${group.attempts.length} attempt${group.attempts.length === 1 ? "" : "s"}</span>
-                    <span>Best attempt: ${escapeHtml(getBestAttemptLabel(group))}</span>
+                    <span class="${isPerfectQuizAttempt(group.best_attempt) ? "quiz-perfect-score" : ""}">Best attempt: ${escapeHtml(getBestAttemptLabel(group))}</span>
                 </div>
             </div>
             ${group.attempts.map((attempt, index) => {
@@ -385,7 +392,7 @@ function renderQuizStudentAttempts(group, savedAnswerId = null) {
                             <div class="staff-submission-meta">
                                 <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
                                 <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
-                                <span>Score: ${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                                <span class="${isPerfectQuizAttempt(attempt) ? "quiz-perfect-score" : ""}">Score: ${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
                             </div>
                         </div>
                         <div class="quiz-attempt-question-summary">
