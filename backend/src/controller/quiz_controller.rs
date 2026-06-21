@@ -1,8 +1,8 @@
 use actix_session::Session;
-use actix_web::{delete, get, post, put, web, Responder};
+use actix_web::{Responder, delete, get, post, put, web};
 use sea_orm::DatabaseConnection;
 
-use crate::models::quiz::{CreateQuiz, UpdateQuiz};
+use crate::models::quiz::{CreateQuiz, SaveQuizDraft, UpdateQuiz};
 use crate::services::quiz_service;
 
 #[get("/quiz")]
@@ -34,6 +34,31 @@ pub async fn create_quiz(
     body: web::Json<CreateQuiz>,
 ) -> impl Responder {
     quiz_service::create_quiz(db.get_ref(), &session, body.into_inner()).await
+}
+
+#[post("/quiz/draft")]
+pub async fn create_quiz_draft(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    body: web::Json<SaveQuizDraft>,
+) -> impl Responder {
+    quiz_service::save_quiz_draft(db.get_ref(), &session, None, body.into_inner()).await
+}
+
+#[put("/quiz/{quiz_id}/draft")]
+pub async fn update_quiz_draft(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+    body: web::Json<SaveQuizDraft>,
+) -> impl Responder {
+    quiz_service::save_quiz_draft(
+        db.get_ref(),
+        &session,
+        Some(path.into_inner()),
+        body.into_inner(),
+    )
+    .await
 }
 
 #[put("/quiz/{quiz_id}")]

@@ -1,20 +1,25 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
+    QueryFilter, QueryOrder, Set, Statement, TransactionTrait,
 };
 use serde::Serialize;
+use std::collections::HashSet;
 
 use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
-use crate::entity::quiz_options::{Column as QuizOptionColumn, Entity as QuizOptionEntity};
+use crate::entity::quiz_options::{
+    ActiveModel as QuizOptionActiveModel, Column as QuizOptionColumn, Entity as QuizOptionEntity,
+};
 use crate::entity::quiz_questions::{
-    Column as QuizQuestionColumn, Entity as QuizQuestionEntity, QuestionType,
+    ActiveModel as QuizQuestionActiveModel, Column as QuizQuestionColumn,
+    Entity as QuizQuestionEntity, QuestionType,
 };
 use crate::entity::{
     courses,
     quiz::{self, Entity as QuizEntity},
 };
-use crate::models::quiz::{CreateQuiz, UpdateQuiz};
+use crate::models::quiz::{CreateQuiz, SaveQuizDraft, UpdateQuiz};
 use crate::services::auth_helpers::{
     get_role_ids, get_user_id, has_staff_role, is_enrolled, is_student_only,
 };
@@ -39,6 +44,268 @@ fn validate_quiz_fields(
     }
 
     Ok(())
+}
+
+fn validate_quiz_draft(data: &SaveQuizDraft) -> Result<(), HttpResponse> {
+    validate_quiz_fields(Some(&data.title), data.max_attempts, data.time_limit)?;
+    if data.questions.is_empty() {
+        return Err(HttpResponse::BadRequest().body("A quiz must contain at least one question"));
+    }
+
+    let mut question_positions = HashSet::new();
+    for question in &data.questions {
+        if question.question_text.trim().is_empty() {
+            return Err(HttpResponse::BadRequest().body("Question text cannot be empty"));
+        }
+        if question.position < 1 || !question_positions.insert(question.position) {
+            return Err(HttpResponse::BadRequest()
+                .body("Question positions must be unique and 1 or higher"));
+        }
+        if question.points < 1 {
+            return Err(HttpResponse::BadRequest().body("Question points must be 1 or higher"));
+        }
+
+        match question.question_type {
+            QuestionType::Mcq => {
+                if question.options.len() < 2 {
+                    return Err(HttpResponse::BadRequest()
+                        .body("Each MCQ must contain at least two options"));
+                }
+                if question
+                    .options
+                    .iter()
+                    .filter(|option| option.is_correct)
+                    .count()
+                    != 1
+                {
+                    return Err(HttpResponse::BadRequest()
+                        .body("Each MCQ must contain exactly one correct option"));
+                }
+                let mut option_positions = HashSet::new();
+                for option in &question.options {
+                    if option.option_text.trim().is_empty() {
+                        return Err(HttpResponse::BadRequest().body("Option text cannot be empty"));
+                    }
+                    if option.position < 1 || !option_positions.insert(option.position) {
+                        return Err(HttpResponse::BadRequest()
+                            .body("Option positions must be unique and 1 or higher"));
+                    }
+                }
+            }
+            QuestionType::LongAnswer if !question.options.is_empty() => {
+                return Err(
+                    HttpResponse::BadRequest().body("Written questions cannot contain MCQ options")
+                );
+            }
+            QuestionType::LongAnswer => {}
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn ensure_quiz_content_editable(
+    db: &DatabaseConnection,
+    quiz_id: i32,
+) -> Result<(), HttpResponse> {
+    let has_attempt = QuizAttemptEntity::find()
+        .filter(QuizAttemptColumn::QuizId.eq(quiz_id))
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?
+        .is_some();
+
+    if has_attempt {
+        return Err(HttpResponse::Conflict()
+            .body("Quiz content cannot be changed after attempts have started"));
+    }
+    Ok(())
+}
+
+pub async fn save_quiz_draft(
+    db: &DatabaseConnection,
+    session: &Session,
+    quiz_id: Option<i32>,
+    data: SaveQuizDraft,
+) -> HttpResponse {
+    if let Err(response) = validate_quiz_draft(&data) {
+        return response;
+    }
+
+    let existing_quiz = if let Some(quiz_id) = quiz_id {
+        match QuizEntity::find_by_id(quiz_id).one(db).await {
+            Ok(Some(quiz)) => {
+                if quiz.course_id != data.course_id {
+                    return HttpResponse::BadRequest()
+                        .body("Moving quizzes between courses is not supported");
+                }
+                if let Err(response) = require_can_manage_course(db, session, quiz.course_id).await
+                {
+                    return response;
+                }
+                if let Err(response) = ensure_quiz_content_editable(db, quiz_id).await {
+                    return response;
+                }
+                Some(quiz)
+            }
+            Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error: {}", err));
+            }
+        }
+    } else {
+        if let Err(response) = require_can_manage_course(db, session, data.course_id).await {
+            return response;
+        }
+        None
+    };
+
+    let transaction = match db.begin().await {
+        Ok(transaction) => transaction,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Could not start quiz save: {}", err));
+        }
+    };
+
+    if let Some(existing_quiz) = existing_quiz.as_ref()
+        && let Err(err) = transaction
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT pg_advisory_xact_lock($1, $2)",
+                [2.into(), existing_quiz.quiz_id.into()],
+            ))
+            .await
+    {
+        let _ = transaction.rollback().await;
+        return HttpResponse::InternalServerError()
+            .body(format!("Quiz content lock error: {}", err));
+    }
+
+    let saved_quiz = if let Some(existing_quiz) = existing_quiz {
+        match QuizAttemptEntity::find()
+            .filter(QuizAttemptColumn::QuizId.eq(existing_quiz.quiz_id))
+            .one(&transaction)
+            .await
+        {
+            Ok(Some(_)) => {
+                let _ = transaction.rollback().await;
+                return HttpResponse::Conflict()
+                    .body("Quiz content cannot be changed after attempts have started");
+            }
+            Ok(None) => {}
+            Err(err) => {
+                let _ = transaction.rollback().await;
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error checking quiz attempts: {}", err));
+            }
+        }
+
+        let quiz_id = existing_quiz.quiz_id;
+        let mut active: quiz::ActiveModel = existing_quiz.into();
+        active.title = Set(data.title.clone());
+        active.description = Set(data.description.clone());
+        active.max_attempts = Set(data.max_attempts);
+        active.time_limit = Set(data.time_limit);
+        active.starts_at = Set(data.starts_at);
+        let saved = match active.update(&transaction).await {
+            Ok(saved) => saved,
+            Err(err) => {
+                let _ = transaction.rollback().await;
+                return HttpResponse::InternalServerError()
+                    .body(format!("Quiz update error: {}", err));
+            }
+        };
+        if let Err(err) = QuizQuestionEntity::delete_many()
+            .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
+            .exec(&transaction)
+            .await
+        {
+            let _ = transaction.rollback().await;
+            return HttpResponse::InternalServerError()
+                .body(format!("Question replacement error: {}", err));
+        }
+        saved
+    } else {
+        match (quiz::ActiveModel {
+            course_id: Set(data.course_id),
+            title: Set(data.title.clone()),
+            description: Set(data.description.clone()),
+            max_attempts: Set(data.max_attempts),
+            time_limit: Set(data.time_limit),
+            starts_at: Set(data.starts_at),
+            ..Default::default()
+        })
+        .insert(&transaction)
+        .await
+        {
+            Ok(saved) => saved,
+            Err(err) => {
+                let _ = transaction.rollback().await;
+                return HttpResponse::InternalServerError()
+                    .body(format!("Quiz insert error: {}", err));
+            }
+        }
+    };
+
+    if let Err(response) = prerequisite_service::replace_quiz_prerequisites(
+        &transaction,
+        saved_quiz.course_id,
+        saved_quiz.quiz_id,
+        data.prerequisite_module_ids,
+    )
+    .await
+    {
+        let _ = transaction.rollback().await;
+        return response;
+    }
+
+    for question in data.questions {
+        let saved_question = match (QuizQuestionActiveModel {
+            quiz_id: Set(saved_quiz.quiz_id),
+            question_type: Set(question.question_type),
+            question_text: Set(question.question_text),
+            position: Set(question.position),
+            points: Set(question.points),
+            ..Default::default()
+        })
+        .insert(&transaction)
+        .await
+        {
+            Ok(saved) => saved,
+            Err(err) => {
+                let _ = transaction.rollback().await;
+                return HttpResponse::InternalServerError()
+                    .body(format!("Question insert error: {}", err));
+            }
+        };
+
+        for option in question.options {
+            if let Err(err) = (QuizOptionActiveModel {
+                question_id: Set(saved_question.question_id),
+                option_text: Set(option.option_text),
+                is_correct: Set(option.is_correct),
+                position: Set(option.position),
+                ..Default::default()
+            })
+            .insert(&transaction)
+            .await
+            {
+                let _ = transaction.rollback().await;
+                return HttpResponse::InternalServerError()
+                    .body(format!("Option insert error: {}", err));
+            }
+        }
+    }
+
+    if let Err(err) = transaction.commit().await {
+        return HttpResponse::InternalServerError().body(format!("Quiz save error: {}", err));
+    }
+
+    HttpResponse::Ok().json(saved_quiz)
 }
 
 async fn require_can_manage_course(
@@ -301,7 +568,8 @@ pub async fn get_quiz_for_attempt(
         {
             Ok(options) => options,
             Err(err) => {
-                return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error: {}", err));
             }
         };
 
@@ -398,13 +666,11 @@ pub async fn update_quiz(
     quiz_id: i32,
     data: UpdateQuiz,
 ) -> HttpResponse {
-    if let Err(response) =
-        validate_quiz_fields(
-            data.title.as_deref(),
-            data.max_attempts.flatten(),
-            data.time_limit.flatten(),
-        )
-    {
+    if let Err(response) = validate_quiz_fields(
+        data.title.as_deref(),
+        data.max_attempts.flatten(),
+        data.time_limit.flatten(),
+    ) {
         return response;
     }
 

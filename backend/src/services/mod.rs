@@ -13,6 +13,7 @@ pub mod organisation_service;
 pub mod payment_service;
 pub mod prerequisite_service;
 pub mod quiz_answer_service;
+pub mod quiz_analytics_service;
 pub mod quiz_attempt_service;
 pub mod quiz_option_service;
 pub mod quiz_question_service;

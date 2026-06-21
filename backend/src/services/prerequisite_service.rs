@@ -2,12 +2,11 @@ use std::collections::HashSet;
 
 use actix_web::HttpResponse;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Set,
 };
 
-use crate::entity::{
-    module_prerequisites, module_progress, modules, quiz_prerequisites,
-};
+use crate::entity::{module_prerequisites, module_progress, modules, quiz_prerequisites};
 
 fn unique_module_ids(module_ids: Vec<i32>) -> Vec<i32> {
     let mut seen = HashSet::new();
@@ -27,14 +26,16 @@ pub async fn get_module_prerequisite_ids(
         .all(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding module prerequisites: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding module prerequisites: {}",
+                err
+            ))
         })
         .map(|rows| rows.into_iter().map(|row| row.required_module_id).collect())
 }
 
 pub async fn get_quiz_prerequisite_ids(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     quiz_id: i32,
 ) -> Result<Vec<i32>, HttpResponse> {
     quiz_prerequisites::Entity::find()
@@ -43,14 +44,16 @@ pub async fn get_quiz_prerequisite_ids(
         .all(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding quiz prerequisites: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding quiz prerequisites: {}",
+                err
+            ))
         })
         .map(|rows| rows.into_iter().map(|row| row.required_module_id).collect())
 }
 
 async fn validate_required_modules(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     course_id: i32,
     target_module_id: Option<i32>,
     required_module_ids: &[i32],
@@ -70,20 +73,25 @@ async fn validate_required_modules(
         .all(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding prerequisite modules: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding prerequisite modules: {}",
+                err
+            ))
         })?;
 
     if required_modules.len() != required_module_ids.len() {
-        return Err(HttpResponse::BadRequest().body("One or more prerequisite modules do not exist"));
+        return Err(
+            HttpResponse::BadRequest().body("One or more prerequisite modules do not exist")
+        );
     }
 
     if required_modules
         .iter()
         .any(|module| module.course_id != course_id)
     {
-        return Err(HttpResponse::BadRequest()
-            .body("Prerequisite modules must belong to the same course"));
+        return Err(
+            HttpResponse::BadRequest().body("Prerequisite modules must belong to the same course")
+        );
     }
 
     Ok(())
@@ -103,8 +111,10 @@ pub async fn replace_module_prerequisites(
         .exec(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error clearing module prerequisites: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error clearing module prerequisites: {}",
+                err
+            ))
         })?;
 
     for required_module_id in required_module_ids {
@@ -116,8 +126,10 @@ pub async fn replace_module_prerequisites(
         .insert(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error saving module prerequisite: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error saving module prerequisite: {}",
+                err
+            ))
         })?;
     }
 
@@ -125,7 +137,7 @@ pub async fn replace_module_prerequisites(
 }
 
 pub async fn replace_quiz_prerequisites(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     course_id: i32,
     quiz_id: i32,
     required_module_ids: Vec<i32>,
@@ -138,8 +150,10 @@ pub async fn replace_quiz_prerequisites(
         .exec(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error clearing quiz prerequisites: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error clearing quiz prerequisites: {}",
+                err
+            ))
         })?;
 
     for required_module_id in required_module_ids {
@@ -160,7 +174,7 @@ pub async fn replace_quiz_prerequisites(
 }
 
 pub async fn get_first_incomplete_required_module(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     user_id: i32,
     required_module_ids: Vec<i32>,
 ) -> Result<Option<modules::Model>, HttpResponse> {
@@ -199,7 +213,9 @@ pub async fn get_first_incomplete_required_module(
         .one(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding prerequisite module: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding prerequisite module: {}",
+                err
+            ))
         })
 }

@@ -8,12 +8,16 @@ use crate::entity::quiz_options::{
 use crate::entity::{courses, quiz, quiz_questions};
 use crate::models::quiz_options::{CreateQuizOption, UpdateQuizOption};
 use crate::services::course_service::can_manage_course;
+use crate::services::quiz_service::ensure_quiz_content_editable;
 
 fn validate_option_fields(
     option_text: Option<&str>,
     position: Option<i32>,
 ) -> Result<(), HttpResponse> {
-    if option_text.map(|value| value.trim().is_empty()).unwrap_or(false) {
+    if option_text
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(false)
+    {
         return Err(HttpResponse::BadRequest().body("Option text cannot be empty"));
     }
 
@@ -72,6 +76,20 @@ async fn require_can_manage_question(
     }
 }
 
+async fn require_question_content_editable(
+    db: &DatabaseConnection,
+    question_id: i32,
+) -> Result<(), HttpResponse> {
+    let question = quiz_questions::Entity::find_by_id(question_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Quiz question not found"))?;
+    ensure_quiz_content_editable(db, question.quiz_id).await
+}
+
 pub async fn list_options_by_question(
     db: &DatabaseConnection,
     session: &Session,
@@ -104,6 +122,9 @@ pub async fn create_option(
     if let Err(response) = require_can_manage_question(db, session, data.question_id).await {
         return response;
     }
+    if let Err(response) = require_question_content_editable(db, data.question_id).await {
+        return response;
+    }
 
     let option = QuizOptionActiveModel {
         question_id: Set(data.question_id),
@@ -134,6 +155,9 @@ pub async fn update_option(
             if let Err(response) =
                 require_can_manage_question(db, session, option.question_id).await
             {
+                return response;
+            }
+            if let Err(response) = require_question_content_editable(db, option.question_id).await {
                 return response;
             }
 
@@ -171,6 +195,9 @@ pub async fn delete_option(
             if let Err(response) =
                 require_can_manage_question(db, session, option.question_id).await
             {
+                return response;
+            }
+            if let Err(response) = require_question_content_editable(db, option.question_id).await {
                 return response;
             }
 

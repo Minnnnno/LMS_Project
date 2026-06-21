@@ -1,15 +1,8 @@
-use actix_session::Session;
-use actix_web::{delete, get, post, put, web, Responder};
-use sea_orm::DatabaseConnection;
-use serde::Deserialize;
-
 use crate::models::quiz_attempts::CreateAttempt;
 use crate::services::quiz_attempt_service;
-
-#[derive(Deserialize)]
-pub struct SubmitAttemptQuery {
-    auto_submit: Option<bool>,
-}
+use actix_session::Session;
+use actix_web::{Responder, delete, get, post, put, web};
+use sea_orm::DatabaseConnection;
 
 // Staff only: see all attempts for a quiz
 #[get("/quiz-attempts/quiz/{quiz_id}")]
@@ -70,16 +63,9 @@ pub async fn create_quiz_attempt(
 pub async fn submit_quiz_attempt(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
-    query: web::Query<SubmitAttemptQuery>,
     session: Session,
 ) -> impl Responder {
-    quiz_attempt_service::submit_attempt(
-        db.get_ref(),
-        &session,
-        path.into_inner(),
-        query.auto_submit.unwrap_or(false),
-    )
-    .await
+    quiz_attempt_service::submit_attempt(db.get_ref(), &session, path.into_inner()).await
 }
 
 // Staff only: delete attempts

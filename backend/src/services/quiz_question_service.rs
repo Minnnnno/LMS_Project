@@ -9,6 +9,7 @@ use crate::entity::quiz_questions::{
 use crate::entity::{courses, quiz};
 use crate::models::quiz_questions::{CreateQuizQuestion, UpdateQuizQuestion};
 use crate::services::course_service::can_manage_course;
+use crate::services::quiz_service::ensure_quiz_content_editable;
 
 fn validate_question_fields(
     question_text: Option<&str>,
@@ -108,6 +109,9 @@ pub async fn create_question(
     if let Err(response) = require_can_manage_quiz(db, session, data.quiz_id).await {
         return response;
     }
+    if let Err(response) = ensure_quiz_content_editable(db, data.quiz_id).await {
+        return response;
+    }
 
     let question = QuizQuestionActiveModel {
         quiz_id: Set(data.quiz_id),
@@ -139,6 +143,9 @@ pub async fn update_question(
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
             if let Err(response) = require_can_manage_quiz(db, session, question.quiz_id).await {
+                return response;
+            }
+            if let Err(response) = ensure_quiz_content_editable(db, question.quiz_id).await {
                 return response;
             }
 
@@ -179,6 +186,9 @@ pub async fn delete_question(
     match QuizQuestionEntity::find_by_id(question_id).one(db).await {
         Ok(Some(question)) => {
             if let Err(response) = require_can_manage_quiz(db, session, question.quiz_id).await {
+                return response;
+            }
+            if let Err(response) = ensure_quiz_content_editable(db, question.quiz_id).await {
                 return response;
             }
 

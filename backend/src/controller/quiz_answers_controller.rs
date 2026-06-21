@@ -1,10 +1,11 @@
 use actix_session::Session;
-use actix_web::{delete, get, post, put, web, Responder};
+use actix_web::{Responder, delete, get, post, put, web};
 use sea_orm::DatabaseConnection;
 
-use crate::models::quiz_answers::{SubmitMcqAnswer, SubmitLongAnswer, GradeQuizAnswer};
+use crate::models::quiz_answers::{
+    AutosaveQuizAnswers, GradeQuizAnswer, SubmitLongAnswer, SubmitMcqAnswer,
+};
 use crate::services::quiz_answer_service;
-
 
 // GET /quiz-answers/attempt/{attempt_id}
 // staff: see any attempt's answers
@@ -16,6 +17,23 @@ pub async fn get_answers_by_attempt_id(
     session: Session,
 ) -> impl Responder {
     quiz_answer_service::list_answers_by_attempt(db.get_ref(), &session, path.into_inner()).await
+}
+
+// PUT /quiz-answers/attempt/{attempt_id}/autosave
+#[put("/quiz-answers/attempt/{attempt_id}/autosave")]
+pub async fn autosave_quiz_answers(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>,
+    body: web::Json<AutosaveQuizAnswers>,
+    session: Session,
+) -> impl Responder {
+    quiz_answer_service::autosave_answers(
+        db.get_ref(),
+        &session,
+        path.into_inner(),
+        body.into_inner(),
+    )
+    .await
 }
 
 // POST /quiz-answers/mcq — logged in users (students submit their own attempt)
@@ -46,12 +64,8 @@ pub async fn grade_quiz_answer(
     body: web::Json<GradeQuizAnswer>,
     session: Session,
 ) -> impl Responder {
-    quiz_answer_service::grade_answer(
-        db.get_ref(),
-        &session,
-        path.into_inner(),
-        body.into_inner(),
-    ).await
+    quiz_answer_service::grade_answer(db.get_ref(), &session, path.into_inner(), body.into_inner())
+        .await
 }
 
 // DELETE /quiz-answers/{answer_id} — staff only
@@ -63,4 +77,3 @@ pub async fn delete_quiz_answer(
 ) -> impl Responder {
     quiz_answer_service::delete_answer(db.get_ref(), &session, path.into_inner()).await
 }
-

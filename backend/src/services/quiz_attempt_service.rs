@@ -1,7 +1,10 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
 use chrono::{Duration, Local};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
+    QueryFilter, Set, Statement, TransactionTrait,
+};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -22,8 +25,6 @@ use crate::services::auth_helpers::{
 };
 use crate::services::course_service::can_manage_course;
 use crate::services::prerequisite_service;
-
-const AUTO_SUBMIT_GRACE_SECONDS: i64 = 30;
 
 #[derive(Serialize)]
 struct QuizAttemptStatus {
@@ -118,8 +119,7 @@ async fn require_can_manage_quiz(
 
     match can_manage_course(db, session, &course).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(HttpResponse::Forbidden()
-            .body("You cannot view attempts for this quiz")),
+        Ok(false) => Err(HttpResponse::Forbidden().body("You cannot view attempts for this quiz")),
         Err(response) => Err(response),
     }
 }
@@ -142,7 +142,9 @@ fn build_attempt_timer(
         remaining_seconds: quiz.time_limit.and_then(|minutes| {
             attempt.map(|attempt| {
                 let expires_at = attempt.started_at + Duration::minutes(minutes as i64);
-                (expires_at - Local::now().naive_local()).num_seconds().max(0)
+                (expires_at - Local::now().naive_local())
+                    .num_seconds()
+                    .max(0)
             })
         }),
         message: quiz
@@ -153,26 +155,33 @@ fn build_attempt_timer(
 }
 
 async fn finalize_attempt(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     attempt: crate::entity::quiz_attempts::Model,
 ) -> Result<(), HttpResponse> {
     let answers = QuizAnswerEntity::find()
         .filter(QuizAnswerColumn::AttemptId.eq(attempt.attempt_id))
         .all(db)
         .await
-        .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?;
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?;
 
     let has_short_answer_question = QuizQuestionEntity::find()
         .filter(QuizQuestionColumn::QuizId.eq(attempt.quiz_id))
         .filter(QuizQuestionColumn::QuestionType.eq(QuestionType::LongAnswer))
         .all(db)
         .await
-        .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?
         .into_iter()
         .next()
         .is_some();
 
-    let total_score = answers.iter().filter_map(|answer| answer.score).sum::<i32>();
+    let total_score = answers
+        .iter()
+        .filter_map(|answer| answer.score)
+        .sum::<i32>();
     let mut active: QuizAttemptActiveModel = attempt.into();
     active.submitted_at = Set(Some(Local::now().naive_local()));
     active.total_score = Set(Some(total_score));
@@ -193,20 +202,6 @@ fn attempt_time_limit_expired(
             Local::now().naive_local() >= attempt.started_at + Duration::minutes(minutes as i64)
         })
         .unwrap_or(false)
-}
-
-fn attempt_auto_submit_window_open(
-    quiz: &QuizModel,
-    attempt: &crate::entity::quiz_attempts::Model,
-) -> bool {
-    quiz.time_limit
-        .map(|minutes| {
-            Local::now().naive_local()
-                <= attempt.started_at
-                    + Duration::minutes(minutes as i64)
-                    + Duration::seconds(AUTO_SUBMIT_GRACE_SECONDS)
-        })
-        .unwrap_or(true)
 }
 
 fn build_attempt_status(
@@ -281,7 +276,7 @@ fn build_attempt_status(
 }
 
 async fn get_user_attempts_for_quiz(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     quiz_id: i32,
     user_id: i32,
 ) -> Result<Vec<crate::entity::quiz_attempts::Model>, HttpResponse> {
@@ -293,15 +288,42 @@ async fn get_user_attempts_for_quiz(
         .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))
 }
 
+async fn lock_attempt_creation(
+    db: &impl ConnectionTrait,
+    quiz_id: i32,
+) -> Result<(), HttpResponse> {
+    db.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT pg_advisory_xact_lock($1, $2)",
+        [2.into(), quiz_id.into()],
+    ))
+    .await
+    .map(|_| ())
+    .map_err(|err| HttpResponse::InternalServerError().body(format!("Attempt lock error: {}", err)))
+}
+
+async fn lock_attempt(db: &impl ConnectionTrait, attempt_id: i32) -> Result<(), HttpResponse> {
+    db.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT pg_advisory_xact_lock($1, $2)",
+        [1.into(), attempt_id.into()],
+    ))
+    .await
+    .map(|_| ())
+    .map_err(|err| HttpResponse::InternalServerError().body(format!("Attempt lock error: {}", err)))
+}
+
 async fn ensure_quiz_is_attemptable(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     quiz_id: i32,
 ) -> Result<(), HttpResponse> {
     let questions = QuizQuestionEntity::find()
         .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
         .all(db)
         .await
-        .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?;
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?;
 
     if questions.is_empty() {
         return Err(HttpResponse::Conflict().body("This quiz has no questions yet"));
@@ -316,7 +338,9 @@ async fn ensure_quiz_is_attemptable(
             .filter(QuizOptionColumn::QuestionId.eq(question.question_id))
             .all(db)
             .await
-            .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?;
+            .map_err(|err| {
+                HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+            })?;
 
         if options.len() < 2 || !options.iter().any(|option| option.is_correct) {
             return Err(HttpResponse::Conflict()
@@ -336,17 +360,24 @@ async fn build_attempt_review_answers(
         .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
         .all(db)
         .await
-        .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?;
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?;
 
     let mut questions = questions;
     questions.sort_by_key(|question| question.position);
-    let max_score = questions.iter().map(|question| question.points).sum::<i32>();
+    let max_score = questions
+        .iter()
+        .map(|question| question.points)
+        .sum::<i32>();
 
     let answers = QuizAnswerEntity::find()
         .filter(QuizAnswerColumn::AttemptId.eq(attempt_id))
         .all(db)
         .await
-        .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?;
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+        })?;
 
     let mut review_answers = Vec::with_capacity(questions.len());
 
@@ -359,7 +390,9 @@ async fn build_attempt_review_answers(
             Some(option_id) => QuizOptionEntity::find_by_id(option_id)
                 .one(db)
                 .await
-                .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?,
+                .map_err(|err| {
+                    HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+                })?,
             None => None,
         };
 
@@ -368,7 +401,9 @@ async fn build_attempt_review_answers(
             .filter(QuizOptionColumn::IsCorrect.eq(true))
             .one(db)
             .await
-            .map_err(|err| HttpResponse::InternalServerError().body(format!("Database error: {}", err)))?;
+            .map_err(|err| {
+                HttpResponse::InternalServerError().body(format!("Database error: {}", err))
+            })?;
 
         review_answers.push(StaffQuizAttemptAnswer {
             answer_id: answer.map(|answer| answer.answer_id),
@@ -401,7 +436,9 @@ pub async fn list_attempts_by_quiz(
     let quiz = match QuizEntity::find_by_id(quiz_id).one(db).await {
         Ok(Some(quiz)) => quiz,
         Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
     if let Err(response) = require_can_manage_quiz(db, session, &quiz).await {
@@ -417,10 +454,15 @@ pub async fn list_attempts_by_quiz(
             questions.sort_by_key(|question| question.position);
             questions
         }
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
-    let max_score = questions.iter().map(|question| question.points).sum::<i32>();
+    let max_score = questions
+        .iter()
+        .map(|question| question.points)
+        .sum::<i32>();
 
     let attempts = match QuizAttemptEntity::find()
         .filter(QuizAttemptColumn::QuizId.eq(quiz_id))
@@ -431,7 +473,9 @@ pub async fn list_attempts_by_quiz(
             attempts.sort_by(|first, second| second.started_at.cmp(&first.started_at));
             attempts
         }
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
     let mut payload = Vec::with_capacity(attempts.len());
@@ -444,7 +488,10 @@ pub async fn list_attempts_by_quiz(
         {
             Ok(Some(student)) => student,
             Ok(None) => return HttpResponse::NotFound().body("Student not found"),
-            Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error: {}", err));
+            }
         };
 
         let answers = match QuizAnswerEntity::find()
@@ -453,7 +500,10 @@ pub async fn list_attempts_by_quiz(
             .await
         {
             Ok(answers) => answers,
-            Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error: {}", err));
+            }
         };
 
         let mut review_answers = Vec::with_capacity(questions.len());
@@ -507,7 +557,9 @@ pub async fn list_attempts_by_quiz(
             attempt_id: attempt.attempt_id,
             quiz_id: attempt.quiz_id,
             user_id: attempt.user_id,
-            student_name: format!("{} {}", student.first_name, student.last_name).trim().to_string(),
+            student_name: format!("{} {}", student.first_name, student.last_name)
+                .trim()
+                .to_string(),
             student_email: student.email,
             started_at: attempt.started_at,
             submitted_at: attempt.submitted_at,
@@ -551,7 +603,9 @@ pub async fn get_my_attempt_review(
     let attempt = match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => attempt,
         Ok(None) => return HttpResponse::NotFound().body("Attempt not found"),
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
     if attempt.user_id != user_id {
@@ -715,9 +769,68 @@ pub async fn create_attempt(
         Err(response) => return response,
     }
 
-    let mut attempts = match get_user_attempts_for_quiz(db, data.quiz_id, user_id).await {
+    let transaction = match db.begin().await {
+        Ok(transaction) => transaction,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Could not start attempt: {}", err));
+        }
+    };
+    if let Err(response) = lock_attempt_creation(&transaction, data.quiz_id).await {
+        let _ = transaction.rollback().await;
+        return response;
+    }
+
+    let quiz = match QuizEntity::find_by_id(data.quiz_id).one(&transaction).await {
+        Ok(Some(quiz)) => quiz,
+        Ok(None) => {
+            let _ = transaction.rollback().await;
+            return HttpResponse::NotFound().body("Quiz not found");
+        }
+        Err(err) => {
+            let _ = transaction.rollback().await;
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
+    };
+    if let Err(response) = ensure_quiz_is_attemptable(&transaction, quiz.quiz_id).await {
+        let _ = transaction.rollback().await;
+        return response;
+    }
+    let prerequisite_ids =
+        match prerequisite_service::get_quiz_prerequisite_ids(&transaction, quiz.quiz_id).await {
+            Ok(ids) => ids,
+            Err(response) => {
+                let _ = transaction.rollback().await;
+                return response;
+            }
+        };
+    match prerequisite_service::get_first_incomplete_required_module(
+        &transaction,
+        user_id,
+        prerequisite_ids,
+    )
+    .await
+    {
+        Ok(Some(prerequisite)) => {
+            let _ = transaction.rollback().await;
+            return HttpResponse::Forbidden().body(format!(
+                "Complete {} before attempting this quiz",
+                prerequisite.title
+            ));
+        }
+        Ok(None) => {}
+        Err(response) => {
+            let _ = transaction.rollback().await;
+            return response;
+        }
+    }
+
+    let mut attempts = match get_user_attempts_for_quiz(&transaction, data.quiz_id, user_id).await {
         Ok(attempts) => attempts,
-        Err(response) => return response,
+        Err(response) => {
+            let _ = transaction.rollback().await;
+            return response;
+        }
     };
 
     if let Some(open_attempt) = attempts
@@ -725,19 +838,32 @@ pub async fn create_attempt(
         .find(|attempt| attempt.submitted_at.is_none())
     {
         if attempt_time_limit_expired(&quiz, open_attempt) {
-            if let Err(response) = finalize_attempt(db, open_attempt.clone()).await {
+            if let Err(response) = lock_attempt(&transaction, open_attempt.attempt_id).await {
+                let _ = transaction.rollback().await;
+                return response;
+            }
+            if let Err(response) = finalize_attempt(&transaction, open_attempt.clone()).await {
+                let _ = transaction.rollback().await;
                 return response;
             }
 
-            attempts = match get_user_attempts_for_quiz(db, data.quiz_id, user_id).await {
+            attempts = match get_user_attempts_for_quiz(&transaction, data.quiz_id, user_id).await {
                 Ok(attempts) => attempts,
-                Err(response) => return response,
+                Err(response) => {
+                    let _ = transaction.rollback().await;
+                    return response;
+                }
             };
         } else {
-            return HttpResponse::Ok().json(CreateAttemptResponse {
+            let response = CreateAttemptResponse {
                 attempt: open_attempt.clone(),
                 timer: build_attempt_timer(&quiz, Some(open_attempt)),
-            });
+            };
+            if let Err(err) = transaction.commit().await {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Attempt transaction error: {}", err));
+            }
+            return HttpResponse::Ok().json(response);
         }
     }
 
@@ -750,11 +876,13 @@ pub async fn create_attempt(
     );
 
     if !status.can_attempt {
+        let _ = transaction.rollback().await;
         return HttpResponse::Forbidden().body(status.message);
     }
 
     if let Some(max_attempts) = quiz.max_attempts {
         if attempts.len() >= max_attempts as usize {
+            let _ = transaction.rollback().await;
             return HttpResponse::Forbidden().body("Maximum quiz attempts reached");
         }
     }
@@ -767,12 +895,22 @@ pub async fn create_attempt(
         ..Default::default()
     };
 
-    match attempt.insert(db).await {
-        Ok(attempt) => HttpResponse::Ok().json(CreateAttemptResponse {
-            timer: build_attempt_timer(&quiz, Some(&attempt)),
-            attempt,
-        }),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
+    match attempt.insert(&transaction).await {
+        Ok(attempt) => {
+            let response = CreateAttemptResponse {
+                timer: build_attempt_timer(&quiz, Some(&attempt)),
+                attempt,
+            };
+            match transaction.commit().await {
+                Ok(_) => HttpResponse::Ok().json(response),
+                Err(err) => HttpResponse::InternalServerError()
+                    .body(format!("Attempt transaction error: {}", err)),
+            }
+        }
+        Err(err) => {
+            let _ = transaction.rollback().await;
+            HttpResponse::InternalServerError().body(format!("Insert error: {}", err))
+        }
     }
 }
 
@@ -780,7 +918,6 @@ pub async fn submit_attempt(
     db: &DatabaseConnection,
     session: &Session,
     attempt_id: i32,
-    auto_submit: bool,
 ) -> HttpResponse {
     let user_id = match get_user_id(session) {
         Ok(id) => id,
@@ -797,7 +934,22 @@ pub async fn submit_attempt(
         return HttpResponse::Forbidden().body("Student role required to submit this quiz");
     }
 
-    match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
+    let transaction = match db.begin().await {
+        Ok(transaction) => transaction,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Could not start submission: {}", err));
+        }
+    };
+    if let Err(response) = lock_attempt(&transaction, attempt_id).await {
+        let _ = transaction.rollback().await;
+        return response;
+    }
+
+    match QuizAttemptEntity::find_by_id(attempt_id)
+        .one(&transaction)
+        .await
+    {
         Ok(Some(attempt)) => {
             if attempt.user_id != user_id {
                 return HttpResponse::Forbidden().body("You can only submit your own attempt");
@@ -807,7 +959,10 @@ pub async fn submit_attempt(
                 return HttpResponse::BadRequest().body("This attempt has already been submitted");
             }
 
-            let quiz = match QuizEntity::find_by_id(attempt.quiz_id).one(db).await {
+            let quiz = match QuizEntity::find_by_id(attempt.quiz_id)
+                .one(&transaction)
+                .await
+            {
                 Ok(Some(quiz)) => quiz,
                 Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
                 Err(err) => {
@@ -818,13 +973,9 @@ pub async fn submit_attempt(
 
             let time_limit_expired = attempt_time_limit_expired(&quiz, &attempt);
 
-            if time_limit_expired && (!auto_submit || !attempt_auto_submit_window_open(&quiz, &attempt)) {
-                return HttpResponse::BadRequest().body("The time limit for this quiz has ended");
-            }
-
             let answers = match QuizAnswerEntity::find()
                 .filter(QuizAnswerColumn::AttemptId.eq(attempt_id))
-                .all(db)
+                .all(&transaction)
                 .await
             {
                 Ok(answers) => answers,
@@ -835,7 +986,7 @@ pub async fn submit_attempt(
             };
             let questions = match QuizQuestionEntity::find()
                 .filter(QuizQuestionColumn::QuizId.eq(attempt.quiz_id))
-                .all(db)
+                .all(&transaction)
                 .await
             {
                 Ok(questions) => questions,
@@ -850,9 +1001,10 @@ pub async fn submit_attempt(
                 .map(|answer| answer.question_id)
                 .collect::<HashSet<i32>>();
 
-            if !auto_submit && questions
-                .iter()
-                .any(|question| !answered_question_ids.contains(&question.question_id))
+            if !time_limit_expired
+                && questions
+                    .iter()
+                    .any(|question| !answered_question_ids.contains(&question.question_id))
             {
                 return HttpResponse::BadRequest()
                     .body("All questions must be answered before submission");
@@ -862,17 +1014,22 @@ pub async fn submit_attempt(
                 .iter()
                 .filter_map(|answer| answer.score)
                 .sum::<i32>();
-            let has_short_answer_question = questions
-                .iter()
-                .any(|question| question.question_type == crate::entity::quiz_questions::QuestionType::LongAnswer);
+            let has_short_answer_question = questions.iter().any(|question| {
+                question.question_type == crate::entity::quiz_questions::QuestionType::LongAnswer
+            });
             let mut active: QuizAttemptActiveModel = attempt.into();
             active.submitted_at = Set(Some(Local::now().naive_local()));
             active.total_score = Set(Some(total_score));
             active.is_graded = Set(!has_short_answer_question);
 
-            match active.update(db).await {
-                Ok(_) => HttpResponse::Ok().body(format!("Attempt {} submitted", attempt_id)),
+            match active.update(&transaction).await {
+                Ok(_) => match transaction.commit().await {
+                    Ok(_) => HttpResponse::Ok().body(format!("Attempt {} submitted", attempt_id)),
+                    Err(err) => HttpResponse::InternalServerError()
+                        .body(format!("Submission transaction error: {}", err)),
+                },
                 Err(err) => {
+                    let _ = transaction.rollback().await;
                     HttpResponse::InternalServerError().body(format!("Update error: {}", err))
                 }
             }
@@ -893,10 +1050,38 @@ pub async fn delete_attempt(
 
     match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => {
-            let active_model: QuizAttemptActiveModel = attempt.into();
-            match active_model.delete(db).await {
-                Ok(_) => HttpResponse::Ok().body("Attempt deleted!"),
+            let quiz = match QuizEntity::find_by_id(attempt.quiz_id).one(db).await {
+                Ok(Some(quiz)) => quiz,
+                Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
                 Err(err) => {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Database error: {}", err));
+                }
+            };
+            if let Err(response) = require_can_manage_quiz(db, session, &quiz).await {
+                return response;
+            }
+
+            let transaction = match db.begin().await {
+                Ok(transaction) => transaction,
+                Err(err) => {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Could not start attempt deletion: {}", err));
+                }
+            };
+            if let Err(response) = lock_attempt(&transaction, attempt_id).await {
+                let _ = transaction.rollback().await;
+                return response;
+            }
+            let active_model: QuizAttemptActiveModel = attempt.into();
+            match active_model.delete(&transaction).await {
+                Ok(_) => match transaction.commit().await {
+                    Ok(_) => HttpResponse::Ok().body("Attempt deleted!"),
+                    Err(err) => HttpResponse::InternalServerError()
+                        .body(format!("Attempt deletion transaction error: {}", err)),
+                },
+                Err(err) => {
+                    let _ = transaction.rollback().await;
                     HttpResponse::InternalServerError().body(format!("Delete error: {}", err))
                 }
             }

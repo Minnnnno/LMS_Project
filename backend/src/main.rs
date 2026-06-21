@@ -107,6 +107,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(routes::quiz_options_routes::init)
                     .configure(routes::quiz_attempts_routes::init)
                     .configure(routes::quiz_answers_routes::init)
+                    .configure(routes::quiz_analytics_routes::init)
                     .configure(routes::grade_routes::init)
                     .configure(routes::submission_routes::init)
                     .configure(routes::viewer_routes::init),

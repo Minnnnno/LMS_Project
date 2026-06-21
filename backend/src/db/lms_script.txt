@@ -348,6 +348,15 @@ CREATE TABLE IF NOT EXISTS quiz_answers (
     ON DELETE SET NULL
 );
 
+-- Preserve one active attempt per student/quiz and one answer per question.
+-- Existing databases should remove duplicate rows before applying these indexes.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_one_open
+  ON quiz_attempts (quiz_id, user_id)
+  WHERE submitted_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_answers_attempt_question
+  ON quiz_answers (attempt_id, question_id);
+
 -- ============================================================
 -- SEED DATA
 -- Skips inserts if data already exists
