@@ -58,11 +58,6 @@
         {% endif %}
     </div>
 
-    <form action="/logout" method="post" class="mt-4">
-        <button type="submit" class="btn btn-outline-danger">
-            <i class="bi bi-box-arrow-right me-2"></i>Logout
-        </button>
-    </form>
 </div>
 
 {% if has_password %}
@@ -85,4 +80,10 @@
     </form>
 </div>
 {% endif %}
+
+<form action="/logout" method="post" class="mt-4">
+    <button type="submit" class="btn btn-outline-danger">
+        <i class="bi bi-box-arrow-right me-2"></i>Logout
+    </button>
+</form>
 {% endblock content %}
