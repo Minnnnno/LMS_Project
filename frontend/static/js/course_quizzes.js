@@ -219,7 +219,38 @@ function getQuizAttemptScoreLabel(attempt) {
     return `${formatGradeNumber(attempt.total_score)} / ${formatGradeNumber(attempt.max_score)}`;
 }
 
-function renderQuizAttemptAnswer(answer, savedAnswerId = null) {
+function groupQuizAttemptsByStudent(attempts) {
+    const groups = new Map();
+
+    (Array.isArray(attempts) ? attempts : []).forEach((attempt) => {
+        const key = String(attempt.user_id);
+        if (!groups.has(key)) {
+            groups.set(key, {
+                user_id: attempt.user_id,
+                student_name: attempt.student_name,
+                student_email: attempt.student_email,
+                attempts: [],
+            });
+        }
+        groups.get(key).attempts.push(attempt);
+    });
+
+    return Array.from(groups.values()).map((group) => {
+        group.attempts.sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+        group.best_attempt = group.attempts
+            .filter((attempt) => attempt.is_graded && attempt.total_score !== null && attempt.total_score !== undefined)
+            .sort((a, b) => Number(b.total_score) - Number(a.total_score))[0] || null;
+        return group;
+    });
+}
+
+function getBestAttemptLabel(group) {
+    return group.best_attempt
+        ? getQuizAttemptScoreLabel(group.best_attempt)
+        : "Pending";
+}
+
+function renderQuizAttemptAnswer(answer, savedAnswerId = null, questionNumber = null) {
     const score = answer.score ?? "";
     const feedback = answer.feedback || "";
     const answerType = answer.question_type;
@@ -255,47 +286,116 @@ function renderQuizAttemptAnswer(answer, savedAnswerId = null) {
     }
 
     const isCorrect = answer.score !== null && Number(answer.score) === Number(answer.points);
+    const isUnanswered = answer.selected_option_id === null || answer.selected_option_id === undefined;
+    const result = isUnanswered ? "Unanswered" : (isCorrect ? "Correct" : "Wrong");
+    const resultClass = isUnanswered ? "unanswered" : (isCorrect ? "correct" : "wrong");
     return `
-        <div class="quiz-review-answer">
-            <h4>${escapeHtml(answer.question_text)}</h4>
-            <p class="grade-meta">MCQ - auto marked</p>
+        <div class="quiz-review-answer quiz-review-answer-${resultClass}">
+            <div class="quiz-question-result-head">
+                <h4>${questionNumber ? `Question ${questionNumber}: ` : ""}${escapeHtml(answer.question_text)}</h4>
+                <span class="quiz-question-result ${resultClass}">${result}</span>
+            </div>
+            <p class="grade-meta">MCQ · ${escapeHtml(answer.points)} point${Number(answer.points) === 1 ? "" : "s"}</p>
             <div class="staff-grade-readonly">
-                <span>Selected: ${escapeHtml(answer.selected_option_text || "No option selected")}</span>
-                <span>Correct: ${escapeHtml(answer.correct_option_text || "No correct option set")}</span>
+                <span>Student answer: ${escapeHtml(answer.selected_option_text || "No answer selected")}</span>
+                <span>Correct answer: ${escapeHtml(answer.correct_option_text || "No correct option set")}</span>
                 <span>Score: ${escapeHtml(score === "" ? "0" : formatGradeNumber(score))} / ${escapeHtml(answer.points)}</span>
-                <span>${isCorrect ? "Correct" : "Incorrect"}</span>
             </div>
         </div>
     `;
 }
 
-function renderQuizAttempts(attempts) {
-    const attemptRows = Array.isArray(attempts) ? attempts : [];
+function getAttemptQuestionStats(answers) {
+    return answers.reduce((stats, answer) => {
+        if (answer.question_type !== "mcq") {
+            return stats;
+        }
 
-    if (!attemptRows.length) {
+        if (answer.selected_option_id === null || answer.selected_option_id === undefined) {
+            stats.unanswered += 1;
+        } else if (answer.score !== null && Number(answer.score) === Number(answer.points)) {
+            stats.correct += 1;
+        } else {
+            stats.wrong += 1;
+        }
+        return stats;
+    }, { correct: 0, wrong: 0, unanswered: 0 });
+}
+
+function renderQuizAttempts(attempts) {
+    const studentGroups = groupQuizAttemptsByStudent(attempts);
+
+    if (!studentGroups.length) {
         return '<p class="grades-empty">No student attempts yet.</p>';
     }
 
     return `
         <div class="staff-submission-list">
-            ${attemptRows.map((attempt) => {
+            ${studentGroups.map((group) => {
                 return `
-                <button type="button" class="staff-submission-item quiz-attempt-summary" onclick="showQuizAttemptDetail(${attempt.attempt_id})">
+                <button type="button" class="staff-submission-item quiz-attempt-summary" onclick="showQuizStudentAttempts(${group.user_id})">
                     <div class="staff-submission-head">
                         <div>
-                            <strong>${escapeHtml(attempt.student_name || "Student")}</strong>
-                            <span>Student ID: ${escapeHtml(attempt.user_id)}</span>
-                            <span>${escapeHtml(attempt.student_email || "")}</span>
+                            <strong>${escapeHtml(group.student_name || "Student")}</strong>
+                            <span>Student ID: ${escapeHtml(group.user_id)}</span>
+                            <span>${escapeHtml(group.student_email || "")}</span>
                         </div>
                         <div class="staff-submission-meta">
-                            <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
-                            <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
-                            <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
-                            <span>${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                            <span>${group.attempts.length} attempt${group.attempts.length === 1 ? "" : "s"}</span>
+                            <span>Best: ${escapeHtml(getBestAttemptLabel(group))}</span>
+                            <span>View breakdown</span>
                         </div>
                     </div>
                 </button>
             `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function renderQuizStudentAttempts(group, savedAnswerId = null) {
+    if (!group) {
+        return '<p class="grades-error">Student attempts not found.</p>';
+    }
+
+    return `
+        <div class="staff-submission-list">
+            <button type="button" class="module-action-btn" onclick="showQuizAttemptList()">Back to Students</button>
+            <div class="quiz-student-summary">
+                <div>
+                    <strong>${escapeHtml(group.student_name || "Student")}</strong>
+                    <span>${escapeHtml(group.student_email || "")}</span>
+                </div>
+                <div>
+                    <span>${group.attempts.length} attempt${group.attempts.length === 1 ? "" : "s"}</span>
+                    <span>Best attempt: ${escapeHtml(getBestAttemptLabel(group))}</span>
+                </div>
+            </div>
+            ${group.attempts.map((attempt, index) => {
+                const isBest = group.best_attempt && Number(group.best_attempt.attempt_id) === Number(attempt.attempt_id);
+                const answers = Array.isArray(attempt.answers) ? attempt.answers : [];
+                const stats = getAttemptQuestionStats(answers);
+                return `
+                    <div class="staff-submission-item quiz-attempt-breakdown" data-attempt-id="${escapeHtml(attempt.attempt_id)}">
+                        <div class="staff-submission-head">
+                            <div>
+                                <strong>Attempt ${group.attempts.length - index}${isBest ? ' <span class="quiz-best-attempt-badge">Best</span>' : ""}</strong>
+                                <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
+                            </div>
+                            <div class="staff-submission-meta">
+                                <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
+                                <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
+                                <span>Score: ${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                            </div>
+                        </div>
+                        <div class="quiz-attempt-question-summary">
+                            <span class="correct">${stats.correct} correct</span>
+                            <span class="wrong">${stats.wrong} wrong</span>
+                            ${stats.unanswered ? `<span class="unanswered">${stats.unanswered} unanswered</span>` : ""}
+                        </div>
+                        ${answers.length ? answers.map((answer, answerIndex) => renderQuizAttemptAnswer(answer, savedAnswerId, answerIndex + 1)).join("") : '<p class="grades-empty">No answers recorded for this attempt.</p>'}
+                    </div>
+                `;
             }).join("")}
         </div>
     `;
@@ -343,6 +443,15 @@ function showQuizAttemptDetail(attemptId, savedAnswerId = null) {
     const list = document.getElementById("quiz-attempts-list");
     if (list) {
         list.innerHTML = renderQuizAttemptDetail(attempt, savedAnswerId);
+    }
+}
+
+function showQuizStudentAttempts(userId, savedAnswerId = null) {
+    const group = groupQuizAttemptsByStudent(currentQuizAttemptRows)
+        .find((item) => Number(item.user_id) === Number(userId));
+    const list = document.getElementById("quiz-attempts-list");
+    if (list) {
+        list.innerHTML = renderQuizStudentAttempts(group, savedAnswerId);
     }
 }
 
@@ -434,7 +543,8 @@ async function saveQuizAnswerGrade(answerId, maxPoints) {
         if (currentQuizAttemptsQuizId && Number.isFinite(attemptId)) {
             const response = await axios.get(`/api/quiz-attempts/quiz/${currentQuizAttemptsQuizId}`);
             currentQuizAttemptRows = Array.isArray(response.data) ? response.data : [];
-            showQuizAttemptDetail(attemptId, answerId);
+            const updatedAttempt = currentQuizAttemptRows.find((item) => Number(item.attempt_id) === attemptId);
+            showQuizStudentAttempts(updatedAttempt?.user_id, answerId);
         }
     } catch (error) {
         if (status) {
