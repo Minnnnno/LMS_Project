@@ -71,48 +71,36 @@ class DownloadsPage {
         this.state.loading("Loading downloads...");
 
         try {
-            const courses = await LmsApi.get("/api/my-courses");
+            const overview = await LmsApi.get("/api/my-courses/content-overview");
 
-            if (!courses.length) {
+            if (!overview.length) {
                 this.state.empty("You are not enrolled in any courses yet.", "bi-download");
                 return;
             }
 
-            // Round 1: fetch all modules for all courses in parallel
-            const moduleGroups = await Promise.all(
-                courses.map(c =>
-                    LmsApi.safeGet(`/api/modules/${c.course_id}`)
-                        .then(modules => ({
-                            course:   c,
-                            modules:  modules || [],
-                        }))
-                )
-            );
-
-            // Round 2: fetch all content for all modules in parallel
-            const contentGroups = await Promise.all(
-                moduleGroups.flatMap(({ course, modules }) =>
-                    modules.map(m =>
-                        LmsApi.safeGet(`/api/module-content/${m.module_id}`)
-                            .then(items => ({
-                                course,
-                                module: m,
-                                items:  (items || []).filter(i =>
-                                    i.content_type === "pdf" || i.content_type === "document"
-                                ),
-                            }))
-                    )
-                )
-            );
-
-            // Group by course
             const byCourse = {};
-            for (const { course, module: mod, items } of contentGroups) {
-                if (!items.length) continue;
-                const key = course.course_id;
-                if (!byCourse[key]) byCourse[key] = { courseName: course.name || `Course #${key}`, rows: [] };
-                for (const item of items) {
-                    byCourse[key].rows.push({ item, moduleName: mod.title || `Module #${mod.module_id}` });
+            for (const { course, modules } of overview) {
+                for (const { module: mod, items } of modules || []) {
+                    const downloadableItems = (items || []).filter(i =>
+                        i.content_type === "pdf" || i.content_type === "document"
+                    );
+
+                    if (!downloadableItems.length) continue;
+
+                    const key = course.course_id;
+                    if (!byCourse[key]) {
+                        byCourse[key] = {
+                            courseName: course.name || `Course #${key}`,
+                            rows: [],
+                        };
+                    }
+
+                    for (const item of downloadableItems) {
+                        byCourse[key].rows.push({
+                            item,
+                            moduleName: mod.title || `Module #${mod.module_id}`,
+                        });
+                    }
                 }
             }
 

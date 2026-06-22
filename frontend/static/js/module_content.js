@@ -166,6 +166,7 @@ async function markModuleOpened() {
             opened: true,
             progress_percent: 100,
         });
+        sessionStorage.setItem("skillup-course-progress-dirty", "1");
     } catch (error) {
         if (![401, 403].includes(error.response?.status)) {
             console.error("Failed to update module progress:", error);

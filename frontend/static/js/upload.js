@@ -202,25 +202,17 @@ class ProjectsPage {
         this.state.loading("Loading your assignments...");
 
         try {
-            const courses = await LmsApi.get("/api/my-courses");
+            const assignmentGroups = await LmsApi.get("/api/my-courses/assignments-overview");
 
-            if (!courses.length) {
+            if (!assignmentGroups.length) {
                 this.state.empty("You are not enrolled in any courses yet.", "bi-kanban");
                 return;
             }
 
-            const assignmentGroups = await Promise.all(
-                courses.map(c =>
-                    LmsApi.safeGet(`/api/assignment/${c.course_id}`)
-                        .then(assignments => ({
-                            course:      new Course(c),
-                            assignments: (assignments || []).filter(a => a.allow_file_submission),
-                        }))
-                )
-            );
-
             const items = assignmentGroups.flatMap(({ course, assignments }) =>
-                assignments.map(a => this.renderProjectItem(a, course))
+                (assignments || [])
+                    .filter(a => a.allow_file_submission)
+                    .map(a => this.renderProjectItem(a, new Course(course)))
             );
 
             if (!items.length) {

@@ -104,31 +104,22 @@ class AssessmentsPage {
         this.state.loading("Loading your assessments...");
 
         try {
-            const courses = await LmsApi.get("/api/my-courses");
+            const assessmentRows = await LmsApi.get("/api/my-courses/assessments-overview");
 
-            if (!courses.length) {
+            if (!assessmentRows.length) {
                 this.state.empty("You are not enrolled in any courses yet.", "bi-clipboard-x");
                 return;
             }
 
-            const quizResults = await Promise.all(
-                courses.map(async (course) => {
-                    const [quizzes, statuses] = await Promise.all([
-                        LmsApi.safeGet(`/api/quiz/${course.course_id}`),
-                        LmsApi.safeGet(`/api/quiz-attempts/my/course/${course.course_id}/status`),
-                    ]);
-
-                    return {
-                        courseId: course.course_id,
-                        courseName: course.name || `Course #${course.course_id}`,
-                        quizzes: quizzes || [],
-                        statusesByQuiz: (statuses || []).reduce((map, status) => {
-                            map[status.quiz_id] = status;
-                            return map;
-                        }, {}),
-                    };
-                })
-            );
+            const quizResults = assessmentRows.map(({ course, quizzes, statuses }) => ({
+                courseId: course.course_id,
+                courseName: course.name || `Course #${course.course_id}`,
+                quizzes: quizzes || [],
+                statusesByQuiz: (statuses || []).reduce((map, status) => {
+                    map[status.quiz_id] = status;
+                    return map;
+                }, {}),
+            }));
             const hasQuizzes  = quizResults.some(g => g.quizzes.length > 0);
 
             if (!hasQuizzes) {

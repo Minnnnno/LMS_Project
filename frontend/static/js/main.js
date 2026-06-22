@@ -90,9 +90,9 @@ class CertificationPage {
         this.state.loading("Loading your certifications...");
 
         try {
-            const courses = await LmsApi.get("/api/my-courses");
+            const courseProgressRows = await LmsApi.get("/api/my-courses/progress-overview");
 
-            if (!courses.length) {
+            if (!courseProgressRows.length) {
                 this.state.empty(
                     "You are not enrolled in any courses yet.",
                     "bi-patch-check"
@@ -100,18 +100,8 @@ class CertificationPage {
                 return;
             }
 
-            const progresses = await Promise.all(
-                courses.map(c =>
-                    LmsApi.safeGet(`/api/courses/${c.course_id}/progress`)
-                        .then(p => ({ courseId: c.course_id, data: p }))
-                )
-            );
-            const progressMap = Object.fromEntries(
-                progresses.map(p => [p.courseId, p.data])
-            );
-
-            const items = courses
-                .map(c => this.renderCertItem(new Course(c), progressMap[c.course_id]))
+            const items = courseProgressRows
+                .map(row => this.renderCertItem(new Course(row.course), row.progress))
                 .join("");
 
             this.state.html(`<div class="list-group list-group-flush">${items}</div>`);
@@ -178,23 +168,16 @@ class ChallengesPage {
         this.state.loading("Loading challenges...");
 
         try {
-            const courses = await LmsApi.get("/api/my-courses");
+            const assignmentGroups = await LmsApi.get("/api/my-courses/assignments-overview");
 
-            if (!courses.length) {
+            if (!assignmentGroups.length) {
                 this.state.empty("Enroll in a course to see challenges.", "bi-trophy");
                 return;
             }
 
-            const assignmentGroups = await Promise.all(
-                courses.map(c =>
-                    LmsApi.safeGet(`/api/assignment/${c.course_id}`)
-                        .then(assignments => ({ course: new Course(c), assignments: assignments || [] }))
-                )
-            );
-
             const cards = assignmentGroups
                 .flatMap(({ course, assignments }) =>
-                    assignments.map(a => this.renderChallengeCard(a, course))
+                    (assignments || []).map(a => this.renderChallengeCard(a, new Course(course)))
                 );
 
             if (!cards.length) {

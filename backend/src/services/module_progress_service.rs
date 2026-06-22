@@ -1,14 +1,10 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
 use chrono::Utc;
-use std::collections::HashSet;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::entity::{courses, module_progress, modules};
-use crate::models::module_progress::{CourseModuleProgress, CourseProgress, ModuleProgress};
+use crate::models::module_progress::ModuleProgress;
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
 use crate::services::course_service::can_manage_course;
 use crate::services::prerequisite_service;
@@ -54,8 +50,7 @@ pub async fn get_first_incomplete_previous_module(
         return Err(HttpResponse::Forbidden().body("You must be enrolled to view module content"));
     }
 
-    let prerequisite_ids =
-        prerequisite_service::get_module_prerequisite_ids(db, module_id).await?;
+    let prerequisite_ids = prerequisite_service::get_module_prerequisite_ids(db, module_id).await?;
 
     prerequisite_service::get_first_incomplete_required_module(db, user_id, prerequisite_ids).await
 }
@@ -75,8 +70,7 @@ pub async fn mark_module_completed(
         });
     }
 
-    if let Some(prerequisite) =
-        get_first_incomplete_previous_module(db, session, module_id).await?
+    if let Some(prerequisite) = get_first_incomplete_previous_module(db, session, module_id).await?
     {
         return Err(HttpResponse::Forbidden().body(format!(
             "Complete {} before opening this module",
@@ -152,143 +146,4 @@ pub async fn get_module_progress(
         opened,
         progress_percent: if opened { 100 } else { 0 },
     })
-}
-
-pub async fn get_course_progress(
-    db: &DatabaseConnection,
-    session: &Session,
-    course_id: i32,
-) -> Result<CourseProgress, HttpResponse> {
-    let user_id = get_user_id(session)?;
-
-    let course = courses::Entity::find_by_id(course_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding course: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
-
-    let enrolled = is_enrolled(db, user_id, course_id).await?;
-    let can_manage = can_manage_course(db, session, &course).await?;
-
-    if !enrolled && !can_manage {
-        return Err(HttpResponse::Forbidden().body("You must be enrolled to view course progress"));
-    }
-
-    let course_modules = modules::Entity::find()
-        .filter(modules::Column::CourseId.eq(course_id))
-        .all(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding modules: {}", err))
-        })?;
-
-    let total_modules = course_modules.len() as u64;
-
-    if total_modules == 0 {
-        return Ok(CourseProgress {
-            completed_modules: 0,
-            total_modules,
-            progress_percent: 0,
-        });
-    }
-
-    let module_ids: Vec<i32> = course_modules
-        .into_iter()
-        .map(|module| module.module_id)
-        .collect();
-
-    let completed_modules = module_progress::Entity::find()
-        .filter(module_progress::Column::UserId.eq(user_id))
-        .filter(module_progress::Column::ModuleId.is_in(module_ids))
-        .filter(module_progress::Column::CompletedAt.is_not_null())
-        .count(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error counting module progress: {}", err))
-        })?;
-
-    let progress_percent = ((completed_modules * 100) / total_modules)
-        .min(100)
-        .try_into()
-        .unwrap_or(100);
-
-    Ok(CourseProgress {
-        completed_modules,
-        total_modules,
-        progress_percent,
-    })
-}
-
-pub async fn get_course_module_progress(
-    db: &DatabaseConnection,
-    session: &Session,
-    course_id: i32,
-) -> Result<Vec<CourseModuleProgress>, HttpResponse> {
-    let user_id = get_user_id(session)?;
-
-    let course = courses::Entity::find_by_id(course_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding course: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
-
-    let enrolled = is_enrolled(db, user_id, course_id).await?;
-    let can_manage = can_manage_course(db, session, &course).await?;
-
-    if !enrolled && !can_manage {
-        return Err(HttpResponse::Forbidden().body("You must be enrolled to view module progress"));
-    }
-
-    let course_modules = modules::Entity::find()
-        .filter(modules::Column::CourseId.eq(course_id))
-        .all(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding modules: {}", err))
-        })?;
-
-    let module_ids: Vec<i32> = course_modules
-        .iter()
-        .map(|module| module.module_id)
-        .collect();
-
-    if module_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let completed_ids: HashSet<i32> = module_progress::Entity::find()
-        .filter(module_progress::Column::UserId.eq(user_id))
-        .filter(module_progress::Column::ModuleId.is_in(module_ids))
-        .filter(module_progress::Column::CompletedAt.is_not_null())
-        .all(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding module progress: {}", err))
-        })?
-        .into_iter()
-        .map(|progress| progress.module_id)
-        .collect();
-
-    Ok(course_modules
-        .into_iter()
-        .map(|module| {
-            let opened = completed_ids.contains(&module.module_id);
-
-            CourseModuleProgress {
-                module_id: module.module_id,
-                opened,
-                progress_percent: if opened { 100 } else { 0 },
-            }
-        })
-        .collect())
 }

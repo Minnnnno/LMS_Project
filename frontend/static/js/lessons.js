@@ -98,52 +98,20 @@ class LessonsPage {
         this.state.loading("Loading your lessons...");
 
         try {
-            const courses = await LmsApi.get("/api/my-courses");
+            const overview = await LmsApi.get("/api/my-courses/content-overview");
 
-            if (!courses.length) {
+            if (!overview.length) {
                 this.state.empty("You are not enrolled in any courses yet.", "bi-book");
                 return;
             }
 
-            // Round 1: all modules for all courses
-            const moduleGroups = await Promise.all(
-                courses.map(c =>
-                    LmsApi.safeGet(`/api/modules/${c.course_id}`)
-                        .then(modules => ({
-                            course:  c,
-                            modules: modules || [],
-                        }))
-                )
-            );
-
-            // Round 2: all content for all modules
-            const contentData = await Promise.all(
-                moduleGroups.flatMap(({ course, modules }) =>
-                    modules.map(m =>
-                        LmsApi.safeGet(`/api/module-content/${m.module_id}`)
-                            .then(items => ({
-                                courseId: course.course_id,
-                                module:   m,
-                                items:    items || [],
-                            }))
-                    )
-                )
-            );
-
-            // Group by course
-            const byCourse = {};
-            for (const { courseId, module: mod, items } of contentData) {
-                if (!byCourse[courseId]) {
-                    const c = courses.find(x => x.course_id === courseId);
-                    byCourse[courseId] = {
-                        courseName: c?.name || `Course #${courseId}`,
-                        modules:    [],
-                    };
-                }
-                byCourse[courseId].modules.push({ module: mod, items });
-            }
-
-            const courseGroups = Object.values(byCourse);
+            const courseGroups = overview.map(({ course, modules }) => ({
+                courseName: course.name || `Course #${course.course_id}`,
+                modules: (modules || []).map(({ module, items }) => ({
+                    module,
+                    items: items || [],
+                })),
+            }));
             const hasContent   = courseGroups.some(g => g.modules.some(m => m.items.length > 0));
 
             if (!hasContent) {

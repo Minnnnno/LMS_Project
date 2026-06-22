@@ -5,57 +5,67 @@ async function loadQuizzes() {
         const quizzes = Array.isArray(response.data) ? response.data : [];
         currentQuizzes = quizzes;
         await loadQuizAttemptStatuses();
-        const quizList = document.getElementById("quiz-list");
-
-        if (!quizList) {
-            return;
-        }
-
-        quizList.innerHTML = "";
-
-        if (!quizzes.length) {
-            quizList.innerHTML = isInstructor
-                ? '<p class="quiz-empty">No quizzes yet. Use Add Quiz to create one.</p>'
-                : '<p class="quiz-empty">No quizzes available.</p>';
-            return;
-        }
-
-        quizzes.forEach((quiz) => {
-            const status = quizAttemptStatuses[quiz.quiz_id] || null;
-            const studentStatus = !isInstructor && status
-                ? `<div class="quiz-attempt-state ${status.can_attempt ? "" : "blocked"}">${escapeHtml(formatQuizAttemptStatus(status))}</div>`
-                : "";
-            const rowClass = !isInstructor && status && !status.can_attempt
-                ? "quiz-row quiz-row-disabled"
-                : "quiz-row";
-            const adminButtons = isInstructor
-                ? `
-                    <div class="module-actions">
-                        <button class="module-action-btn" onclick="openQuizAttempts(event, ${quiz.quiz_id})">Attempts</button>
-                        <button class="module-action-btn edit-btn" onclick="editQuiz(event, ${quiz.quiz_id})">Edit</button>
-                        <button class="module-action-btn delete-btn" onclick="deleteQuiz(event, ${quiz.quiz_id})">Delete</button>
-                    </div>
-                `
-                : "";
-
-            quizList.innerHTML += `
-                <div class="${rowClass}" onclick="openQuizAttempt(${quiz.quiz_id})">
-                    <div>
-                        <div class="quiz-title">${escapeHtml(quiz.title || "Untitled quiz")}</div>
-                        <div class="quiz-subtitle">${escapeHtml(formatQuizMeta(quiz))}</div>
-                        ${studentStatus}
-                    </div>
-                    ${adminButtons}
-                </div>
-            `;
-        });
+        renderQuizzes(quizzes);
     } catch (error) {
-        currentQuizzes = [];
-        const quizList = document.getElementById("quiz-list");
-        if (quizList) {
-            quizList.innerHTML = '<p class="quiz-empty">Unable to load quizzes right now.</p>';
-        }
+        renderQuizzesError();
         console.error("Failed to load quizzes:", error);
+    }
+}
+
+function renderQuizzes(quizzes) {
+    currentQuizzes = Array.isArray(quizzes) ? quizzes : [];
+    const quizList = document.getElementById("quiz-list");
+
+    if (!quizList) {
+        return;
+    }
+
+    quizList.innerHTML = "";
+
+    if (!currentQuizzes.length) {
+        quizList.innerHTML = isInstructor
+            ? '<p class="quiz-empty">No quizzes yet. Use Add Quiz to create one.</p>'
+            : '<p class="quiz-empty">No quizzes available.</p>';
+        return;
+    }
+
+    quizList.innerHTML = currentQuizzes.map((quiz) => {
+        const status = quizAttemptStatuses[quiz.quiz_id] || null;
+        const studentStatus = !isInstructor && status
+            ? `<div class="quiz-attempt-state ${status.can_attempt ? "" : "blocked"}">${escapeHtml(formatQuizAttemptStatus(status))}</div>`
+            : "";
+        const rowClass = !isInstructor && status && !status.can_attempt
+            ? "quiz-row quiz-row-disabled"
+            : "quiz-row";
+        const adminButtons = isInstructor
+            ? `
+                <div class="module-actions">
+                    <button class="module-action-btn" onclick="openQuizAttempts(event, ${quiz.quiz_id})">Attempts</button>
+                    <button class="module-action-btn edit-btn" onclick="editQuiz(event, ${quiz.quiz_id})">Edit</button>
+                    <button class="module-action-btn delete-btn" onclick="deleteQuiz(event, ${quiz.quiz_id})">Delete</button>
+                </div>
+            `
+            : "";
+
+        return `
+            <div class="${rowClass}" onclick="openQuizAttempt(${quiz.quiz_id})">
+                <div>
+                    <div class="quiz-title">${escapeHtml(quiz.title || "Untitled quiz")}</div>
+                    <div class="quiz-subtitle">${escapeHtml(formatQuizMeta(quiz))}</div>
+                    ${studentStatus}
+                </div>
+                ${adminButtons}
+            </div>
+        `;
+    }).join("");
+}
+
+function renderQuizzesError() {
+    currentQuizzes = [];
+    const quizList = document.getElementById("quiz-list");
+
+    if (quizList) {
+        quizList.innerHTML = '<p class="quiz-empty">Unable to load quizzes right now.</p>';
     }
 }
 

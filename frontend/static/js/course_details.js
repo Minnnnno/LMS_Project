@@ -70,6 +70,8 @@ let quizAttemptStatuses = {};
 let selectedCoursePresetImage = null;
 let selectedCourseImageFile = null;
 let selectedCourseImageObjectUrl = null;
+let courseOverviewRefreshPromise = null;
+let hasCompletedInitialCourseOverviewLoad = false;
 
 function goToModuleContent(moduleId) {
     const module = currentModules.find((item) => Number(item.module_id) === Number(moduleId));
@@ -259,9 +261,9 @@ async function handleCourseAction() {
         await axios.post(`/api/courses/${courseId}/enroll`);
         isEnrolled = true;
         resetCourseActionButton();
-        await loadCourseProgress();
-        await loadCourseModuleProgresses();
-        await loadModules();
+        await loadCourseOverview();
+        await loadQuizAttemptStatuses();
+        renderQuizzes(currentQuizzes);
         showActionMessage("You are enrolled in this course.", "success");
     } catch (error) {
         if (error.response?.status === 401) {
@@ -278,94 +280,164 @@ async function handleCourseAction() {
 async function loadModules() {
     try {
         const response = await axios.get("/api/modules/" + courseId);
-        const modules = response.data.sort((first, second) => first.position - second.position);
-        currentModules = modules;
-        const moduleList = document.getElementById("module-list");
-
-        moduleList.innerHTML = "";
-
-        if (modules.length === 0) {
-            moduleList.innerHTML = "<p>No modules available.</p>";
-            return;
-        }
-
-        modules.forEach((module) => {
-            const percent = getModuleProgressPercent(module.module_id);
-            const prerequisite = getFirstIncompleteModulePrerequisite(module);
-            const isLocked = Boolean(prerequisite);
-            const instructorButtons = isInstructor
-                ? `
-                    <div class="module-actions">
-                        <button class="module-action-btn edit-btn" onclick="editModule(event, ${module.module_id})">Edit</button>
-                        <button class="module-action-btn delete-btn" onclick="deleteModule(event, ${module.module_id})">Delete</button>
-                    </div>
-                `
-                : "";
-            const progressRing = !isInstructor
-                ? `
-                    <div class="module-progress-ring" style="--module-progress: ${percent};" aria-label="${percent}% complete">
-                        <span>${percent}%</span>
-                    </div>
-                `
-                : "";
-            const lockHint = isLocked
-                ? `<div class="module-subtitle">Complete ${escapeHtml(prerequisite.title || "the previous module")} first</div>`
-                : "";
-            const rowClass = [
-                "module-row",
-                percent === 100 ? "completed" : "",
-                isLocked ? "locked" : "",
-            ].filter(Boolean).join(" ");
-
-            moduleList.innerHTML += `
-                <div class="${rowClass}" onclick="goToModuleContent(${module.module_id})">
-                    <div class="module-info">
-                        <div class="module-title">${escapeHtml(module.title || "Untitled module")}</div>
-                        ${lockHint}
-                    </div>
-                    ${instructorButtons}
-                    ${progressRing}
-                    <span class="module-arrow">${isLocked ? '<i class="bi bi-lock-fill" aria-hidden="true"></i>' : "&rsaquo;"}</span>
-                </div>
-            `;
-        });
+        renderModules(response.data);
     } catch (error) {
+        renderModulesError();
         console.error("Failed to load modules:", error);
     }
 }
 
-async function loadEnrollmentStatus() {
-    try {
-        const response = await axios.get(`/api/courses/${courseId}/enrollment-status`);
-        isEnrolled = Boolean(response.data.enrolled);
-        resetCourseActionButton();
-    } catch (error) {
-        if (error.response?.status !== 401) {
-            console.error("Failed to load enrollment status:", error);
-        }
-    }
-}
+function renderModules(modules) {
+    currentModules = (Array.isArray(modules) ? modules : [])
+        .sort((first, second) => first.position - second.position);
+    const moduleList = document.getElementById("module-list");
 
-async function loadCourseModuleProgresses() {
-    moduleProgressById = new Map();
-
-    if (!isEnrolled || isInstructor) {
+    if (!moduleList) {
         return;
     }
 
+    moduleList.innerHTML = "";
+
+    if (currentModules.length === 0) {
+        moduleList.innerHTML = "<p>No modules available.</p>";
+        return;
+    }
+
+    moduleList.innerHTML = currentModules.map((module) => {
+        const percent = getModuleProgressPercent(module.module_id);
+        const prerequisite = getFirstIncompleteModulePrerequisite(module);
+        const isLocked = Boolean(prerequisite);
+        const instructorButtons = isInstructor
+            ? `
+                <div class="module-actions">
+                    <button class="module-action-btn edit-btn" onclick="editModule(event, ${module.module_id})">Edit</button>
+                    <button class="module-action-btn delete-btn" onclick="deleteModule(event, ${module.module_id})">Delete</button>
+                </div>
+            `
+            : "";
+        const progressRing = !isInstructor
+            ? `
+                <div class="module-progress-ring" style="--module-progress: ${percent};" aria-label="${percent}% complete">
+                    <span>${percent}%</span>
+                </div>
+            `
+            : "";
+        const lockHint = isLocked
+            ? `<div class="module-subtitle">Complete ${escapeHtml(prerequisite.title || "the previous module")} first</div>`
+            : "";
+        const rowClass = [
+            "module-row",
+            percent === 100 ? "completed" : "",
+            isLocked ? "locked" : "",
+        ].filter(Boolean).join(" ");
+
+        return `
+            <div class="${rowClass}" onclick="goToModuleContent(${module.module_id})">
+                <div class="module-info">
+                    <div class="module-title">${escapeHtml(module.title || "Untitled module")}</div>
+                    ${lockHint}
+                </div>
+                ${instructorButtons}
+                ${progressRing}
+                <span class="module-arrow">${isLocked ? '<i class="bi bi-lock-fill" aria-hidden="true"></i>' : "&rsaquo;"}</span>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderModulesError() {
+    currentModules = [];
+    const moduleList = document.getElementById("module-list");
+
+    if (moduleList) {
+        moduleList.innerHTML = "<p>Unable to load modules right now.</p>";
+    }
+}
+
+function showInitialCourseLoadingState() {
+    const moduleList = document.getElementById("module-list");
+    const assignmentList = document.getElementById("assignment-list");
+    const quizList = document.getElementById("quiz-list");
+
+    if (moduleList) {
+        moduleList.innerHTML = '<p class="module-empty">Loading modules...</p>';
+    }
+
+    if (assignmentList) {
+        assignmentList.innerHTML = '<p class="assignment-empty">Loading assignments...</p>';
+    }
+
+    if (quizList) {
+        quizList.innerHTML = '<p class="quiz-empty">Loading quizzes...</p>';
+    }
+}
+
+function applyCourseOverview(overview) {
+    currentCourse = overview.course || null;
+    isEnrolled = Boolean(overview.enrolled);
+    isInstructor = Boolean(overview.can_manage);
+    moduleProgressById = new Map(
+        (Array.isArray(overview.module_progress) ? overview.module_progress : [])
+            .map((progress) => [Number(progress.module_id), progress])
+    );
+
+    refreshCourseDisplay();
+
+    const heroActions = document.getElementById("course-hero-actions");
+    if (heroActions) {
+        heroActions.style.display = isInstructor ? "flex" : "none";
+    }
+
+    setModuleCardAddVisible(isInstructor);
+    setAssignmentCardAddVisible(isInstructor);
+    setQuizCardAddVisible(isInstructor);
+
+    const actionStrip = document.querySelector(".course-action-strip");
+    if (actionStrip) {
+        actionStrip.style.display = isInstructor ? "none" : "grid";
+    }
+
+    setGradeTabsVisible(!isInstructor);
+
+    if (overview.course_progress && !isInstructor) {
+        renderCourseProgress(overview.course_progress);
+    } else {
+        hideCourseProgress();
+    }
+
+    renderModules(overview.modules || []);
+    renderAssignments(overview.assignments || []);
+    renderQuizzes(overview.quizzes || []);
+}
+
+async function loadCourseOverview() {
+    const response = await axios.get(`/api/courses/${courseId}/overview`, {
+        params: {
+            _: Date.now(),
+        },
+        headers: {
+            "Cache-Control": "no-cache",
+        },
+    });
+    applyCourseOverview(response.data || {});
+}
+
+async function refreshCourseOverview() {
+    if (courseOverviewRefreshPromise) {
+        return courseOverviewRefreshPromise;
+    }
+
+    courseOverviewRefreshPromise = (async () => {
+        await loadCourseOverview();
+        await loadQuizAttemptStatuses();
+        renderQuizzes(currentQuizzes);
+        hasCompletedInitialCourseOverviewLoad = true;
+    })();
+
     try {
-        const response = await axios.get(`/api/courses/${courseId}/module-progress`);
-        const progressRows = Array.isArray(response.data) ? response.data : [];
-
-        moduleProgressById = new Map(
-            progressRows.map((progress) => [Number(progress.module_id), progress])
-        );
-    } catch (error) {
-        moduleProgressById = new Map();
-
-        if (![401, 403, 404].includes(error.response?.status)) {
-            console.error("Failed to load module progress:", error);
-        }
+        await courseOverviewRefreshPromise;
+    } finally {
+        courseOverviewRefreshPromise = null;
     }
 }
 
@@ -398,24 +470,6 @@ function renderCourseProgress(progress) {
     progressPercent.textContent = `${percent}%`;
     progressFill.style.width = `${percent}%`;
     progressCard.hidden = false;
-}
-
-async function loadCourseProgress() {
-    if (!isEnrolled || isInstructor) {
-        hideCourseProgress();
-        return;
-    }
-
-    try {
-        const response = await axios.get(`/api/courses/${courseId}/progress`);
-        renderCourseProgress(response.data || {});
-    } catch (error) {
-        hideCourseProgress();
-
-        if (![401, 403, 404].includes(error.response?.status)) {
-            console.error("Failed to load course progress:", error);
-        }
-    }
 }
 
 function setActiveCourseTab(tabName) {
@@ -624,59 +678,6 @@ function renderGrades(data) {
     gradeList.innerHTML =
         renderGradeSection("Assignments", assignmentRows, "No assignments are available for this course.") +
         renderGradeSection("Quizzes", quizRows, quizMessage || "No quizzes are available for this course.");
-}
-
-async function loadCourseTitle() {
-    try {
-        const response = await axios.get("/api/course/" + courseId);
-        currentCourse = response.data;
-
-        refreshCourseDisplay();
-    } catch (error) {
-        console.error("Failed to load course title:", error);
-        showActionMessage("Failed to load course details.", "error");
-    }
-}
-
-async function loadManageAccess() {
-    try {
-        const response = await axios.get(`/api/courses/${courseId}/manage-access`);
-        isInstructor = Boolean(response.data.can_manage);
-
-        const heroActions = document.getElementById("course-hero-actions");
-        if (heroActions) {
-            heroActions.style.display = isInstructor ? "flex" : "none";
-        }
-
-        setModuleCardAddVisible(isInstructor);
-        setAssignmentCardAddVisible(isInstructor);
-        setQuizCardAddVisible(isInstructor);
-
-        const actionStrip = document.querySelector(".course-action-strip");
-        if (actionStrip) {
-            actionStrip.style.display = isInstructor ? "none" : "grid";
-        }
-
-        setGradeTabsVisible(!isInstructor);
-        if (isInstructor) {
-            hideCourseProgress();
-        }
-    } catch (error) {
-        isInstructor = false;
-        const heroActions = document.getElementById("course-hero-actions");
-        if (heroActions) {
-            heroActions.style.display = "none";
-        }
-        const actionStrip = document.querySelector(".course-action-strip");
-        if (actionStrip) {
-            actionStrip.style.display = "grid";
-        }
-        setModuleCardAddVisible(false);
-        setAssignmentCardAddVisible(false);
-        setQuizCardAddVisible(false);
-        setGradeTabsVisible(true);
-        console.error("Failed to load course management access:", error);
-    }
 }
 
 function setModuleCardAddVisible(visible) {
@@ -1059,7 +1060,9 @@ async function saveCourse() {
         await axios.put(`/api/courses/${courseId}`, payload);
 
         closeCourseModal();
-        await loadCourseTitle();
+        await loadCourseOverview();
+        await loadQuizAttemptStatuses();
+        renderQuizzes(currentQuizzes);
         showActionMessage("Course updated.", "success");
     } catch (error) {
         const message = error.response?.data || "Failed to update course.";
@@ -1227,11 +1230,12 @@ function bindInstructorControls() {
         setAssignmentCardAddVisible(false);
         setQuizCardAddVisible(false);
         setGradeTabsVisible(true);
-        await loadCourseModuleProgresses();
-        loadModules();
-        loadAssignments();
-        loadQuizzes();
-        loadCourseProgress();
+        moduleProgressById = new Map();
+        hideCourseProgress();
+        renderModules(currentModules);
+        renderAssignments(currentAssignments);
+        await loadQuizAttemptStatuses();
+        renderQuizzes(currentQuizzes);
     });
 
     document.getElementById("add-module-btn")?.addEventListener("click", () => {
@@ -1288,15 +1292,44 @@ async function init() {
         ?.addEventListener("click", handleCourseAction);
 
     bindInstructorControls();
+    showInitialCourseLoadingState();
 
-    await loadCourseTitle();
-    await loadEnrollmentStatus();
-    await loadManageAccess();
-    await loadCourseProgress();
-    await loadCourseModuleProgresses();
-    await loadModules();
-    await loadAssignments();
-    await loadQuizzes();
+    try {
+        await refreshCourseOverview();
+    } catch (error) {
+        renderModulesError();
+        renderAssignmentsError();
+        renderQuizzesError();
+        hideCourseProgress();
+        showActionMessage("Failed to load course details.", "error");
+        console.error("Failed to load course overview:", error);
+    }
 }
 
 init();
+
+window.addEventListener("pageshow", async () => {
+    if (!hasCompletedInitialCourseOverviewLoad) {
+        return;
+    }
+
+    sessionStorage.removeItem("skillup-course-progress-dirty");
+
+    try {
+        await refreshCourseOverview();
+    } catch (error) {
+        console.error("Failed to refresh course overview after returning to course details:", error);
+    }
+});
+
+window.addEventListener("focus", async () => {
+    if (!hasCompletedInitialCourseOverviewLoad) {
+        return;
+    }
+
+    try {
+        await refreshCourseOverview();
+    } catch (error) {
+        console.error("Failed to refresh course overview after focus:", error);
+    }
+});

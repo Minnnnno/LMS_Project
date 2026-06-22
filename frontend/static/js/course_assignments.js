@@ -2,49 +2,63 @@
 async function loadAssignments() {
     try {
         const response = await axios.get("/api/assignment/" + courseId);
-        const assignments = response.data;
-        currentAssignments = assignments;
-        const assignmentList = document.getElementById("assignment-list");
-        renderDropboxAssignments();
-        if (document.querySelector('.course-tab.active')?.dataset.courseTab === "submissions") {
-            renderCourseSubmissionsTab();
-        }
-
-        assignmentList.innerHTML = "";
-
-        if (!assignments.length) {
-            assignmentList.innerHTML = isInstructor
-                ? '<p class="assignment-empty">No assignments yet. Use Add Assignment to create one.</p>'
-                : '<p class="assignment-empty">No tasks due.</p>';
-            return;
-        }
-
-        assignments.forEach((assignment) => {
-            const adminButtons = isInstructor
-                ? `
-                    <div class="module-actions">
-                        <button class="module-action-btn edit-btn" onclick="editAssignment(event, ${assignment.assignment_id})">Edit</button>
-                        <button class="module-action-btn delete-btn" onclick="deleteAssignment(event, ${assignment.assignment_id})">Delete</button>
-                    </div>
-                `
-                : "";
-
-            assignmentList.innerHTML += `
-                <div class="assignment-row" onclick="openAssignmentDetails(${assignment.assignment_id})">
-                    <div>
-                        <div class="assignment-title">${assignment.title}</div>
-                        <div class="assignment-subtitle">Due: ${formatAssignmentDate(assignment.due_date)}</div>
-                    </div>
-                    ${adminButtons}
-                </div>
-            `;
-        });
+        renderAssignments(response.data);
     } catch (error) {
-        currentAssignments = [];
-        renderDropboxAssignments();
-        const assignmentList = document.getElementById("assignment-list");
-        assignmentList.innerHTML = "<p>No tasks due.</p>";
+        renderAssignmentsError();
         console.error("Failed to load assignments:", error);
+    }
+}
+
+function renderAssignments(assignments) {
+    currentAssignments = Array.isArray(assignments) ? assignments : [];
+    const assignmentList = document.getElementById("assignment-list");
+    renderDropboxAssignments();
+    if (document.querySelector('.course-tab.active')?.dataset.courseTab === "submissions") {
+        renderCourseSubmissionsTab();
+    }
+
+    if (!assignmentList) {
+        return;
+    }
+
+    assignmentList.innerHTML = "";
+
+    if (!currentAssignments.length) {
+        assignmentList.innerHTML = isInstructor
+            ? '<p class="assignment-empty">No assignments yet. Use Add Assignment to create one.</p>'
+            : '<p class="assignment-empty">No tasks due.</p>';
+        return;
+    }
+
+    assignmentList.innerHTML = currentAssignments.map((assignment) => {
+        const adminButtons = isInstructor
+            ? `
+                <div class="module-actions">
+                    <button class="module-action-btn edit-btn" onclick="editAssignment(event, ${assignment.assignment_id})">Edit</button>
+                    <button class="module-action-btn delete-btn" onclick="deleteAssignment(event, ${assignment.assignment_id})">Delete</button>
+                </div>
+            `
+            : "";
+
+        return `
+            <div class="assignment-row" onclick="openAssignmentDetails(${assignment.assignment_id})">
+                <div>
+                    <div class="assignment-title">${escapeHtml(assignment.title || "Untitled assignment")}</div>
+                    <div class="assignment-subtitle">Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
+                </div>
+                ${adminButtons}
+            </div>
+        `;
+    }).join("");
+}
+
+function renderAssignmentsError() {
+    currentAssignments = [];
+    renderDropboxAssignments();
+    const assignmentList = document.getElementById("assignment-list");
+
+    if (assignmentList) {
+        assignmentList.innerHTML = "<p>No tasks due.</p>";
     }
 }
 

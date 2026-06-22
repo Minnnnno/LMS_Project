@@ -1,24 +1,105 @@
 use crate::entity::courses::{self, CourseStatus};
 use crate::entity::enrollments;
+use crate::entity::{
+    assignments, module_contents, module_prerequisites, module_progress, modules, quiz,
+    quiz_attempts, quiz_prerequisites,
+};
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
+use crate::models::module_progress::{CourseModuleProgress, CourseProgress};
 use crate::services::course_service::{
-    can_manage_course,
-    can_view_course,
-    get_instructor_course_ids_for_session,
-    get_instructor_courses_for_session,
-    get_organisation_courses_for_session,
-    get_session_user_org_id,
-    has_role,
-    is_instructor_course_limited,
-    normalize_course_visibility,
+    can_manage_course, can_view_course, get_instructor_course_ids_for_session,
+    get_instructor_courses_for_session, get_organisation_courses_for_session,
+    get_session_user_org_id, has_role, is_instructor_course_limited, normalize_course_visibility,
     price_to_cents,
 };
-use crate::services::module_progress_service;
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
+use chrono::Local;
 use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Set,
+};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
+
+#[derive(Serialize)]
+struct ModuleOverviewPayload {
+    module_id: i32,
+    course_id: i32,
+    title: String,
+    position: i32,
+    prerequisite_module_ids: Vec<i32>,
+}
+
+#[derive(Serialize)]
+struct QuizOverviewPayload {
+    quiz_id: i32,
+    course_id: i32,
+    title: String,
+    description: Option<String>,
+    max_attempts: Option<i32>,
+    time_limit: Option<i32>,
+    starts_at: Option<chrono::NaiveDateTime>,
+    ends_at: Option<chrono::NaiveDateTime>,
+    created_at: chrono::NaiveDateTime,
+    prerequisite_module_ids: Vec<i32>,
+}
+
+#[derive(Serialize)]
+struct CourseOverviewPayload {
+    course: courses::Model,
+    can_manage: bool,
+    enrolled: bool,
+    modules: Vec<ModuleOverviewPayload>,
+    assignments: Vec<assignments::Model>,
+    quizzes: Vec<QuizOverviewPayload>,
+    course_progress: Option<CourseProgress>,
+    module_progress: Vec<CourseModuleProgress>,
+}
+
+#[derive(Serialize)]
+struct CourseProgressOverviewPayload {
+    course: courses::Model,
+    progress: CourseProgress,
+}
+
+#[derive(Serialize)]
+struct CourseAssignmentsOverviewPayload {
+    course: courses::Model,
+    assignments: Vec<assignments::Model>,
+}
+
+#[derive(Serialize)]
+struct CourseModuleContentOverviewPayload {
+    module: ModuleOverviewPayload,
+    items: Vec<module_contents::Model>,
+}
+
+#[derive(Serialize)]
+struct CourseContentOverviewPayload {
+    course: courses::Model,
+    modules: Vec<CourseModuleContentOverviewPayload>,
+}
+
+#[derive(Serialize)]
+struct QuizAttemptStatusOverviewPayload {
+    quiz_id: i32,
+    attempts_used: usize,
+    attempts_left: Option<i32>,
+    max_attempts: Option<i32>,
+    has_submitted_attempt: bool,
+    can_attempt: bool,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct CourseAssessmentsOverviewPayload {
+    course: courses::Model,
+    quizzes: Vec<QuizOverviewPayload>,
+    statuses: Vec<QuizAttemptStatusOverviewPayload>,
+}
 
 async fn accessible_course_condition(
     db: &DatabaseConnection,
@@ -35,8 +116,7 @@ async fn accessible_course_condition(
         },
         Ok(None) => None,
         Err(err) => {
-            return Err(HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err)));
+            return Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)));
         }
     };
 
@@ -53,11 +133,141 @@ async fn accessible_course_condition(
     Ok(Some(condition))
 }
 
+fn session_user_id(session: &Session) -> Result<i32, HttpResponse> {
+    match session.get::<i32>("user_id") {
+        Ok(Some(id)) => Ok(id),
+        Ok(None) => Err(HttpResponse::Unauthorized().body("User not logged in")),
+        Err(err) => {
+            Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)))
+        }
+    }
+}
+
+async fn get_enrolled_courses(
+    db: &DatabaseConnection,
+    session: &Session,
+) -> Result<(i32, Vec<courses::Model>), HttpResponse> {
+    let user_id = session_user_id(session)?;
+
+    let enrollment_rows = enrollments::Entity::find()
+        .filter(enrollments::Column::UserId.eq(user_id))
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding enrollments: {}", err))
+        })?;
+
+    let course_ids: Vec<i32> = enrollment_rows
+        .into_iter()
+        .map(|enrollment| enrollment.course_id)
+        .collect();
+
+    if course_ids.is_empty() {
+        return Ok((user_id, Vec::new()));
+    }
+
+    let courses = courses::Entity::find()
+        .filter(courses::Column::CourseId.is_in(course_ids))
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding courses: {}", err))
+        })?;
+
+    Ok((user_id, courses))
+}
+
+fn course_progress_from_completed(total_modules: u64, completed_modules: u64) -> CourseProgress {
+    CourseProgress {
+        completed_modules,
+        total_modules,
+        progress_percent: if total_modules == 0 {
+            0
+        } else {
+            ((completed_modules * 100) / total_modules)
+                .min(100)
+                .try_into()
+                .unwrap_or(100)
+        },
+    }
+}
+
+fn build_quiz_attempt_status(
+    quiz: &quiz::Model,
+    attempts: &[quiz_attempts::Model],
+) -> QuizAttemptStatusOverviewPayload {
+    let attempts_used = attempts.len();
+    let attempts_left = quiz
+        .max_attempts
+        .map(|max| (max - attempts_used as i32).max(0));
+    let has_submitted_attempt = attempts
+        .iter()
+        .any(|attempt| attempt.submitted_at.is_some());
+
+    if quiz
+        .starts_at
+        .is_some_and(|starts_at| starts_at > Local::now().naive_local())
+    {
+        return QuizAttemptStatusOverviewPayload {
+            quiz_id: quiz.quiz_id,
+            attempts_used,
+            attempts_left,
+            max_attempts: quiz.max_attempts,
+            has_submitted_attempt,
+            can_attempt: false,
+            message: "This quiz is not open yet".to_string(),
+        };
+    }
+
+    if quiz
+        .ends_at
+        .is_some_and(|ends_at| ends_at < Local::now().naive_local())
+    {
+        return QuizAttemptStatusOverviewPayload {
+            quiz_id: quiz.quiz_id,
+            attempts_used,
+            attempts_left,
+            max_attempts: quiz.max_attempts,
+            has_submitted_attempt,
+            can_attempt: false,
+            message: "This quiz is closed".to_string(),
+        };
+    }
+
+    if attempts_left == Some(0) {
+        return QuizAttemptStatusOverviewPayload {
+            quiz_id: quiz.quiz_id,
+            attempts_used,
+            attempts_left,
+            max_attempts: quiz.max_attempts,
+            has_submitted_attempt,
+            can_attempt: false,
+            message: "No attempts left".to_string(),
+        };
+    }
+
+    let message = match attempts_left {
+        Some(1) => "1 attempt left".to_string(),
+        Some(left) => format!("{} attempts left", left),
+        None if has_submitted_attempt => "Attempted".to_string(),
+        None => "Unlimited attempts".to_string(),
+    };
+
+    QuizAttemptStatusOverviewPayload {
+        quiz_id: quiz.quiz_id,
+        attempts_used,
+        attempts_left,
+        max_attempts: quiz.max_attempts,
+        has_submitted_attempt,
+        can_attempt: true,
+        message,
+    }
+}
+
 #[get("/courses")]
-pub async fn get_courses(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
+pub async fn get_courses(db: web::Data<DatabaseConnection>, session: Session) -> impl Responder {
     if is_instructor_course_limited(&session) {
         return match get_instructor_courses_for_session(db.get_ref(), &session).await {
             Ok(courses) => HttpResponse::Ok().json(courses),
@@ -88,10 +298,7 @@ pub async fn get_courses(
 }
 
 #[get("/my-courses")]
-pub async fn get_my_courses(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-) -> impl Responder {
+pub async fn get_my_courses(db: web::Data<DatabaseConnection>, session: Session) -> impl Responder {
     if is_instructor_course_limited(&session) {
         return match get_instructor_courses_for_session(db.get_ref(), &session).await {
             Ok(courses) => HttpResponse::Ok().json(courses),
@@ -141,6 +348,397 @@ pub async fn get_my_courses(
     }
 }
 
+#[get("/my-courses/progress-overview")]
+pub async fn get_my_courses_progress_overview(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let (user_id, course_rows) = match get_enrolled_courses(db.get_ref(), &session).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    if course_rows.is_empty() {
+        return HttpResponse::Ok().json(Vec::<CourseProgressOverviewPayload>::new());
+    }
+
+    let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
+    let module_rows = match modules::Entity::find()
+        .filter(modules::Column::CourseId.is_in(course_ids))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding modules: {}", err));
+        }
+    };
+
+    let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
+    let completed_ids: HashSet<i32> = if module_ids.is_empty() {
+        HashSet::new()
+    } else {
+        match module_progress::Entity::find()
+            .filter(module_progress::Column::UserId.eq(user_id))
+            .filter(module_progress::Column::ModuleId.is_in(module_ids))
+            .filter(module_progress::Column::CompletedAt.is_not_null())
+            .all(db.get_ref())
+            .await
+        {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|progress| progress.module_id)
+                .collect(),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding module progress: {}", err));
+            }
+        }
+    };
+
+    let mut totals_by_course: HashMap<i32, u64> = HashMap::new();
+    let mut completed_by_course: HashMap<i32, u64> = HashMap::new();
+
+    for module in module_rows {
+        *totals_by_course.entry(module.course_id).or_default() += 1;
+
+        if completed_ids.contains(&module.module_id) {
+            *completed_by_course.entry(module.course_id).or_default() += 1;
+        }
+    }
+
+    let payloads: Vec<CourseProgressOverviewPayload> = course_rows
+        .into_iter()
+        .map(|course| {
+            let total_modules = *totals_by_course.get(&course.course_id).unwrap_or(&0);
+            let completed_modules = *completed_by_course.get(&course.course_id).unwrap_or(&0);
+
+            CourseProgressOverviewPayload {
+                course,
+                progress: course_progress_from_completed(total_modules, completed_modules),
+            }
+        })
+        .collect();
+
+    HttpResponse::Ok().json(payloads)
+}
+
+#[get("/my-courses/assignments-overview")]
+pub async fn get_my_courses_assignments_overview(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let (_, course_rows) = match get_enrolled_courses(db.get_ref(), &session).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    if course_rows.is_empty() {
+        return HttpResponse::Ok().json(Vec::<CourseAssignmentsOverviewPayload>::new());
+    }
+
+    let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
+    let assignment_rows = match assignments::Entity::find()
+        .filter(assignments::Column::CourseId.is_in(course_ids))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding assignments: {}", err));
+        }
+    };
+
+    let mut assignments_by_course: HashMap<i32, Vec<assignments::Model>> = HashMap::new();
+    for assignment in assignment_rows {
+        assignments_by_course
+            .entry(assignment.course_id)
+            .or_default()
+            .push(assignment);
+    }
+
+    let payloads: Vec<CourseAssignmentsOverviewPayload> = course_rows
+        .into_iter()
+        .map(|course| CourseAssignmentsOverviewPayload {
+            assignments: assignments_by_course
+                .remove(&course.course_id)
+                .unwrap_or_default(),
+            course,
+        })
+        .collect();
+
+    HttpResponse::Ok().json(payloads)
+}
+
+#[get("/my-courses/content-overview")]
+pub async fn get_my_courses_content_overview(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let (_, course_rows) = match get_enrolled_courses(db.get_ref(), &session).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    if course_rows.is_empty() {
+        return HttpResponse::Ok().json(Vec::<CourseContentOverviewPayload>::new());
+    }
+
+    let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
+    let module_rows = match modules::Entity::find()
+        .filter(modules::Column::CourseId.is_in(course_ids))
+        .order_by_asc(modules::Column::Position)
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding modules: {}", err));
+        }
+    };
+
+    let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
+    let content_rows = if module_ids.is_empty() {
+        Vec::new()
+    } else {
+        match module_contents::Entity::find()
+            .filter(module_contents::Column::ModuleId.is_in(module_ids))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(rows) => rows,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding module content: {}", err));
+            }
+        }
+    };
+
+    let mut content_by_module: HashMap<i32, Vec<module_contents::Model>> = HashMap::new();
+    for content in content_rows {
+        content_by_module
+            .entry(content.module_id)
+            .or_default()
+            .push(content);
+    }
+
+    let mut modules_by_course: HashMap<i32, Vec<CourseModuleContentOverviewPayload>> =
+        HashMap::new();
+
+    for module in module_rows {
+        modules_by_course.entry(module.course_id).or_default().push(
+            CourseModuleContentOverviewPayload {
+                items: content_by_module
+                    .remove(&module.module_id)
+                    .unwrap_or_default(),
+                module: ModuleOverviewPayload {
+                    module_id: module.module_id,
+                    course_id: module.course_id,
+                    title: module.title,
+                    position: module.position,
+                    prerequisite_module_ids: Vec::new(),
+                },
+            },
+        );
+    }
+
+    let payloads: Vec<CourseContentOverviewPayload> = course_rows
+        .into_iter()
+        .map(|course| CourseContentOverviewPayload {
+            modules: modules_by_course
+                .remove(&course.course_id)
+                .unwrap_or_default(),
+            course,
+        })
+        .collect();
+
+    HttpResponse::Ok().json(payloads)
+}
+
+#[get("/my-courses/assessments-overview")]
+pub async fn get_my_courses_assessments_overview(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let (user_id, course_rows) = match get_enrolled_courses(db.get_ref(), &session).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    if course_rows.is_empty() {
+        return HttpResponse::Ok().json(Vec::<CourseAssessmentsOverviewPayload>::new());
+    }
+
+    let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
+    let module_rows = match modules::Entity::find()
+        .filter(modules::Column::CourseId.is_in(course_ids.clone()))
+        .order_by_asc(modules::Column::Position)
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding modules: {}", err));
+        }
+    };
+
+    let quiz_rows = match quiz::Entity::find()
+        .filter(quiz::Column::CourseId.is_in(course_ids))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding quizzes: {}", err));
+        }
+    };
+
+    let quiz_ids: Vec<i32> = quiz_rows.iter().map(|quiz| quiz.quiz_id).collect();
+    let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
+
+    let quiz_prerequisite_rows = if quiz_ids.is_empty() {
+        Vec::new()
+    } else {
+        match quiz_prerequisites::Entity::find()
+            .filter(quiz_prerequisites::Column::QuizId.is_in(quiz_ids.clone()))
+            .order_by_asc(quiz_prerequisites::Column::PrerequisiteId)
+            .all(db.get_ref())
+            .await
+        {
+            Ok(rows) => rows,
+            Err(err) => {
+                return HttpResponse::InternalServerError().body(format!(
+                    "Database error finding quiz prerequisites: {}",
+                    err
+                ));
+            }
+        }
+    };
+
+    let completed_ids: HashSet<i32> = if module_ids.is_empty() {
+        HashSet::new()
+    } else {
+        match module_progress::Entity::find()
+            .filter(module_progress::Column::UserId.eq(user_id))
+            .filter(module_progress::Column::ModuleId.is_in(module_ids))
+            .filter(module_progress::Column::CompletedAt.is_not_null())
+            .all(db.get_ref())
+            .await
+        {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|progress| progress.module_id)
+                .collect(),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding module progress: {}", err));
+            }
+        }
+    };
+
+    let attempt_rows = if quiz_ids.is_empty() {
+        Vec::new()
+    } else {
+        match quiz_attempts::Entity::find()
+            .filter(quiz_attempts::Column::UserId.eq(user_id))
+            .filter(quiz_attempts::Column::QuizId.is_in(quiz_ids))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(rows) => rows,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding quiz attempts: {}", err));
+            }
+        }
+    };
+
+    let mut module_by_id: HashMap<i32, modules::Model> = HashMap::new();
+    for module in module_rows {
+        module_by_id.insert(module.module_id, module);
+    }
+
+    let mut quiz_prerequisites_by_id: HashMap<i32, Vec<i32>> = HashMap::new();
+    for row in quiz_prerequisite_rows {
+        quiz_prerequisites_by_id
+            .entry(row.quiz_id)
+            .or_default()
+            .push(row.required_module_id);
+    }
+
+    let mut attempts_by_quiz: HashMap<i32, Vec<quiz_attempts::Model>> = HashMap::new();
+    for attempt in attempt_rows {
+        attempts_by_quiz
+            .entry(attempt.quiz_id)
+            .or_default()
+            .push(attempt);
+    }
+
+    let mut quizzes_by_course: HashMap<i32, Vec<QuizOverviewPayload>> = HashMap::new();
+    let mut statuses_by_course: HashMap<i32, Vec<QuizAttemptStatusOverviewPayload>> =
+        HashMap::new();
+
+    for quiz in quiz_rows {
+        let prerequisite_module_ids = quiz_prerequisites_by_id
+            .remove(&quiz.quiz_id)
+            .unwrap_or_default();
+        let attempts = attempts_by_quiz.remove(&quiz.quiz_id).unwrap_or_default();
+        let mut status = build_quiz_attempt_status(&quiz, &attempts);
+
+        let first_incomplete_prerequisite = prerequisite_module_ids
+            .iter()
+            .filter(|module_id| !completed_ids.contains(module_id))
+            .filter_map(|module_id| module_by_id.get(module_id))
+            .min_by_key(|module| module.position);
+
+        if let Some(module) = first_incomplete_prerequisite {
+            status.can_attempt = false;
+            status.message = format!("Complete {} before attempting this quiz", module.title);
+        }
+
+        statuses_by_course
+            .entry(quiz.course_id)
+            .or_default()
+            .push(status);
+
+        quizzes_by_course
+            .entry(quiz.course_id)
+            .or_default()
+            .push(QuizOverviewPayload {
+                quiz_id: quiz.quiz_id,
+                course_id: quiz.course_id,
+                title: quiz.title,
+                description: quiz.description,
+                max_attempts: quiz.max_attempts,
+                time_limit: quiz.time_limit,
+                starts_at: quiz.starts_at,
+                ends_at: quiz.ends_at,
+                created_at: quiz.created_at,
+                prerequisite_module_ids,
+            });
+    }
+
+    let payloads: Vec<CourseAssessmentsOverviewPayload> = course_rows
+        .into_iter()
+        .map(|course| CourseAssessmentsOverviewPayload {
+            quizzes: quizzes_by_course
+                .remove(&course.course_id)
+                .unwrap_or_default(),
+            statuses: statuses_by_course
+                .remove(&course.course_id)
+                .unwrap_or_default(),
+            course,
+        })
+        .collect();
+
+    HttpResponse::Ok().json(payloads)
+}
+
 #[get("/courses/organisation")]
 pub async fn get_organisation_courses(
     db: web::Data<DatabaseConnection>,
@@ -152,50 +750,8 @@ pub async fn get_organisation_courses(
     }
 }
 
-#[get("/course/{course_id}")]
-pub async fn get_course_by_course_id(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-    path: web::Path<i32>
-) -> impl Responder {
-    let course_id = path.into_inner();
-    let result = courses::Entity::find_by_id(course_id)
-        .one(db.get_ref())
-        .await;
-    match result {
-        Ok(course) => {
-            if let Some(course) = course {
-                if is_instructor_course_limited(&session) {
-                    match can_manage_course(db.get_ref(), &session, &course).await {
-                        Ok(true) => {}
-                        Ok(false) => {
-                            return HttpResponse::Forbidden()
-                                .body("You can only view courses assigned to you");
-                        }
-                        Err(response) => return response,
-                    }
-                }
-
-                match can_view_course(db.get_ref(), &session, &course).await {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        return HttpResponse::Forbidden()
-                            .body("This course is private to its organisation");
-                    }
-                    Err(response) => return response,
-                }
-
-                HttpResponse::Ok().json(course)
-            } else {
-                HttpResponse::NotFound().body("Course not found")
-            }
-        }
-        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
-    }
-}
-
-#[get("/courses/{course_id}/manage-access")]
-pub async fn get_course_manage_access(
+#[get("/courses/{course_id}/overview")]
+pub async fn get_course_overview(
     db: web::Data<DatabaseConnection>,
     session: Session,
     path: web::Path<i32>,
@@ -213,48 +769,250 @@ pub async fn get_course_manage_access(
         }
     };
 
-    match can_manage_course(db.get_ref(), &session, &course).await {
-        Ok(can_manage) => HttpResponse::Ok().json(serde_json::json!({
-            "can_manage": can_manage
-        })),
-        Err(response) => response,
+    if is_instructor_course_limited(&session) {
+        match can_manage_course(db.get_ref(), &session, &course).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return HttpResponse::Forbidden().body("You can only view courses assigned to you");
+            }
+            Err(response) => return response,
+        }
     }
-}
 
-#[get("/courses/{course_id}/progress")]
-pub async fn get_course_progress(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-    path: web::Path<i32>,
-) -> impl Responder {
-    match module_progress_service::get_course_progress(
-        db.get_ref(),
-        &session,
-        path.into_inner(),
-    )
-    .await
-    {
-        Ok(progress) => HttpResponse::Ok().json(progress),
-        Err(response) => response,
+    match can_view_course(db.get_ref(), &session, &course).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::Forbidden().body("This course is private to its organisation");
+        }
+        Err(response) => return response,
     }
-}
 
-#[get("/courses/{course_id}/module-progress")]
-pub async fn get_course_module_progress(
-    db: web::Data<DatabaseConnection>,
-    session: Session,
-    path: web::Path<i32>,
-) -> impl Responder {
-    match module_progress_service::get_course_module_progress(
-        db.get_ref(),
-        &session,
-        path.into_inner(),
-    )
-    .await
-    {
-        Ok(progress) => HttpResponse::Ok().json(progress),
-        Err(response) => response,
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(user_id) => user_id,
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
+        }
+    };
+
+    let can_manage = if user_id.is_some() {
+        match can_manage_course(db.get_ref(), &session, &course).await {
+            Ok(can_manage) => can_manage,
+            Err(response) if response.status() == actix_web::http::StatusCode::UNAUTHORIZED => {
+                false
+            }
+            Err(response) => return response,
+        }
+    } else {
+        false
+    };
+
+    let enrolled = match user_id {
+        Some(user_id) => match enrollments::Entity::find()
+            .filter(enrollments::Column::UserId.eq(user_id))
+            .filter(enrollments::Column::CourseId.eq(course_id))
+            .one(db.get_ref())
+            .await
+        {
+            Ok(enrollment) => enrollment.is_some(),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error checking enrollment: {}", err));
+            }
+        },
+        None => false,
+    };
+
+    let (module_rows, assignment_rows, quiz_rows) = tokio::join!(
+        modules::Entity::find()
+            .filter(modules::Column::CourseId.eq(course_id))
+            .order_by_asc(modules::Column::Position)
+            .all(db.get_ref()),
+        assignments::Entity::find()
+            .filter(assignments::Column::CourseId.eq(course_id))
+            .all(db.get_ref()),
+        quiz::Entity::find()
+            .filter(quiz::Column::CourseId.eq(course_id))
+            .all(db.get_ref()),
+    );
+
+    let module_rows = match module_rows {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding modules: {}", err));
+        }
+    };
+    let assignment_rows = match assignment_rows {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding assignments: {}", err));
+        }
+    };
+    let quiz_rows = match quiz_rows {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding quizzes: {}", err));
+        }
+    };
+
+    let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
+    let quiz_ids: Vec<i32> = quiz_rows.iter().map(|quiz| quiz.quiz_id).collect();
+
+    let module_prerequisite_rows = if module_ids.is_empty() {
+        Ok(Vec::new())
+    } else {
+        module_prerequisites::Entity::find()
+            .filter(module_prerequisites::Column::ModuleId.is_in(module_ids.clone()))
+            .order_by_asc(module_prerequisites::Column::PrerequisiteId)
+            .all(db.get_ref())
+            .await
+    };
+    let quiz_prerequisite_rows = if quiz_ids.is_empty() {
+        Ok(Vec::new())
+    } else {
+        quiz_prerequisites::Entity::find()
+            .filter(quiz_prerequisites::Column::QuizId.is_in(quiz_ids))
+            .order_by_asc(quiz_prerequisites::Column::PrerequisiteId)
+            .all(db.get_ref())
+            .await
+    };
+
+    let mut module_prerequisites_by_id: HashMap<i32, Vec<i32>> = HashMap::new();
+    match module_prerequisite_rows {
+        Ok(rows) => {
+            for row in rows {
+                module_prerequisites_by_id
+                    .entry(row.module_id)
+                    .or_default()
+                    .push(row.required_module_id);
+            }
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!(
+                "Database error finding module prerequisites: {}",
+                err
+            ));
+        }
     }
+
+    let mut quiz_prerequisites_by_id: HashMap<i32, Vec<i32>> = HashMap::new();
+    match quiz_prerequisite_rows {
+        Ok(rows) => {
+            for row in rows {
+                quiz_prerequisites_by_id
+                    .entry(row.quiz_id)
+                    .or_default()
+                    .push(row.required_module_id);
+            }
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!(
+                "Database error finding quiz prerequisites: {}",
+                err
+            ));
+        }
+    }
+
+    let completed_ids: HashSet<i32> = if enrolled && !module_ids.is_empty() {
+        match module_progress::Entity::find()
+            .filter(module_progress::Column::UserId.eq(user_id.unwrap_or_default()))
+            .filter(module_progress::Column::ModuleId.is_in(module_ids.clone()))
+            .filter(module_progress::Column::CompletedAt.is_not_null())
+            .all(db.get_ref())
+            .await
+        {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|progress| progress.module_id)
+                .collect(),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding module progress: {}", err));
+            }
+        }
+    } else {
+        HashSet::new()
+    };
+
+    let modules: Vec<ModuleOverviewPayload> = module_rows
+        .iter()
+        .map(|module| ModuleOverviewPayload {
+            module_id: module.module_id,
+            course_id: module.course_id,
+            title: module.title.clone(),
+            position: module.position,
+            prerequisite_module_ids: module_prerequisites_by_id
+                .remove(&module.module_id)
+                .unwrap_or_default(),
+        })
+        .collect();
+
+    let quizzes: Vec<QuizOverviewPayload> = quiz_rows
+        .into_iter()
+        .map(|quiz| QuizOverviewPayload {
+            quiz_id: quiz.quiz_id,
+            course_id: quiz.course_id,
+            title: quiz.title,
+            description: quiz.description,
+            max_attempts: quiz.max_attempts,
+            time_limit: quiz.time_limit,
+            starts_at: quiz.starts_at,
+            ends_at: quiz.ends_at,
+            created_at: quiz.created_at,
+            prerequisite_module_ids: quiz_prerequisites_by_id
+                .remove(&quiz.quiz_id)
+                .unwrap_or_default(),
+        })
+        .collect();
+
+    let total_modules = modules.len() as u64;
+    let completed_modules = completed_ids.len() as u64;
+    let course_progress = if enrolled {
+        Some(CourseProgress {
+            completed_modules,
+            total_modules,
+            progress_percent: if total_modules == 0 {
+                0
+            } else {
+                ((completed_modules * 100) / total_modules)
+                    .min(100)
+                    .try_into()
+                    .unwrap_or(100)
+            },
+        })
+    } else {
+        None
+    };
+
+    let module_progress = if enrolled {
+        modules
+            .iter()
+            .map(|module| {
+                let opened = completed_ids.contains(&module.module_id);
+
+                CourseModuleProgress {
+                    module_id: module.module_id,
+                    opened,
+                    progress_percent: if opened { 100 } else { 0 },
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    HttpResponse::Ok().json(CourseOverviewPayload {
+        course,
+        can_manage,
+        enrolled,
+        modules,
+        assignments: assignment_rows,
+        quizzes,
+        course_progress,
+        module_progress,
+    })
 }
 
 #[get("/courses/search")]
@@ -295,16 +1053,15 @@ pub async fn search_course(
         }
 
         db_query = db_query.filter(courses::Column::CourseId.is_in(course_ids));
-    } else if let Some(condition) = match accessible_course_condition(db.get_ref(), &session).await {
+    } else if let Some(condition) = match accessible_course_condition(db.get_ref(), &session).await
+    {
         Ok(condition) => condition,
         Err(response) => return response,
     } {
         db_query = db_query.filter(condition);
     }
 
-    let result = db_query
-        .all(db.get_ref())
-        .await;
+    let result = db_query.all(db.get_ref()).await;
 
     match result {
         Ok(course) => {
@@ -468,8 +1225,7 @@ pub async fn create_course(
     };
 
     if data.is_paid && price_cents <= 0 {
-        return HttpResponse::BadRequest()
-            .body("Paid courses must have a price greater than zero");
+        return HttpResponse::BadRequest().body("Paid courses must have a price greater than zero");
     }
 
     let visibility = match normalize_course_visibility(data.visibility) {
