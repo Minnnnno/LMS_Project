@@ -11,10 +11,11 @@ use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAt
 use crate::entity::quiz_questions::{
     Column as QuizQuestionColumn, Entity as QuizQuestionEntity, QuestionType,
 };
-use crate::services::auth_helpers::{get_role_ids, has_staff_role};
 use crate::services::course_service::can_manage_course;
+use crate::services::quiz_helper;
 
-const ANALYTICS_UNAVAILABLE_MESSAGE: &str = "Analytics only available when all attempts are graded";
+const ANALYTICS_UNAVAILABLE_MESSAGE: &str =
+    "All attempts must be graded before analytics are available";
 
 #[derive(Serialize)]
 struct QuizAnalyticsSummary {
@@ -47,23 +48,12 @@ struct QuizAnalyticsDetail {
     questions: Vec<QuestionAnalytics>,
 }
 
-fn require_staff(session: &Session) -> Result<(), HttpResponse> {
-    let role_ids = get_role_ids(session);
-    if role_ids.is_empty() {
-        return Err(HttpResponse::Unauthorized().body("You must be logged in"));
-    }
-    if !has_staff_role(&role_ids) {
-        return Err(HttpResponse::Forbidden().body("Quiz analytics are available to staff only"));
-    }
-    Ok(())
-}
-
 async fn require_course_access(
     db: &DatabaseConnection,
     session: &Session,
     course_id: i32,
 ) -> Result<courses::Model, HttpResponse> {
-    require_staff(session)?;
+    quiz_helper::require_staff(session)?;
 
     let course = courses::Entity::find_by_id(course_id)
         .one(db)

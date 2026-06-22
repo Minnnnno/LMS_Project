@@ -127,6 +127,14 @@
                 <p class="grades-empty">Assignments with student submissions will appear here.</p>
             </div>
         </div>
+        <div class="course-card grades-card">
+            <div class="course-card-heading">
+                <h2>Quiz Analytics</h2>
+            </div>
+            <div id="course-quiz-analytics-list" class="quiz-analytics-list">
+                <p class="grades-empty">Quiz analytics will appear here.</p>
+            </div>
+        </div>
     </div>
 </div>
 <div id="edit-course-modal" class="course-modal" style="display: none;">
@@ -367,8 +375,19 @@
         </div>
     </div>
 </div>
+<div id="quiz-analytics-modal" style="display: none;">
+    <div class="modal-content quiz-analytics-modal-content">
+        <h2 id="quiz-analytics-title">Quiz Analytics</h2>
+        <div id="quiz-analytics-detail">
+            <p class="grades-empty">Loading analytics...</p>
+        </div>
+        <div class="modal-actions">
+            <button id="close-quiz-analytics-btn" type="button">Close</button>
+        </div>
+    </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/static/js/course_assignments.js?v=1"></script>
-<script src="/static/js/course_quizzes.js?v=4"></script>
+<script src="/static/js/course_quizzes.js?v=5"></script>
 <script src="/static/js/course_details.js?v=37"></script>
 {% endblock content %}

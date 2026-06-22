@@ -442,6 +442,7 @@ function setActiveCourseTab(tabName) {
 
     if (tabName === "submissions") {
         renderCourseSubmissionsTab();
+        loadQuizAnalyticsSummaries();
     }
 }
 
@@ -1262,6 +1263,7 @@ function bindInstructorControls() {
     document.getElementById("close-assignment-modal-btn")?.addEventListener("click", closeAssignmentModal);
     document.getElementById("close-assignment-details-btn")?.addEventListener("click", closeAssignmentDetails);
     document.getElementById("close-quiz-attempts-btn")?.addEventListener("click", closeQuizAttempts);
+    document.getElementById("close-quiz-analytics-btn")?.addEventListener("click", closeQuizAnalytics);
     document.getElementById("submit-assignment-dropbox-btn")?.addEventListener("click", submitAssignmentDropbox);
     document.getElementById("refresh-grades-btn")?.addEventListener("click", () => {
         gradesLoaded = false;

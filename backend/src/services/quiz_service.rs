@@ -1,30 +1,22 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
-    QueryFilter, QueryOrder, Set, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    TransactionTrait,
 };
 use serde::Serialize;
 use std::collections::HashSet;
 
+use crate::entity::quiz::{self, Entity as QuizEntity};
 use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
-use crate::entity::quiz_options::{
-    ActiveModel as QuizOptionActiveModel, Column as QuizOptionColumn, Entity as QuizOptionEntity,
-};
+use crate::entity::quiz_options::ActiveModel as QuizOptionActiveModel;
 use crate::entity::quiz_questions::{
     ActiveModel as QuizQuestionActiveModel, Column as QuizQuestionColumn,
     Entity as QuizQuestionEntity, QuestionType,
 };
-use crate::entity::{
-    courses,
-    quiz::{self, Entity as QuizEntity},
-};
-use crate::models::quiz::{CreateQuiz, SaveQuizDraft, UpdateQuiz};
-use crate::services::auth_helpers::{
-    get_role_ids, get_user_id, has_staff_role, is_enrolled, is_student_only,
-};
-use crate::services::course_service::can_manage_course;
+use crate::models::quiz::{QuizEditorPayload, SaveQuizDraft};
 use crate::services::prerequisite_service;
+use crate::services::quiz_helper;
 
 fn validate_quiz_fields(
     title: Option<&str>,
@@ -104,26 +96,6 @@ fn validate_quiz_draft(data: &SaveQuizDraft) -> Result<(), HttpResponse> {
     Ok(())
 }
 
-pub async fn ensure_quiz_content_editable(
-    db: &DatabaseConnection,
-    quiz_id: i32,
-) -> Result<(), HttpResponse> {
-    let has_attempt = QuizAttemptEntity::find()
-        .filter(QuizAttemptColumn::QuizId.eq(quiz_id))
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?
-        .is_some();
-
-    if has_attempt {
-        return Err(HttpResponse::Conflict()
-            .body("Quiz content cannot be changed after attempts have started"));
-    }
-    Ok(())
-}
-
 pub async fn save_quiz_draft(
     db: &DatabaseConnection,
     session: &Session,
@@ -141,11 +113,12 @@ pub async fn save_quiz_draft(
                     return HttpResponse::BadRequest()
                         .body("Moving quizzes between courses is not supported");
                 }
-                if let Err(response) = require_can_manage_course(db, session, quiz.course_id).await
+                if let Err(response) =
+                    quiz_helper::require_can_manage_course_id(db, session, quiz.course_id).await
                 {
                     return response;
                 }
-                if let Err(response) = ensure_quiz_content_editable(db, quiz_id).await {
+                if let Err(response) = quiz_helper::ensure_content_editable(db, quiz_id).await {
                     return response;
                 }
                 Some(quiz)
@@ -157,7 +130,9 @@ pub async fn save_quiz_draft(
             }
         }
     } else {
-        if let Err(response) = require_can_manage_course(db, session, data.course_id).await {
+        if let Err(response) =
+            quiz_helper::require_can_manage_course_id(db, session, data.course_id).await
+        {
             return response;
         }
         None
@@ -172,17 +147,10 @@ pub async fn save_quiz_draft(
     };
 
     if let Some(existing_quiz) = existing_quiz.as_ref()
-        && let Err(err) = transaction
-            .execute(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "SELECT pg_advisory_xact_lock($1, $2)",
-                [2.into(), existing_quiz.quiz_id.into()],
-            ))
-            .await
+        && let Err(response) = quiz_helper::lock_quiz(&transaction, existing_quiz.quiz_id).await
     {
         let _ = transaction.rollback().await;
-        return HttpResponse::InternalServerError()
-            .body(format!("Quiz content lock error: {}", err));
+        return response;
     }
 
     let saved_quiz = if let Some(existing_quiz) = existing_quiz {
@@ -308,67 +276,36 @@ pub async fn save_quiz_draft(
     HttpResponse::Ok().json(saved_quiz)
 }
 
-async fn require_can_manage_course(
+pub async fn get_quiz_editor(
     db: &DatabaseConnection,
     session: &Session,
-    course_id: i32,
-) -> Result<(), HttpResponse> {
-    let course = courses::Entity::find_by_id(course_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding course: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
+    quiz_id: i32,
+) -> HttpResponse {
+    let quiz = match quiz_helper::require_can_manage_quiz(db, session, quiz_id).await {
+        Ok(quiz) => quiz,
+        Err(response) => return response,
+    };
+    let questions = match quiz_helper::load_editor_questions(db, quiz_id).await {
+        Ok(questions) => questions,
+        Err(response) => return response,
+    };
+    let prerequisite_module_ids =
+        match prerequisite_service::get_quiz_prerequisite_ids(db, quiz_id).await {
+            Ok(ids) => ids,
+            Err(response) => return response,
+        };
 
-    match can_manage_course(db, session, &course).await {
-        Ok(true) => Ok(()),
-        Ok(false) => {
-            Err(HttpResponse::Forbidden().body("You cannot manage quizzes for this course"))
-        }
-        Err(response) => Err(response),
-    }
-}
-
-#[derive(Serialize)]
-struct AttemptQuizOption {
-    option_id: i32,
-    option_text: String,
-    position: i32,
-}
-
-#[derive(Serialize)]
-struct AttemptQuizQuestion {
-    question_id: i32,
-    question_type: crate::entity::quiz_questions::QuestionType,
-    question_text: String,
-    position: i32,
-    points: i32,
-    options: Vec<AttemptQuizOption>,
-}
-
-#[derive(Serialize)]
-struct AttemptQuizPayload {
-    quiz: quiz::Model,
-    questions: Vec<AttemptQuizQuestion>,
-    access: AttemptQuizAccess,
-    timer: AttemptQuizTimer,
-}
-
-#[derive(Serialize)]
-struct AttemptQuizAccess {
-    can_attempt: bool,
-    preview_only: bool,
-    message: String,
-}
-
-#[derive(Serialize)]
-struct AttemptQuizTimer {
-    time_limit_minutes: Option<i32>,
-    expires_at: Option<String>,
-    remaining_seconds: Option<i64>,
-    message: String,
+    HttpResponse::Ok().json(QuizEditorPayload {
+        quiz_id,
+        course_id: quiz.course_id,
+        title: quiz.title,
+        description: quiz.description,
+        max_attempts: quiz.max_attempts,
+        time_limit: quiz.time_limit,
+        starts_at: quiz.starts_at,
+        prerequisite_module_ids,
+        questions,
+    })
 }
 
 #[derive(Serialize)]
@@ -412,17 +349,6 @@ async fn quiz_payloads(
     Ok(payloads)
 }
 
-pub async fn list_quizzes(db: &DatabaseConnection) -> HttpResponse {
-    match QuizEntity::find().all(db).await {
-        Ok(quizzes) if quizzes.is_empty() => HttpResponse::NotFound().body("No quizzes found"),
-        Ok(quizzes) => match quiz_payloads(db, quizzes).await {
-            Ok(payloads) => HttpResponse::Ok().json(payloads),
-            Err(response) => response,
-        },
-        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
-    }
-}
-
 pub async fn list_quizzes_by_course(db: &DatabaseConnection, course_id: i32) -> HttpResponse {
     match QuizEntity::find()
         .filter(quiz::Column::CourseId.eq(course_id))
@@ -438,307 +364,11 @@ pub async fn list_quizzes_by_course(db: &DatabaseConnection, course_id: i32) -> 
     }
 }
 
-pub async fn get_quiz_for_attempt(
-    db: &DatabaseConnection,
-    session: &Session,
-    quiz_id: i32,
-) -> HttpResponse {
-    let user_id = match get_user_id(session) {
-        Ok(id) => id,
-        Err(response) => return response,
-    };
-
-    let quiz = match QuizEntity::find_by_id(quiz_id).one(db).await {
-        Ok(Some(quiz)) => quiz,
-        Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
-    };
-
-    let role_ids = get_role_ids(session);
-    let access = if has_staff_role(&role_ids) {
-        if let Err(response) = require_can_manage_course(db, session, quiz.course_id).await {
-            return response;
-        }
-
-        AttemptQuizAccess {
-            can_attempt: false,
-            preview_only: true,
-            message:
-                "You can view the questions, but instructors and admins cannot attempt quizzes."
-                    .to_string(),
-        }
-    } else if is_student_only(&role_ids) {
-        if let Some(starts_at) = quiz.starts_at {
-            if starts_at > chrono::Local::now().naive_local() {
-                return HttpResponse::Forbidden().body("This quiz is not open yet");
-            }
-        }
-
-        if let Some(ends_at) = quiz.ends_at {
-            if ends_at < chrono::Local::now().naive_local() {
-                return HttpResponse::Forbidden().body("This quiz is closed");
-            }
-        }
-
-        match is_enrolled(db, user_id, quiz.course_id).await {
-            Ok(true) => {}
-            Ok(false) => {
-                return HttpResponse::Forbidden().body("You must be enrolled to attempt this quiz");
-            }
-            Err(response) => return response,
-        }
-
-        let prerequisite_ids =
-            match prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await {
-                Ok(ids) => ids,
-                Err(response) => return response,
-            };
-
-        match prerequisite_service::get_first_incomplete_required_module(
-            db,
-            user_id,
-            prerequisite_ids,
-        )
-        .await
-        {
-            Ok(Some(prerequisite)) => {
-                return HttpResponse::Forbidden().body(format!(
-                    "Complete {} before attempting this quiz",
-                    prerequisite.title
-                ));
-            }
-            Ok(None) => {}
-            Err(response) => return response,
-        }
-
-        if let Some(max_attempts) = quiz.max_attempts {
-            match QuizAttemptEntity::find()
-                .filter(QuizAttemptColumn::QuizId.eq(quiz_id))
-                .filter(QuizAttemptColumn::UserId.eq(user_id))
-                .all(db)
-                .await
-            {
-                Ok(attempts) => {
-                    let has_open_attempt = attempts
-                        .iter()
-                        .any(|attempt| attempt.submitted_at.is_none());
-
-                    if attempts.len() >= max_attempts as usize && !has_open_attempt {
-                        return HttpResponse::Forbidden().body("No attempts left");
-                    }
-                }
-                Err(err) => {
-                    return HttpResponse::InternalServerError()
-                        .body(format!("Database error: {}", err));
-                }
-            }
-        }
-
-        AttemptQuizAccess {
-            can_attempt: true,
-            preview_only: false,
-            message: "You can attempt this quiz.".to_string(),
-        }
-    } else {
-        return HttpResponse::Forbidden().body("Student role required to attempt this quiz");
-    };
-
-    let questions = match QuizQuestionEntity::find()
-        .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
-        .order_by_asc(QuizQuestionColumn::Position)
-        .all(db)
-        .await
-    {
-        Ok(questions) => questions,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
-    };
-
-    let mut attempt_questions = Vec::with_capacity(questions.len());
-
-    for question in questions {
-        let option_rows = match QuizOptionEntity::find()
-            .filter(QuizOptionColumn::QuestionId.eq(question.question_id))
-            .order_by_asc(QuizOptionColumn::Position)
-            .all(db)
-            .await
-        {
-            Ok(options) => options,
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error: {}", err));
-            }
-        };
-
-        if !access.preview_only
-            && question.question_type == QuestionType::Mcq
-            && (option_rows.len() < 2 || !option_rows.iter().any(|option| option.is_correct))
-        {
-            return HttpResponse::Conflict()
-                .body("This quiz has an invalid MCQ question and cannot be attempted yet");
-        }
-
-        let options = option_rows
-            .into_iter()
-            .map(|option| AttemptQuizOption {
-                option_id: option.option_id,
-                option_text: option.option_text,
-                position: option.position,
-            })
-            .collect();
-
-        attempt_questions.push(AttemptQuizQuestion {
-            question_id: question.question_id,
-            question_type: question.question_type,
-            question_text: question.question_text,
-            position: question.position,
-            points: question.points,
-            options,
-        });
-    }
-
-    HttpResponse::Ok().json(AttemptQuizPayload {
-        timer: AttemptQuizTimer {
-            time_limit_minutes: quiz.time_limit,
-            expires_at: None,
-            remaining_seconds: None,
-            message: quiz
-                .time_limit
-                .map(|minutes| format!("{} minute time limit", minutes))
-                .unwrap_or_else(|| "No time limit".to_string()),
-        },
-        access,
-        quiz,
-        questions: attempt_questions,
-    })
-}
-
-pub async fn create_quiz(
-    db: &DatabaseConnection,
-    session: &Session,
-    data: CreateQuiz,
-) -> HttpResponse {
-    if let Err(response) =
-        validate_quiz_fields(Some(&data.title), data.max_attempts, data.time_limit)
-    {
-        return response;
-    }
-
-    if let Err(response) = require_can_manage_course(db, session, data.course_id).await {
-        return response;
-    }
-
-    let new_quiz = quiz::ActiveModel {
-        course_id: Set(data.course_id),
-        title: Set(data.title),
-        description: Set(data.description),
-        max_attempts: Set(data.max_attempts),
-        time_limit: Set(data.time_limit),
-        starts_at: Set(data.starts_at),
-        ..Default::default()
-    };
-
-    match new_quiz.insert(db).await {
-        Ok(quiz) => {
-            if let Err(response) = prerequisite_service::replace_quiz_prerequisites(
-                db,
-                quiz.course_id,
-                quiz.quiz_id,
-                data.prerequisite_module_ids.unwrap_or_default(),
-            )
-            .await
-            {
-                return response;
-            }
-
-            HttpResponse::Ok().json(quiz)
-        }
-        Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
-    }
-}
-
-pub async fn update_quiz(
-    db: &DatabaseConnection,
-    session: &Session,
-    quiz_id: i32,
-    data: UpdateQuiz,
-) -> HttpResponse {
-    if let Err(response) = validate_quiz_fields(
-        data.title.as_deref(),
-        data.max_attempts.flatten(),
-        data.time_limit.flatten(),
-    ) {
-        return response;
-    }
-
-    match QuizEntity::find_by_id(quiz_id).one(db).await {
-        Ok(Some(updated_quiz)) => {
-            let course_id = updated_quiz.course_id;
-
-            if let Err(response) = require_can_manage_course(db, session, course_id).await {
-                return response;
-            }
-
-            if let Some(requested_course_id) = data.course_id {
-                if requested_course_id != course_id {
-                    return HttpResponse::BadRequest()
-                        .body("Moving quizzes between courses is not supported here");
-                }
-            }
-
-            let mut active: quiz::ActiveModel = updated_quiz.into();
-
-            if let Some(title) = data.title {
-                active.title = Set(title);
-            }
-            if let Some(description) = data.description {
-                active.description = Set(description);
-            }
-            if let Some(max_attempts) = data.max_attempts {
-                active.max_attempts = Set(max_attempts);
-            }
-            if let Some(time_limit) = data.time_limit {
-                active.time_limit = Set(time_limit);
-            }
-            if let Some(starts_at) = data.starts_at {
-                active.starts_at = Set(starts_at);
-            }
-
-            match active.update(db).await {
-                Ok(_) => {
-                    if let Some(prerequisite_module_ids) = data.prerequisite_module_ids {
-                        if let Err(response) = prerequisite_service::replace_quiz_prerequisites(
-                            db,
-                            course_id,
-                            quiz_id,
-                            prerequisite_module_ids,
-                        )
-                        .await
-                        {
-                            return response;
-                        }
-                    }
-
-                    HttpResponse::Ok().body(format!("Quiz with id {} updated!", quiz_id))
-                }
-                Err(err) => {
-                    HttpResponse::InternalServerError().body(format!("Update error: {}", err))
-                }
-            }
-        }
-        Ok(None) => HttpResponse::NotFound().body("Quiz not found"),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
-    }
-}
-
 pub async fn delete_quiz(db: &DatabaseConnection, session: &Session, quiz_id: i32) -> HttpResponse {
     match QuizEntity::find_by_id(quiz_id).one(db).await {
         Ok(Some(target_quiz)) => {
             if let Err(response) =
-                require_can_manage_course(db, session, target_quiz.course_id).await
+                quiz_helper::require_can_manage_course_id(db, session, target_quiz.course_id).await
             {
                 return response;
             }
@@ -753,5 +383,69 @@ pub async fn delete_quiz(db: &DatabaseConnection, session: &Session, quiz_id: i3
         }
         Ok(None) => HttpResponse::NotFound().body("Quiz not found!"),
         Err(err) => HttpResponse::InternalServerError().body(format!("Delete error {}", err)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_quiz_draft;
+    use crate::entity::quiz_questions::QuestionType;
+    use crate::models::quiz::{SaveQuizDraft, SaveQuizOption, SaveQuizQuestion};
+
+    fn valid_draft() -> SaveQuizDraft {
+        SaveQuizDraft {
+            course_id: 1,
+            title: "Quiz".to_string(),
+            description: None,
+            max_attempts: Some(1),
+            time_limit: Some(30),
+            starts_at: None,
+            prerequisite_module_ids: Vec::new(),
+            questions: vec![SaveQuizQuestion {
+                question_type: QuestionType::Mcq,
+                question_text: "Question".to_string(),
+                position: 1,
+                points: 1,
+                options: vec![
+                    SaveQuizOption {
+                        option_text: "Correct".to_string(),
+                        is_correct: true,
+                        position: 1,
+                    },
+                    SaveQuizOption {
+                        option_text: "Wrong".to_string(),
+                        is_correct: false,
+                        position: 2,
+                    },
+                ],
+            }],
+        }
+    }
+
+    #[test]
+    fn accepts_a_valid_aggregate_quiz() {
+        assert!(validate_quiz_draft(&valid_draft()).is_ok());
+    }
+
+    #[test]
+    fn rejects_duplicate_question_positions() {
+        let mut draft = valid_draft();
+        draft.questions.push(SaveQuizQuestion {
+            question_type: QuestionType::LongAnswer,
+            question_text: "Written".to_string(),
+            position: 1,
+            points: 2,
+            options: Vec::new(),
+        });
+
+        assert!(validate_quiz_draft(&draft).is_err());
+    }
+
+    #[test]
+    fn rejects_multiple_correct_mcq_options() {
+        let mut draft = valid_draft();
+        draft.questions[0].options[1].is_correct = true;
+
+        assert!(validate_quiz_draft(&draft).is_err());
     }
 }

@@ -837,7 +837,8 @@
 #add-module-modal,
 #assignment-modal,
 #assignment-details-modal,
-#quiz-attempts-modal {
+#quiz-attempts-modal,
+#quiz-analytics-modal {
     position: fixed;
     inset: 0;
     z-index: 1050;
@@ -858,14 +859,113 @@
 }
 
 #assignment-details-modal,
-#quiz-attempts-modal {
+#quiz-attempts-modal,
+#quiz-analytics-modal {
     padding: 32px;
 }
 
 #assignment-details-modal .assignment-details-modal,
-#quiz-attempts-modal .quiz-attempts-modal {
+#quiz-attempts-modal .quiz-attempts-modal,
+#quiz-analytics-modal .quiz-analytics-modal-content {
     width: min(860px, 100%);
     max-height: min(820px, calc(100vh - 64px));
+}
+
+.quiz-analytics-list,
+.quiz-analytics-question-list {
+    display: grid;
+    gap: 10px;
+}
+
+.quiz-analytics-summary,
+.quiz-analytics-question {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 14px;
+    background: #ffffff;
+}
+
+.quiz-analytics-summary > div,
+.quiz-analytics-question > div {
+    display: grid;
+    gap: 5px;
+}
+
+.quiz-analytics-summary span,
+.quiz-analytics-question span,
+.quiz-analytics-attempt-count {
+    color: #475467;
+    font-size: 0.9rem;
+}
+
+.quiz-analytics-summary.blocked {
+    background: #f9fafb;
+}
+
+.quiz-analytics-blocked-message {
+    color: #b42318 !important;
+    font-weight: 700;
+}
+
+.quiz-analytics-modal-content {
+    display: grid;
+    gap: 16px;
+}
+
+.quiz-analytics-modal-content h2,
+.quiz-analytics-attempt-count {
+    margin: 0;
+}
+
+.quiz-analytics-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.quiz-analytics-metric {
+    display: grid;
+    gap: 10px;
+    border: 1px solid #dfe3e8;
+    border-radius: 8px;
+    padding: 14px;
+    background: #f8f9fb;
+}
+
+.quiz-analytics-metric span {
+    color: #475467;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.quiz-analytics-metric strong {
+    font-size: 1.45rem;
+}
+
+.quiz-analytics-result {
+    flex: 0 0 auto;
+    color: #155eef;
+    text-align: right;
+}
+
+@media (max-width: 700px) {
+    .quiz-analytics-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .quiz-analytics-summary,
+    .quiz-analytics-question {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .quiz-analytics-result {
+        text-align: left;
+    }
 }
 
 .course-edit-modal,

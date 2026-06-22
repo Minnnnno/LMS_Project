@@ -133,6 +133,146 @@ function editQuiz(event, quizId) {
     window.location.href = `/course/${courseId}/quiz-builder?quiz_id=${quizId}`;
 }
 
+function formatAnalyticsPercentage(value) {
+    const number = Number(value);
+    return `${Number.isFinite(number) ? Math.round(number) : 0}%`;
+}
+
+function renderQuizAnalyticsSummaries(summaries) {
+    const list = document.getElementById("course-quiz-analytics-list");
+
+    if (!list) {
+        return;
+    }
+
+    if (!summaries.length) {
+        list.innerHTML = '<p class="grades-empty">No quizzes are available for this course.</p>';
+        return;
+    }
+
+    list.innerHTML = summaries.map((summary) => {
+        const attemptLabel = `${summary.submitted_attempts} submitted attempt${summary.submitted_attempts === 1 ? "" : "s"}`;
+
+        if (!summary.analytics_available) {
+            return `
+                <div class="quiz-analytics-summary blocked">
+                    <div>
+                        <strong>${escapeHtml(summary.title || "Untitled quiz")}</strong>
+                        <span>${escapeHtml(attemptLabel)}</span>
+                        <span class="quiz-analytics-blocked-message">${escapeHtml(summary.message)}</span>
+                    </div>
+                    <button type="button" class="module-action-btn" disabled>View Analytics</button>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="quiz-analytics-summary">
+                <div>
+                    <strong>${escapeHtml(summary.title || "Untitled quiz")}</strong>
+                    <span>${escapeHtml(attemptLabel)}</span>
+                </div>
+                <button type="button" class="module-action-btn" onclick="openQuizAnalytics(${summary.quiz_id})">View Analytics</button>
+            </div>
+        `;
+    }).join("");
+}
+
+async function loadQuizAnalyticsSummaries() {
+    const list = document.getElementById("course-quiz-analytics-list");
+
+    if (!isInstructor || !list) {
+        return;
+    }
+
+    list.innerHTML = '<p class="grades-empty">Loading quiz analytics...</p>';
+
+    try {
+        const response = await axios.get(`/api/quiz-analytics/course/${courseId}`);
+        renderQuizAnalyticsSummaries(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+        list.innerHTML = `<p class="grades-error">${escapeHtml(error.response?.data || "Unable to load quiz analytics.")}</p>`;
+    }
+}
+
+function renderQuizAnalyticsDetail(analytics) {
+    const questions = Array.isArray(analytics.questions) ? analytics.questions : [];
+    const attemptLabel = `${analytics.submitted_attempts} submitted attempt${analytics.submitted_attempts === 1 ? "" : "s"}`;
+
+    return `
+        <div class="quiz-analytics-metrics">
+            <div class="quiz-analytics-metric">
+                <span>Average class performance</span>
+                <strong>${formatAnalyticsPercentage(analytics.average_class_performance)}</strong>
+            </div>
+            <div class="quiz-analytics-metric">
+                <span>Attempts above 80%</span>
+                <strong>${formatAnalyticsPercentage(analytics.above_80_percentage)}</strong>
+            </div>
+            <div class="quiz-analytics-metric">
+                <span>Attempts below 40%</span>
+                <strong>${formatAnalyticsPercentage(analytics.below_40_percentage)}</strong>
+            </div>
+        </div>
+        <p class="quiz-analytics-attempt-count">Based on ${escapeHtml(attemptLabel)}.</p>
+        <div class="quiz-analytics-question-list">
+            ${questions.map((question) => {
+                const result = question.question_type === "mcq"
+                    ? `${formatAnalyticsPercentage(question.correct_percentage)} answered correctly`
+                    : `Average score: ${escapeHtml(formatGradeNumber(question.average_score) ?? "0")} / ${escapeHtml(question.max_points)}`;
+
+                return `
+                    <div class="quiz-analytics-question">
+                        <div>
+                            <strong>Question ${escapeHtml(question.position)}</strong>
+                            <span>${escapeHtml(question.question_text)}</span>
+                        </div>
+                        <strong class="quiz-analytics-result">${result}</strong>
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
+}
+
+async function openQuizAnalytics(quizId) {
+    const modal = document.getElementById("quiz-analytics-modal");
+    const title = document.getElementById("quiz-analytics-title");
+    const detail = document.getElementById("quiz-analytics-detail");
+
+    if (title) {
+        title.textContent = "Quiz Analytics";
+    }
+    if (detail) {
+        detail.innerHTML = '<p class="grades-empty">Loading analytics...</p>';
+    }
+    if (modal) {
+        modal.style.display = "flex";
+    }
+
+    try {
+        const response = await axios.get(`/api/quiz-analytics/quiz/${quizId}`);
+        if (title) {
+            title.textContent = `${response.data.title || "Quiz"} Analytics`;
+        }
+        if (detail) {
+            detail.innerHTML = renderQuizAnalyticsDetail(response.data);
+        }
+    } catch (error) {
+        if (detail) {
+            detail.innerHTML = `<p class="grades-error">${escapeHtml(error.response?.data || "Unable to load quiz analytics.")}</p>`;
+        }
+        loadQuizAnalyticsSummaries();
+    }
+}
+
+function closeQuizAnalytics() {
+    const modal = document.getElementById("quiz-analytics-modal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+}
+
 function renderStudentQuizReviewAnswer(answer) {
     if (answer.question_type === "long_answer") {
         return `

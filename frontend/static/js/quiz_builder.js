@@ -356,15 +356,6 @@ async function putJson(url, payload) {
     return response.text();
 }
 
-async function deleteRequest(url) {
-    const response = await fetch(url, { method: "DELETE" });
-
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || "Request failed.");
-    }
-}
-
 async function getJson(url) {
     const response = await fetch(url);
 
@@ -416,12 +407,7 @@ async function loadExistingQuiz() {
 
     setSaveStatus("Loading quiz...");
 
-    const quizzes = await getJson(`/api/quiz/${courseId}`);
-    const quiz = quizzes.find((item) => Number(item.quiz_id) === editingQuizId);
-
-    if (!quiz) {
-        throw new Error("Quiz not found for this course.");
-    }
+    const quiz = await getJson(`/api/quiz/${editingQuizId}/draft`);
 
     document.querySelector(".quiz-builder-header h1").textContent = "Edit Quiz";
     document.querySelector("#save-quiz-draft-btn span").textContent = "Save Changes";
@@ -432,13 +418,13 @@ async function loadExistingQuiz() {
     setDateTimeInputs(quiz.starts_at);
     renderQuizPrerequisiteOptions(quiz.prerequisite_module_ids || []);
 
-    const questions = await getJson(`/api/quiz-questions/${editingQuizId}`);
+    const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
     questionList.innerHTML = "";
     questionCounter = 0;
 
     for (const question of [...questions].sort((first, second) => Number(first.position) - Number(second.position))) {
-        const options = question.question_type === "mcq"
-            ? await getJson(`/api/quiz-options/by-question/${question.question_id}`)
+        const options = question.question_type === "mcq" && Array.isArray(question.options)
+            ? question.options
             : [];
         populateQuestion(question, Array.isArray(options) ? options : []);
     }
@@ -472,40 +458,27 @@ async function saveDraft() {
             time_limit: draft.time_limit ? Number(draft.time_limit) : null,
             starts_at: draft.starts_at,
             prerequisite_module_ids: draft.prerequisite_module_ids,
-        };
-
-        const quiz = editingQuizId
-            ? { quiz_id: editingQuizId }
-            : await postJson("/api/quiz", quizPayload);
-
-        if (editingQuizId) {
-            await putJson(`/api/quiz/${editingQuizId}`, quizPayload);
-            const existingQuestions = await getJson(`/api/quiz-questions/${editingQuizId}`);
-
-            for (const question of existingQuestions) {
-                await deleteRequest(`/api/quiz-questions/${question.question_id}`);
-            }
-        }
-
-        for (const question of draft.questions) {
-            const savedQuestion = await postJson("/api/quiz-questions", {
-                quiz_id: quiz.quiz_id,
+            questions: draft.questions.map((question) => ({
                 question_type: question.question_type,
                 question_text: question.question_text,
-                position: question.position,
+                position: Number(question.position),
                 points: Number(question.points),
-            });
+                options: question.question_type === "mcq"
+                    ? question.options
+                        .filter((option) => option.option_text)
+                        .map((option) => ({
+                            option_text: option.option_text,
+                            is_correct: option.is_correct,
+                            position: Number(option.position),
+                        }))
+                    : [],
+            })),
+        };
 
-            if (question.question_type === "mcq") {
-                for (const option of question.options.filter((item) => item.option_text)) {
-                    await postJson("/api/quiz-options", {
-                        question_id: savedQuestion.question_id,
-                        option_text: option.option_text,
-                        is_correct: option.is_correct,
-                        position: option.position,
-                    });
-                }
-            }
+        if (editingQuizId) {
+            await putJson(`/api/quiz/${editingQuizId}/draft`, quizPayload);
+        } else {
+            await postJson("/api/quiz/draft", quizPayload);
         }
 
         setSaveStatus(editingQuizId ? "Quiz updated." : "Quiz draft saved.", "success");

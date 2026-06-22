@@ -159,6 +159,22 @@ body {
     color: #b42318;
 }
 
+.quiz-autosave-status {
+    min-height: 18px;
+    margin: 6px 0 0;
+    color: #667085;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.quiz-autosave-status.success {
+    color: #166534;
+}
+
+.quiz-autosave-status.error {
+    color: #b42318;
+}
+
 @media (max-width: 900px) {
     .quiz-attempt-page {
         padding: 24px;

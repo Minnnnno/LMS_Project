@@ -6,6 +6,8 @@ let quizPayload = null;
 let attempt = null;
 let isSubmitting = false;
 let timerIntervalId = null;
+let autosaveTimeoutId = null;
+let autosaveQueue = Promise.resolve();
 
 function setStatus(message, type = "") {
     const status = document.getElementById("quiz-attempt-status");
@@ -259,6 +261,81 @@ function collectAnswers() {
     });
 }
 
+function setAutosaveStatus(message, type = "") {
+    const status = document.getElementById("quiz-autosave-status");
+    if (status) {
+        status.textContent = message;
+        status.className = type ? `quiz-autosave-status ${type}` : "quiz-autosave-status";
+    }
+}
+
+function restoreAnswers(savedAnswers) {
+    for (const answer of Array.isArray(savedAnswers) ? savedAnswers : []) {
+        if (answer.selected_option_id !== null) {
+            const option = document.querySelector(
+                `input[name="question-${answer.question_id}"][value="${answer.selected_option_id}"]`
+            );
+            if (option) {
+                option.checked = true;
+            }
+        }
+        if (answer.answer_text !== null) {
+            const input = document.querySelector(`textarea[data-question-id="${answer.question_id}"]`);
+            if (input) {
+                input.value = answer.answer_text;
+            }
+        }
+    }
+    updateProgress();
+}
+
+function answerPayload() {
+    return collectAnswers().map((answer) => ({
+        question_id: answer.question_id,
+        selected_option_id: answer.selected_option_id ?? null,
+        answer_text: answer.answer_text ?? null,
+    }));
+}
+
+function saveAnswers(force = false) {
+    if (!attempt || (isSubmitting && !force) || !canAttemptQuiz()) {
+        return Promise.resolve();
+    }
+
+    setAutosaveStatus("Saving...");
+    const request = autosaveQueue
+        .catch(() => undefined)
+        .then(() => requestJson(`/api/quiz-attempts/${attempt.attempt_id}/answers`, {
+            method: "PUT",
+            body: JSON.stringify({ answers: answerPayload() }),
+        }));
+    autosaveQueue = request;
+
+    return request.then(() => {
+        setAutosaveStatus("Saved", "success");
+    }).catch((error) => {
+        setAutosaveStatus("Save failed", "error");
+        throw error;
+    });
+}
+
+function scheduleAutosave(event) {
+    if (isSubmitting) {
+        return;
+    }
+    clearTimeout(autosaveTimeoutId);
+    if (event.target.matches('input[data-question-type="mcq"]')) {
+        saveAnswers().catch(() => undefined);
+        return;
+    }
+    autosaveTimeoutId = setTimeout(() => saveAnswers().catch(() => undefined), 800);
+}
+
+function flushAnswers() {
+    clearTimeout(autosaveTimeoutId);
+    return saveAnswers(true);
+}
+
 function updateProgress() {
     if (!canAttemptQuiz()) {
         document.getElementById("quiz-progress-text").textContent = "Preview only";
@@ -372,37 +449,11 @@ async function submitQuiz(options = {}) {
     setStatus(autoSubmit ? "Time is up. Submitting your quiz..." : "Submitting quiz...");
 
     try {
-        const answers = collectAnswers();
-
-        for (const answer of answers) {
-            if (answer.question_type === "mcq" && answer.selected_option_id === null) {
-                continue;
-            }
-
-            if (answer.question_type === "long_answer" && !answer.answer_text) {
-                continue;
-            }
-
-            if (answer.question_type === "mcq") {
-                await requestJson("/api/quiz-answers/mcq", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        attempt_id: attempt.attempt_id,
-                        question_id: answer.question_id,
-                        selected_option_id: answer.selected_option_id,
-                        auto_submit: autoSubmit,
-                    }),
-                });
-            } else {
-                await requestJson("/api/quiz-answers/long-answer", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        attempt_id: attempt.attempt_id,
-                        question_id: answer.question_id,
-                        answer_text: answer.answer_text,
-                        auto_submit: autoSubmit,
-                    }),
-                });
+        try {
+            await flushAnswers();
+        } catch (error) {
+            if (!autoSubmit) {
+                throw error;
             }
         }
 
@@ -431,7 +482,7 @@ async function submitQuiz(options = {}) {
 async function init() {
     try {
         setStatus("Loading quiz...");
-        quizPayload = await requestJson(`/api/quiz/${quizId}/attempt-view`);
+        quizPayload = await requestJson(`/api/quiz/${quizId}/attempt`, { method: "POST" });
         renderQuiz();
 
         if (!canAttemptQuiz()) {
@@ -441,16 +492,12 @@ async function init() {
             return;
         }
 
-        const attemptResponse = await requestJson("/api/quiz-attempts", {
-            method: "POST",
-            body: JSON.stringify({
-                quiz_id: Number(quizId),
-            }),
-        });
-
-        attempt = attemptResponse.attempt || attemptResponse;
-        startTimer(attemptResponse.timer || quizPayload.timer);
+        attempt = quizPayload.attempt;
+        restoreAnswers(quizPayload.answers);
+        document.getElementById("quiz-question-list")?.addEventListener("input", scheduleAutosave);
+        startTimer(quizPayload.timer);
         setStatus("");
+        setAutosaveStatus(quizPayload.answers.length ? "Saved answers restored" : "Autosave ready", "success");
         setSubmitVisible(true);
         setSubmitState(false);
     } catch (error) {
