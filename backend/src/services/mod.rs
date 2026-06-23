@@ -1,5 +1,6 @@
 pub mod auth_helpers;
 pub mod assignment_service;
+pub mod captcha_service;
 pub mod cloudinary_service;
 pub mod course_service;
 pub mod email_verification_service;
