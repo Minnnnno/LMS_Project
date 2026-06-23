@@ -13,6 +13,10 @@ pub struct Model {
 
     pub enrolled_at: DateTime<Utc>,
 
+    pub stripe_checkout_session_id: Option<String>,
+
+    pub paid_at: Option<DateTime<Utc>>,
+
     pub created_at: Option<DateTimeWithTimeZone>,
 
     pub updated_at: Option<DateTimeWithTimeZone>,

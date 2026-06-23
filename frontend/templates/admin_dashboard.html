@@ -469,6 +469,10 @@
                                 <input id="course-image-file" name="background_image_file" type="file" accept="image/*" class="form-control">
                                 <div class="form-text">An uploaded image overrides the URL.</div>
                             </div>
+                            <div class="col-12">
+                                <label class="form-label">Choose a preset</label>
+                                <div class="admin-course-preset-grid" data-course-preset-grid></div>
+                            </div>
                         </div>
                         <div class="form-text mt-3">Status defaults to draft if you leave it unchanged.</div>
                         <button class="btn btn-dark rounded-3 mt-3" type="submit">Create course</button>
@@ -638,6 +642,7 @@
                             <thead>
                                 <tr>
                                     <th>Course ID</th>
+                                    <th>Cover</th>
                                     <th>Name</th>
                                     <th>Organisation</th>
                                     <th>Instructor</th>
@@ -648,7 +653,7 @@
                                 </tr>
                             </thead>
                             <tbody id="courses-table-body">
-                                <tr><td colspan="8" class="text-secondary">Loading courses...</td></tr>
+                                <tr><td colspan="9" class="text-secondary">Loading courses...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -768,6 +773,29 @@ const adminRecords = {
 };
 let adminStats = null;
 
+const COURSE_IMAGE_PRESETS = [
+    { title: "Software Development", url: "/static/images/course-presets/software-development.jpg" },
+    { title: "Data Analytics", url: "/static/images/course-presets/data-analytics.jpg" },
+    { title: "Cybersecurity", url: "/static/images/course-presets/cybersecurity.jpg" },
+    { title: "Cloud Computing", url: "/static/images/course-presets/cloud-computing.jpg" },
+    { title: "Artificial Intelligence", url: "/static/images/course-presets/artificial-intelligence.jpg" },
+    { title: "Business Management", url: "/static/images/course-presets/business-management.jpg" },
+    { title: "Digital Marketing", url: "/static/images/course-presets/digital-marketing.jpg" },
+    { title: "Entrepreneurship", url: "/static/images/course-presets/entrepreneurship.jpg" },
+    { title: "Finance", url: "/static/images/course-presets/finance.jpg" },
+    { title: "Project Management", url: "/static/images/course-presets/project-management.jpg" },
+    { title: "Design Thinking", url: "/static/images/course-presets/design-thinking.jpg" },
+    { title: "UI/UX Design", url: "/static/images/course-presets/ui-ux-design.jpg" },
+    { title: "Photography", url: "/static/images/course-presets/photography.jpg" },
+    { title: "Healthcare", url: "/static/images/course-presets/healthcare.jpg" },
+    { title: "Education", url: "/static/images/course-presets/education.jpg" },
+    { title: "Communication", url: "/static/images/course-presets/communication.jpg" },
+    { title: "Leadership", url: "/static/images/course-presets/leadership.jpg" },
+    { title: "Languages", url: "/static/images/course-presets/languages.jpg" },
+    { title: "Engineering", url: "/static/images/course-presets/engineering.jpg" },
+    { title: "Hospitality", url: "/static/images/course-presets/hospitality.jpg" },
+];
+
 function renderAdminStats(stats) {
     adminStats = stats;
 
@@ -882,7 +910,6 @@ function applyAdminPageScope() {
     document.querySelectorAll("[data-admin-managed-content]").forEach((section) => {
         section.hidden = isDashboard || isAnalytics;
     });
-
     if (isDashboard) {
         document.querySelector(".dashboard-header .btn").hidden = true;
         return;
@@ -1417,6 +1444,39 @@ function updateAdminCoursePaidFields(form) {
     });
 }
 
+function renderCoursePresetPickers() {
+    document.querySelectorAll("[data-course-preset-grid]").forEach((grid) => {
+        grid.innerHTML = COURSE_IMAGE_PRESETS.map((preset) => `
+            <button
+                class="admin-course-preset-option"
+                type="button"
+                data-course-preset-url="${escapeHtml(preset.url)}"
+                title="${escapeHtml(preset.title)}"
+            >
+                <span class="admin-course-preset-thumb" style="background-image: url('${escapeHtml(preset.url)}')"></span>
+                <span>${escapeHtml(preset.title)}</span>
+            </button>
+        `).join("");
+        syncCoursePresetPicker(grid.closest("form"));
+    });
+}
+
+function syncCoursePresetPicker(form) {
+    if (!form) {
+        return;
+    }
+
+    const selectedUrl = form.querySelector("[name='background_image_url']")?.value || "";
+
+    form.querySelectorAll("[data-course-preset-url]").forEach((button) => {
+        button.classList.toggle("selected", button.dataset.coursePresetUrl === selectedUrl);
+    });
+}
+
+function courseImageUrl(course) {
+    return course.background_image_url || "/static/images/course-presets/education.jpg";
+}
+
 async function submitJson(endpoint, method, payload) {
     const response = await fetch(endpoint, {
         method,
@@ -1530,7 +1590,14 @@ function formatDateTime(value) {
         return value;
     }
 
-    return date.toLocaleString();
+    return date.toLocaleString(undefined, {
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+    });
 }
 
 function editButton(domain, id, label) {
@@ -1993,6 +2060,7 @@ async function loadAdminTables() {
             coursesTableBody,
             courses.map((course) => tableRow([
                 escapeHtml(course.course_id),
+                `<span class="admin-course-cover-thumb" style="background-image: url('${escapeHtml(courseImageUrl(course))}')" aria-label="Course cover"></span>`,
                 escapeHtml(course.name ?? "Untitled course"),
                 escapeHtml(course.org_id ? organisationNames.get(course.org_id) || `Organisation #${course.org_id}` : "-"),
                 escapeHtml(course.instructor_id ? userNames.get(course.instructor_id) || `User #${course.instructor_id}` : "-"),
@@ -2002,7 +2070,7 @@ async function loadAdminTables() {
                 courseActionButtons(course.course_id),
             ])).join(""),
             "No courses found.",
-            8,
+            9,
         );
 
         renderTableBody(
@@ -2010,7 +2078,7 @@ async function loadAdminTables() {
             enrollments.map((enrollment) => tableRow([
                 escapeHtml(userNames.get(enrollment.user_id) || `User #${enrollment.user_id}`),
                 escapeHtml(courseNames.get(enrollment.course_id) || `Course #${enrollment.course_id}`),
-                escapeHtml(enrollment.enrolled_at),
+                escapeHtml(formatDateTime(enrollment.enrolled_at)),
                 actionButtons([
                     deleteButton(`/admin/enrollments/${enrollment.user_id}/${enrollment.course_id}`, `enrollment ${enrollment.user_id}/${enrollment.course_id}`)
                         .replace(">Delete</button>", ">Unenroll</button>"),
@@ -2034,7 +2102,7 @@ async function loadAdminTables() {
             usersTableBody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(message)}</td></tr>`;
         }
         if (coursesTableBody) {
-            coursesTableBody.innerHTML = `<tr><td colspan="8" class="text-danger">${escapeHtml(message)}</td></tr>`;
+            coursesTableBody.innerHTML = `<tr><td colspan="9" class="text-danger">${escapeHtml(message)}</td></tr>`;
         }
         if (enrollmentsTableBody) {
             enrollmentsTableBody.innerHTML = `<tr><td colspan="4" class="text-danger">${escapeHtml(message)}</td></tr>`;
@@ -2066,6 +2134,7 @@ function resetAdminEditForm(form) {
     form.reset();
     resetAdminComboboxes(form);
     updateAdminCoursePaidFields(form);
+    syncCoursePresetPicker(form);
 }
 
 function beginInlineEdit(domain, id, row) {
@@ -2110,6 +2179,7 @@ function beginInlineEdit(domain, id, row) {
         const price = Number.isFinite(Number(record.price_cents)) ? (Number(record.price_cents) / 100).toFixed(2) : "";
         row.innerHTML = `
             <td>${escapeHtml(record.course_id)}</td>
+            <td><input class="form-control form-control-sm" name="background_image_url" value="${escapeHtml(record.background_image_url || "")}" aria-label="Background image URL"></td>
             <td><input class="form-control form-control-sm" name="name" value="${escapeHtml(record.name || "")}" maxlength="255" required></td>
             <td><select class="form-select form-select-sm" name="org_id">${selectOptions(adminRecords.organisations, "org_id", (organisation) => organisation.org_name, record.org_id, "No organisation")}</select></td>
             <td><select class="form-select form-select-sm" name="instructor_id">${selectOptions(adminRecords.users, "user_id", (user) => `${user.first_name} ${user.last_name}`, record.instructor_id, "No instructor")}</select></td>
@@ -2209,7 +2279,7 @@ async function saveInlineEdit(domain, id, row) {
             currency: isPaid ? row.querySelector("[name='currency']").value : null,
             is_paid: isPaid,
             description: record.description || null,
-            background_image_url: record.background_image_url || null,
+            background_image_url: row.querySelector("[name='background_image_url']").value.trim() || null,
         };
     }
 
@@ -2289,9 +2359,16 @@ document.querySelectorAll(".admin-action-form[data-endpoint='/admin/courses']").
     form.querySelector("[name='is_paid']")?.addEventListener("change", () => {
         updateAdminCoursePaidFields(form);
     });
+    form.querySelector("[name='background_image_url']")?.addEventListener("input", () => {
+        syncCoursePresetPicker(form);
+    });
+    form.querySelector("[name='background_image_file']")?.addEventListener("change", () => {
+        syncCoursePresetPicker(form);
+    });
     updateAdminCoursePaidFields(form);
 });
 
+renderCoursePresetPickers();
 initializeAdminComboboxes();
 
 document.addEventListener("click", (event) => {
@@ -2307,6 +2384,24 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+    const presetButton = event.target.closest("[data-course-preset-url]");
+
+    if (presetButton) {
+        const form = presetButton.closest("form");
+        const urlInput = form?.querySelector("[name='background_image_url']");
+        const fileInput = form?.querySelector("[name='background_image_file']");
+
+        if (urlInput) {
+            urlInput.value = presetButton.dataset.coursePresetUrl || "";
+            urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        if (fileInput) {
+            fileInput.value = "";
+        }
+        syncCoursePresetPicker(form);
+        return;
+    }
+
     const editButtonTarget = event.target.closest("[data-inline-edit-domain]");
 
     if (editButtonTarget) {

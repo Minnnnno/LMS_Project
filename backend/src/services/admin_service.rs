@@ -244,6 +244,21 @@ fn validate_optional_http_url(value: Option<&str>, field_name: &str) -> Result<(
     }
 }
 
+fn validate_optional_course_image_url(value: Option<&str>) -> Result<(), HttpResponse> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+
+    if value.starts_with("/static/images/course-presets/")
+        && !value.contains("..")
+        && (value.ends_with(".jpg") || value.ends_with(".jpeg") || value.ends_with(".png") || value.ends_with(".webp"))
+    {
+        return Ok(());
+    }
+
+    validate_optional_http_url(Some(value), "Background image URL")
+}
+
 fn validate_optional_website_url(website_url: Option<&str>) -> Result<(), HttpResponse> {
     validate_optional_http_url(website_url, "Website URL")
 }
@@ -1355,9 +1370,7 @@ pub async fn create_course_service(
             Ok(value) => value,
             Err(response) => return response,
         };
-    if let Err(response) =
-        validate_optional_http_url(background_image_url.as_deref(), "Background image URL")
-    {
+    if let Err(response) = validate_optional_course_image_url(background_image_url.as_deref()) {
         return response;
     }
     let now = singapore_now();
@@ -1427,9 +1440,7 @@ pub async fn update_course_service(
             Ok(value) => value,
             Err(response) => return response,
         };
-    if let Err(response) =
-        validate_optional_http_url(background_image_url.as_deref(), "Background image URL")
-    {
+    if let Err(response) = validate_optional_course_image_url(background_image_url.as_deref()) {
         return response;
     }
     let mut active_course = course.into_active_model();

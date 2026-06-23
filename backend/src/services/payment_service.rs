@@ -340,6 +340,7 @@ async fn fulfill_payment(
     let enrollment = enrollments::ActiveModel {
         user_id: Set(user_id),
         course_id: Set(course_id),
+        paid_at: Set(Some(Utc::now())),
         ..Default::default()
     };
 

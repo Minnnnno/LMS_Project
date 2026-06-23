@@ -7,7 +7,10 @@
 <section id="organisation-courses-section" class="course-section organisation-course-section" data-managed-only="{{ is_instructor_managed_only }}" hidden>
     <div class="course-section-heading">
         <div>
-            {% if is_instructor_managed_only %}
+            {% if role_names and "LMS Admin" in role_names %}
+            <h1 class="section-title">Edit Courses</h1>
+            <p class="page-subtitle">Open a course dashboard to add modules, edit modules, and manage course content.</p>
+            {% elif is_instructor_managed_only %}
             <h1 class="section-title">Managed Courses</h1>
             <p class="page-subtitle">Courses assigned to you.</p>
             {% else %}
