@@ -7,6 +7,7 @@ let allSystemUsers = [];           // all users (for file matching)
 let selectedEnrollUserIds = new Set();
 let fileMatchedRows = [];          // parsed rows from CSV/Excel with matched user_id
 let courseInstructorState = { courses: [], instructors: [] };
+let userDirectoryPromise = null;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,13 @@ async function selectOrg(orgId, orgName) {
     document.getElementById('members-list').innerHTML = '<p class="text-muted small">Loading…</p>';
     hideEnrolPanel();
 
+    await Promise.all([
+        loadOrganisationMembers(orgId),
+        loadCourseInstructorManager(orgId),
+    ]);
+}
+
+async function loadOrganisationMembers(orgId) {
     try {
         const { data: members } = await axios.get(`/api/organisations/${orgId}/members`);
         renderMembers(members, orgId);
@@ -92,8 +100,6 @@ async function selectOrg(orgId, orgName) {
         document.getElementById('members-list').innerHTML =
             '<p class="text-danger small">Failed to load members.</p>';
     }
-
-    await loadCourseInstructorManager(orgId);
 }
 
 function renderMembers(members, orgId) {
@@ -262,22 +268,12 @@ document.getElementById('btn-open-enroll')?.addEventListener('click', async () =
     // Load unassigned users for manual tab
     document.getElementById('enroll-user-list').innerHTML =
         '<p class="text-muted small mb-0">Loading…</p>';
-    try {
-        const { data } = await axios.get('/api/users/unassigned');
-        allUnassignedUsers = data;
+    const directories = await loadUserDirectories();
+    if (directories.unassignedLoaded) {
         renderEnrollUserList(allUnassignedUsers);
-    } catch {
+    } else {
         document.getElementById('enroll-user-list').innerHTML =
             '<p class="text-danger small mb-0">Failed to load users.</p>';
-    }
-
-    // Load ALL users for file matching (silently)
-    try {
-        const { data } = await axios.get('/api/users/all');
-        allSystemUsers = data;
-    } catch {
-        // fallback: use unassigned list for matching
-        allSystemUsers = allUnassignedUsers;
     }
 });
 
@@ -329,6 +325,41 @@ function renderEnrollUserList(users) {
             </label>
         </div>
     `).join('');
+}
+
+async function loadUserDirectories(options = {}) {
+    if (userDirectoryPromise && !options.force) {
+        return userDirectoryPromise;
+    }
+
+    userDirectoryPromise = (async () => {
+        const [unassignedResult, allUsersResult] = await Promise.allSettled([
+            axios.get('/api/users/unassigned'),
+            axios.get('/api/users/all'),
+        ]);
+
+        allUnassignedUsers = unassignedResult.status === 'fulfilled'
+            ? unassignedResult.value.data
+            : [];
+        allSystemUsers = allUsersResult.status === 'fulfilled'
+            ? allUsersResult.value.data
+            : allUnassignedUsers;
+
+        if (unassignedResult.status === 'rejected') {
+            const list = document.getElementById('enroll-user-list');
+            const panel = document.getElementById('enroll-panel');
+            if (list && panel?.style.display !== 'none') {
+                list.innerHTML = '<p class="text-danger small mb-0">Failed to load users.</p>';
+            }
+        }
+
+        return {
+            unassignedLoaded: unassignedResult.status === 'fulfilled',
+            allUsersLoaded: allUsersResult.status === 'fulfilled',
+        };
+    })();
+
+    return userDirectoryPromise;
 }
 
 function toggleEnrollUser(userId, checked) {
@@ -579,19 +610,11 @@ async function doEnroll(userIds, source, newUsers = []) {
         }
         showFeedback(msg, type);
 
-        // Refresh members
-        await selectOrg(currentOrgId, currentOrgName);
-
-        // Refresh user lists
-        try {
-            const { data: fresh } = await axios.get('/api/users/unassigned');
-            allUnassignedUsers = fresh;
-            if (source === 'manual') renderEnrollUserList(fresh);
-        } catch {}
-        try {
-            const { data: freshAll } = await axios.get('/api/users/all');
-            allSystemUsers = freshAll;
-        } catch {}
+        await Promise.all([
+            selectOrg(currentOrgId, currentOrgName),
+            loadUserDirectories({ force: true }),
+        ]);
+        if (source === 'manual') renderEnrollUserList(allUnassignedUsers);
 
         selectedEnrollUserIds.clear();
         if (source === 'file') clearFilePreview();
@@ -620,4 +643,7 @@ function showCourseInstructorFeedback(msg, type) {
     el.innerHTML = `<div class="result-summary ${cls}">${msg}</div>`;
 }
 
-loadOrganisations();
+Promise.allSettled([
+    loadOrganisations(),
+    loadUserDirectories(),
+]);
