@@ -37,6 +37,8 @@ struct AdminStats {
 #[derive(Deserialize)]
 pub struct AdminAnalyticsQuery {
     org_id: Option<i32>,
+    date_range: Option<String>,
+    course_payment: Option<String>,
 }
 
 #[get("/admin/stats")]
@@ -89,7 +91,15 @@ pub async fn admin_get_analytics_data(
     query: web::Query<AdminAnalyticsQuery>,
 ) -> impl Responder {
     match require_admin(&session) {
-        Ok(_) => get_admin_analytics_data_service(db.get_ref(), query.org_id).await,
+        Ok(_) => {
+            get_admin_analytics_data_service(
+                db.get_ref(),
+                query.org_id,
+                query.date_range.clone(),
+                query.course_payment.clone(),
+            )
+            .await
+        }
         Err(response) => response,
     }
 }

@@ -5,6 +5,10 @@ use validator::Validate;
 pub struct CreateOrganisationForm {
     #[validate(length(min = 1, max = 255, message = "Organisation name must be between 1 and 255 characters"))]
     pub org_name: String,
+
+    pub org_slug: Option<String>,
+    pub org_type: Option<String>,
+    pub website_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]

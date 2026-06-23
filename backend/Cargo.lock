@@ -2183,6 +2183,7 @@ dependencies = [
  "sqlx",
  "tera",
  "tokio",
+ "url",
  "uuid 1.23.1",
  "validator",
 ]

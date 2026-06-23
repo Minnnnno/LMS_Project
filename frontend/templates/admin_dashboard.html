@@ -134,7 +134,7 @@
                     <div class="row g-3 align-items-end">
                         <div class="col-12 col-lg">
                             <h2 class="section-title mb-1">Analytics Filter</h2>
-                            <p class="page-subtitle mb-0">Filter course and business statistics by organisation.</p>
+                            <p class="page-subtitle mb-0">Filter course and business statistics by organisation, date range, and course type.</p>
                         </div>
                         <div class="col-12 col-lg-auto">
                             <div class="d-flex flex-wrap gap-2">
@@ -150,6 +150,24 @@
                             <label class="form-label" for="analytics-org-filter">Organisation</label>
                             <select id="analytics-org-filter" class="form-select" data-admin-search="Search organisations...">
                                 <option value="">All organisations</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label class="form-label" for="analytics-date-range-filter">Date range</label>
+                            <select id="analytics-date-range-filter" class="form-select">
+                                <option value="all">All time</option>
+                                <option value="today">Today</option>
+                                <option value="last_7_days">Last 7 days</option>
+                                <option value="last_30_days">Last 30 days</option>
+                                <option value="this_month">This month</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label class="form-label" for="analytics-course-payment-filter">Course type</label>
+                            <select id="analytics-course-payment-filter" class="form-select">
+                                <option value="all">All courses</option>
+                                <option value="paid">Paid courses</option>
+                                <option value="free">Free courses</option>
                             </select>
                         </div>
                     </div>
@@ -349,9 +367,25 @@
                         </div>
                     </div>
                     <form class="admin-action-form" data-endpoint="/admin/organisations" data-method="POST" data-admin-form-domain="organisations">
-                        <label class="form-label" for="org-name">Organisation name</label>
-                        <input id="org-name" name="org_name" class="form-control mb-3" placeholder="North Campus" maxlength="255" required>
-                        <div class="form-text mb-3">Used to group users, courses, and admin access.</div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="org-name">Organisation name</label>
+                                <input id="org-name" name="org_name" class="form-control" placeholder="North Campus" maxlength="255" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="org-slug">Slug</label>
+                                <input id="org-slug" name="org_slug" class="form-control" placeholder="north-campus" maxlength="255">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="org-type">Type</label>
+                                <input id="org-type" name="org_type" class="form-control" placeholder="University" maxlength="100">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="org-website-url">Website</label>
+                                <input id="org-website-url" name="website_url" class="form-control" placeholder="example.edu" maxlength="2048">
+                            </div>
+                        </div>
+                        <div class="form-text mt-3 mb-3">Used to group users, courses, and admin access.</div>
                         <button class="btn btn-dark rounded-3" type="submit">Create organisation</button>
                     </form>
                 </div>
@@ -747,6 +781,8 @@ const analyticsTopOrgEnrollments = document.getElementById("analytics-top-org-en
 const analyticsOrgProfitBars = document.getElementById("analytics-org-profit-bars");
 const analyticsOrgProfitTableBody = document.getElementById("analytics-org-profit-table-body");
 const analyticsOrgFilter = document.getElementById("analytics-org-filter");
+const analyticsDateRangeFilter = document.getElementById("analytics-date-range-filter");
+const analyticsCoursePaymentFilter = document.getElementById("analytics-course-payment-filter");
 const analyticsRevenueTrend = document.getElementById("analytics-revenue-trend");
 const analyticsCourseStatusBars = document.getElementById("analytics-course-status-bars");
 const analyticsCourseRevenueBars = document.getElementById("analytics-course-revenue-bars");
@@ -879,6 +915,8 @@ document.querySelectorAll("[data-table-search]").forEach((input) => {
 if (analyticsOrgFilter) {
     analyticsOrgFilter.addEventListener("change", loadAdminAnalytics);
 }
+analyticsDateRangeFilter?.addEventListener("change", loadAdminAnalytics);
+analyticsCoursePaymentFilter?.addEventListener("change", loadAdminAnalytics);
 
 analyticsExportSummaryButton?.addEventListener("click", () => exportAnalyticsCsv("summary"));
 analyticsExportDetailButton?.addEventListener("click", () => exportAnalyticsCsv("detail"));
@@ -1064,6 +1102,14 @@ function selectedAnalyticsOrgId() {
     return Number.isFinite(orgId) ? orgId : null;
 }
 
+function selectedAnalyticsDateRange() {
+    return analyticsDateRangeFilter?.value || "all";
+}
+
+function selectedAnalyticsCoursePayment() {
+    return analyticsCoursePaymentFilter?.value || "all";
+}
+
 function renderAnalyticsOrgFilter(organisations) {
     if (!analyticsOrgFilter) {
         return;
@@ -1082,6 +1128,15 @@ function renderAnalyticsOrgFilter(organisations) {
     }
 
     syncAdminCombobox(analyticsOrgFilter);
+}
+
+function syncAnalyticsFilters(analyticsData) {
+    if (analyticsDateRangeFilter) {
+        analyticsDateRangeFilter.value = analyticsData.selectedDateRange || "all";
+    }
+    if (analyticsCoursePaymentFilter) {
+        analyticsCoursePaymentFilter.value = analyticsData.selectedCoursePayment || "all";
+    }
 }
 
 function renderCourseEnrollmentPie(pieElement, legendElement, courseAnalytics, totalEnrollments) {
@@ -1157,6 +1212,7 @@ function renderAnalytics() {
     }
 
     renderAnalyticsOrgFilter(analyticsData.organisations || []);
+    syncAnalyticsFilters(analyticsData);
 
     const {
         courseAnalytics,
@@ -1326,12 +1382,19 @@ function downloadCsv(filename, content) {
 }
 
 function analyticsExportScopeLabel(analyticsData) {
+    const parts = [];
+
     if (!analyticsData.selectedOrgId) {
-        return "all-organisations";
+        parts.push("all-organisations");
+    } else {
+        const organisation = (analyticsData.organisations || []).find((item) => item.orgId === analyticsData.selectedOrgId);
+        parts.push(organisation?.orgName || `organisation-${analyticsData.selectedOrgId}`);
     }
 
-    const organisation = (analyticsData.organisations || []).find((item) => item.orgId === analyticsData.selectedOrgId);
-    return (organisation?.orgName || `organisation-${analyticsData.selectedOrgId}`)
+    parts.push(analyticsData.selectedDateRange || "all");
+    parts.push(analyticsData.selectedCoursePayment || "all");
+
+    return parts.join("-")
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "") || "organisation";
@@ -1342,6 +1405,8 @@ function buildAnalyticsSummaryCsv() {
     const headers = [
         "organisation",
         "courses",
+        "paid_courses",
+        "free_courses",
         "enrollments",
         "confirmed_revenue_sgd",
         "gross_profit_sgd",
@@ -1357,17 +1422,14 @@ function buildAnalyticsSummaryCsv() {
 function buildAnalyticsDetailCsv() {
     const analyticsData = buildAnalyticsData();
     const headers = [
-        "record_type",
         "organisation",
         "course",
         "course_status",
         "is_paid_course",
+        "currency",
         "enrollments",
         "confirmed_revenue_sgd",
         "projected_revenue_sgd",
-        "payment_id",
-        "payment_status",
-        "paid_at",
     ];
 
     return {
@@ -1723,8 +1785,22 @@ async function loadAdminAnalytics() {
     }
 
     const orgId = selectedAnalyticsOrgId();
-    const analyticsUrl = orgId
-        ? `/admin/analytics-data?org_id=${encodeURIComponent(orgId)}`
+    const params = new URLSearchParams();
+    const dateRange = selectedAnalyticsDateRange();
+    const coursePayment = selectedAnalyticsCoursePayment();
+
+    if (orgId) {
+        params.set("org_id", orgId);
+    }
+    if (dateRange !== "all") {
+        params.set("date_range", dateRange);
+    }
+    if (coursePayment !== "all") {
+        params.set("course_payment", coursePayment);
+    }
+
+    const analyticsUrl = params.toString()
+        ? `/admin/analytics-data?${params.toString()}`
         : "/admin/analytics-data";
 
     try {
@@ -2157,7 +2233,7 @@ function beginInlineEdit(domain, id, row) {
             <td><input class="form-control form-control-sm" name="org_name" value="${escapeHtml(record.org_name)}" maxlength="255" required></td>
             <td><input class="form-control form-control-sm" name="org_slug" value="${escapeHtml(record.org_slug || "")}"></td>
             <td><input class="form-control form-control-sm" name="org_type" value="${escapeHtml(record.org_type || "")}"></td>
-            <td><input class="form-control form-control-sm" name="website_url" type="url" value="${escapeHtml(record.website_url || "")}"></td>
+            <td><input class="form-control form-control-sm" name="website_url" value="${escapeHtml(record.website_url || "")}"></td>
             <td>${inlineActions(domain, id)}</td>
         `;
     } else if (domain === "users") {
@@ -2299,7 +2375,12 @@ document.querySelectorAll(".admin-action-form").forEach((form) => {
             let payload = {};
 
             if (formDomain === "organisations" || endpoint === "/admin/organisations") {
-                payload = { org_name: fieldValue(formData, "org_name") };
+                payload = {
+                    org_name: fieldValue(formData, "org_name"),
+                    org_slug: fieldValue(formData, "org_slug"),
+                    org_type: fieldValue(formData, "org_type"),
+                    website_url: fieldValue(formData, "website_url"),
+                };
             } else if (endpoint === "/admin/users") {
                 payload = {
                     first_name: fieldValue(formData, "first_name"),

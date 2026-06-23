@@ -1,5 +1,5 @@
 use actix_web::HttpResponse;
-use chrono::{DateTime, Datelike, FixedOffset, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, TimeZone, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder, Set, TransactionTrait,
@@ -7,6 +7,7 @@ use sea_orm::{
 use serde::Serialize;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use url::{Host, Url};
 use validator::Validate;
 
 use argon2::{
@@ -259,8 +260,62 @@ fn validate_optional_course_image_url(value: Option<&str>) -> Result<(), HttpRes
     validate_optional_http_url(Some(value), "Background image URL")
 }
 
-fn validate_optional_website_url(website_url: Option<&str>) -> Result<(), HttpResponse> {
-    validate_optional_http_url(website_url, "Website URL")
+fn validate_website_domain(parsed_url: &Url) -> Result<(), HttpResponse> {
+    let Some(host) = parsed_url.host() else {
+        return Err(HttpResponse::BadRequest().body("Website URL must include a valid domain"));
+    };
+
+    let Host::Domain(domain) = host else {
+        return Err(HttpResponse::BadRequest().body("Website URL must use a domain name"));
+    };
+
+    let labels = domain.split('.').collect::<Vec<_>>();
+    let has_valid_labels = labels.len() >= 2
+        && labels.iter().all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        })
+        && labels
+            .last()
+            .is_some_and(|top_level_domain| top_level_domain.len() >= 2);
+
+    if has_valid_labels {
+        Ok(())
+    } else {
+        Err(HttpResponse::BadRequest().body("Website URL must include a valid domain"))
+    }
+}
+
+fn normalize_optional_website_url(website_url: Option<String>) -> Result<Option<String>, HttpResponse> {
+    let Some(value) = optional_trimmed_string(website_url, "Website URL", 2048)? else {
+        return Ok(None);
+    };
+
+    let normalized = if value.starts_with("https://") || value.starts_with("http://") {
+        value
+    } else if value.contains("://") {
+        return Err(HttpResponse::BadRequest().body(
+            "Website URL must use http:// or https:// when a protocol is provided",
+        ));
+    } else {
+        format!("https://{}", value)
+    };
+
+    let parsed_url = Url::parse(&normalized)
+        .map_err(|_| HttpResponse::BadRequest().body("Enter a valid website URL"))?;
+
+    if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
+        return Err(HttpResponse::BadRequest().body(
+            "Website URL must use http:// or https://",
+        ));
+    }
+
+    validate_website_domain(&parsed_url)?;
+    Ok(Some(parsed_url.to_string()))
 }
 
 #[derive(Serialize)]
@@ -461,6 +516,65 @@ fn analytics_month_label(year: i32, month: u32) -> String {
     format!("{} {:02}", month_name, year.rem_euclid(100))
 }
 
+fn analytics_date_range_start(date_range: Option<&str>) -> Result<Option<DateTime<Utc>>, HttpResponse> {
+    let Some(date_range) = date_range.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let now = Utc::now();
+    let singapore_offset =
+        FixedOffset::east_opt(8 * 60 * 60).expect("Singapore UTC offset must be valid");
+    let singapore_now = now.with_timezone(&singapore_offset);
+    let start = match date_range {
+        "all" => None,
+        "today" => Some(singapore_offset
+            .from_local_datetime(
+                &singapore_now
+                    .date_naive()
+                    .and_hms_opt(0, 0, 0)
+                    .expect("midnight should be valid"),
+            )
+            .single()
+            .expect("Singapore local midnight should be valid")
+            .with_timezone(&Utc)),
+        "last_7_days" => Some(now - Duration::days(7)),
+        "last_30_days" => Some(now - Duration::days(30)),
+        "this_month" => {
+            let first_day = NaiveDate::from_ymd_opt(singapore_now.year(), singapore_now.month(), 1)
+                .expect("first day of current month should be valid");
+            Some(singapore_offset
+                .from_local_datetime(
+                    &first_day
+                        .and_hms_opt(0, 0, 0)
+                        .expect("midnight should be valid"),
+                )
+                .single()
+                .expect("Singapore local midnight should be valid")
+                .with_timezone(&Utc))
+        }
+        _ => {
+            return Err(HttpResponse::BadRequest().body(
+                "Date range must be all, today, last_7_days, last_30_days, or this_month",
+            ));
+        }
+    };
+
+    Ok(start)
+}
+
+fn analytics_course_payment_filter(course_payment: Option<&str>) -> Result<Option<bool>, HttpResponse> {
+    let Some(course_payment) = course_payment.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    match course_payment {
+        "all" => Ok(None),
+        "paid" => Ok(Some(true)),
+        "free" => Ok(Some(false)),
+        _ => Err(HttpResponse::BadRequest().body("Course payment filter must be all, paid, or free")),
+    }
+}
+
 // Organisation CRUD
 pub async fn get_all_organisations(db: &DatabaseConnection) -> HttpResponse {
     match organisations::Entity::find().all(db).await {
@@ -479,7 +593,28 @@ pub async fn get_all_roles(db: &DatabaseConnection) -> HttpResponse {
 pub async fn get_admin_analytics_data(
     db: &DatabaseConnection,
     selected_org_id: Option<i32>,
+    date_range: Option<String>,
+    course_payment: Option<String>,
 ) -> HttpResponse {
+    let date_range_start = match analytics_date_range_start(date_range.as_deref()) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let course_payment_filter = match analytics_course_payment_filter(course_payment.as_deref()) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let selected_date_range = date_range
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("all");
+    let selected_course_payment = course_payment
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("all");
+
     let (organisations_result, courses_result, enrollments_result, payments_result) = tokio::join!(
         organisations::Entity::find().all(db),
         courses::Entity::find().all(db),
@@ -540,10 +675,13 @@ pub async fn get_admin_analytics_data(
     let filtered_courses = courses
         .iter()
         .filter(|course| {
-            selected_org_id.is_none()
-                || course
-                    .org_id
-                    .is_some_and(|org_id| selected_org_ids.contains(&org_id))
+            let matches_org = selected_org_id.is_none()
+                || course.org_id.is_some_and(|org_id| selected_org_ids.contains(&org_id));
+            let matches_payment = course_payment_filter
+                .map(|is_paid| course.is_paid.unwrap_or(false) == is_paid)
+                .unwrap_or(true);
+
+            matches_org && matches_payment
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -553,11 +691,21 @@ pub async fn get_admin_analytics_data(
         .collect::<HashSet<_>>();
     let filtered_enrollments = enrollments
         .iter()
-        .filter(|enrollment| filtered_course_ids.contains(&enrollment.course_id))
+        .filter(|enrollment| {
+            filtered_course_ids.contains(&enrollment.course_id)
+                && date_range_start
+                    .map(|start| enrollment.enrolled_at >= start)
+                    .unwrap_or(true)
+        })
         .collect::<Vec<_>>();
     let filtered_payments = payments
         .iter()
-        .filter(|payment| filtered_course_ids.contains(&payment.course_id))
+        .filter(|payment| {
+            filtered_course_ids.contains(&payment.course_id)
+                && date_range_start
+                    .map(|start| payment.paid_at.unwrap_or(payment.created_at) >= start)
+                    .unwrap_or(true)
+        })
         .collect::<Vec<_>>();
     let successful_payments = filtered_payments
         .iter()
@@ -647,11 +795,18 @@ pub async fn get_admin_analytics_data(
                 .iter()
                 .map(|course| course["projectedRevenueCents"].as_i64().unwrap_or(0) as i32)
                 .sum::<i32>();
+            let paid_course_count = org_courses
+                .iter()
+                .filter(|course| course["isPaid"].as_bool().unwrap_or(false))
+                .count();
+            let free_course_count = course_count.saturating_sub(paid_course_count);
 
             json!({
                 "orgId": organisation.org_id,
                 "orgName": organisation.org_name,
                 "courseCount": course_count,
+                "paidCourseCount": paid_course_count,
+                "freeCourseCount": free_course_count,
                 "enrollmentCount": enrollment_count,
                 "confirmedRevenueCents": confirmed_revenue_cents,
                 "grossProfitCents": confirmed_revenue_cents,
@@ -725,6 +880,8 @@ pub async fn get_admin_analytics_data(
             json!({
                 "organisation": item["orgName"].as_str().unwrap_or(""),
                 "courses": item["courseCount"].as_u64().unwrap_or(0),
+                "paid_courses": item["paidCourseCount"].as_u64().unwrap_or(0),
+                "free_courses": item["freeCourseCount"].as_u64().unwrap_or(0),
                 "enrollments": item["enrollmentCount"].as_u64().unwrap_or(0),
                 "confirmed_revenue_sgd": cents_to_sgd(confirmed),
                 "gross_profit_sgd": cents_to_sgd(gross),
@@ -732,61 +889,29 @@ pub async fn get_admin_analytics_data(
             })
         })
         .collect::<Vec<_>>();
-    let mut detail_rows = course_analytics
+    let detail_rows = course_analytics
         .iter()
         .map(|course| {
             let confirmed = course["confirmedRevenueCents"].as_i64().unwrap_or(0) as i32;
             let projected = course["projectedRevenueCents"].as_i64().unwrap_or(0) as i32;
 
             json!({
-                "record_type": "course",
                 "organisation": course["orgName"].as_str().unwrap_or("No organisation"),
                 "course": course["courseName"].as_str().unwrap_or("Course"),
                 "course_status": course["status"].as_str().unwrap_or(""),
                 "is_paid_course": if course["isPaid"].as_bool().unwrap_or(false) { "yes" } else { "no" },
+                "currency": course["currency"].as_str().unwrap_or("SGD"),
                 "enrollments": course["enrollmentCount"].as_u64().unwrap_or(0),
                 "confirmed_revenue_sgd": cents_to_sgd(confirmed),
                 "projected_revenue_sgd": cents_to_sgd(projected),
-                "payment_id": "",
-                "payment_status": "",
-                "paid_at": "",
             })
         })
         .collect::<Vec<_>>();
-    let courses_by_id = course_analytics
-        .iter()
-        .filter_map(|course| {
-            course["courseId"]
-                .as_i64()
-                .map(|id| (id as i32, course.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-
-    detail_rows.extend(filtered_payments.iter().map(|payment| {
-        let course = courses_by_id.get(&payment.course_id);
-        let confirmed = if payment.payment_status.eq_ignore_ascii_case("SUCCEEDED") {
-            payment.amount_cents
-        } else {
-            0
-        };
-
-        json!({
-            "record_type": "payment",
-            "organisation": course.and_then(|course| course["orgName"].as_str()).unwrap_or("No organisation"),
-            "course": course.and_then(|course| course["courseName"].as_str()).unwrap_or("Course"),
-            "course_status": course.and_then(|course| course["status"].as_str()).unwrap_or(""),
-            "is_paid_course": if course.and_then(|course| course["isPaid"].as_bool()).unwrap_or(false) { "yes" } else { "no" },
-            "enrollments": enrollments_by_course.get(&payment.course_id).copied().unwrap_or(0),
-            "confirmed_revenue_sgd": cents_to_sgd(confirmed),
-            "projected_revenue_sgd": "",
-            "payment_id": payment.payment_id.to_string(),
-            "payment_status": payment.payment_status,
-            "paid_at": payment.paid_at.map(|date| date.to_rfc3339()).unwrap_or_else(|| payment.created_at.to_rfc3339()),
-        })
-    }));
 
     HttpResponse::Ok().json(json!({
         "selectedOrgId": selected_org_id,
+        "selectedDateRange": selected_date_range,
+        "selectedCoursePayment": selected_course_payment,
         "organisations": organisation_options,
         "totals": {
             "totalEnrollments": filtered_enrollments.len(),
@@ -1081,9 +1206,32 @@ pub async fn create_organisation_service(
         Err(response) => return response,
     }
 
+    let org_slug = match optional_normalized_slug(body.org_slug) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if let Some(org_slug) = org_slug.as_deref() {
+        match organisation_slug_is_used_by_another_org(db, org_slug, None).await {
+            Ok(true) => return HttpResponse::Conflict().body("Organisation slug already exists"),
+            Ok(false) => {}
+            Err(response) => return response,
+        }
+    }
+    let org_type = match optional_trimmed_string(body.org_type, "Organisation type", 100) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let website_url = match normalize_optional_website_url(body.website_url) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+
     let now = singapore_now();
     let new_org = organisations::ActiveModel {
         org_name: Set(org_name),
+        org_slug: Set(org_slug),
+        org_type: Set(org_type),
+        website_url: Set(website_url),
         created_at: Set(Some(now)),
         updated_at: Set(Some(now)),
         ..Default::default()
@@ -1139,13 +1287,10 @@ pub async fn update_organisation_service(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let website_url = match optional_trimmed_string(body.website_url, "Website URL", 2048) {
+    let website_url = match normalize_optional_website_url(body.website_url) {
         Ok(value) => value,
         Err(response) => return response,
     };
-    if let Err(response) = validate_optional_website_url(website_url.as_deref()) {
-        return response;
-    }
 
     let mut active_org = org.into_active_model();
     active_org.org_name = Set(org_name);
