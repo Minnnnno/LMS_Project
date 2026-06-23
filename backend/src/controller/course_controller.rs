@@ -2,7 +2,7 @@ use crate::entity::courses::{self, CourseStatus};
 use crate::entity::enrollments;
 use crate::entity::{
     assignments, module_contents, module_prerequisites, module_progress, modules, quiz,
-    quiz_attempts, quiz_prerequisites,
+    quiz_attempts, quiz_prerequisites, submissions,
 };
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::models::module_progress::{CourseModuleProgress, CourseProgress};
@@ -63,6 +63,15 @@ struct CourseOverviewPayload {
 struct CourseProgressOverviewPayload {
     course: courses::Model,
     progress: CourseProgress,
+}
+
+#[derive(Serialize)]
+struct CourseCompletionOverviewPayload {
+    course: courses::Model,
+    completed: bool,
+    content_complete: bool,
+    quizzes_graded: bool,
+    assignments_graded: bool,
 }
 
 #[derive(Serialize)]
@@ -420,6 +429,173 @@ pub async fn get_my_courses_progress_overview(
             }
         })
         .collect();
+
+    HttpResponse::Ok().json(payloads)
+}
+
+#[get("/my-courses/completion-overview")]
+pub async fn get_my_courses_completion_overview(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let (user_id, course_rows) = match get_enrolled_courses(db.get_ref(), &session).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+
+    if course_rows.is_empty() {
+        return HttpResponse::Ok().json(Vec::<CourseCompletionOverviewPayload>::new());
+    }
+
+    let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
+    let (module_result, assignment_result, quiz_result) = tokio::join!(
+        modules::Entity::find()
+            .filter(modules::Column::CourseId.is_in(course_ids.clone()))
+            .all(db.get_ref()),
+        assignments::Entity::find()
+            .filter(assignments::Column::CourseId.is_in(course_ids.clone()))
+            .all(db.get_ref()),
+        quiz::Entity::find()
+            .filter(quiz::Column::CourseId.is_in(course_ids))
+            .all(db.get_ref()),
+    );
+
+    let module_rows = match module_result {
+        Ok(rows) => rows,
+        Err(err) => return HttpResponse::InternalServerError()
+            .body(format!("Database error finding course modules: {}", err)),
+    };
+    let assignment_rows = match assignment_result {
+        Ok(rows) => rows,
+        Err(err) => return HttpResponse::InternalServerError()
+            .body(format!("Database error finding course assignments: {}", err)),
+    };
+    let quiz_rows = match quiz_result {
+        Ok(rows) => rows,
+        Err(err) => return HttpResponse::InternalServerError()
+            .body(format!("Database error finding course quizzes: {}", err)),
+    };
+
+    let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
+    let assignment_ids: Vec<i32> = assignment_rows
+        .iter()
+        .map(|assignment| assignment.assignment_id)
+        .collect();
+    let quiz_ids: Vec<i32> = quiz_rows.iter().map(|quiz| quiz.quiz_id).collect();
+
+    let (progress_result, submission_result, attempt_result) = tokio::join!(
+        module_progress::Entity::find()
+            .filter(module_progress::Column::UserId.eq(user_id))
+            .filter(module_progress::Column::ModuleId.is_in(module_ids))
+            .filter(module_progress::Column::CompletedAt.is_not_null())
+            .all(db.get_ref()),
+        submissions::Entity::find()
+            .filter(submissions::Column::UserId.eq(user_id))
+            .filter(submissions::Column::AssignmentId.is_in(assignment_ids))
+            .all(db.get_ref()),
+        quiz_attempts::Entity::find()
+            .filter(quiz_attempts::Column::UserId.eq(user_id))
+            .filter(quiz_attempts::Column::QuizId.is_in(quiz_ids))
+            .all(db.get_ref()),
+    );
+
+    let completed_module_ids: HashSet<i32> = match progress_result {
+        Ok(rows) => rows.into_iter().map(|row| row.module_id).collect(),
+        Err(err) => return HttpResponse::InternalServerError()
+            .body(format!("Database error finding module progress: {}", err)),
+    };
+    let submission_rows = match submission_result {
+        Ok(rows) => rows,
+        Err(err) => return HttpResponse::InternalServerError()
+            .body(format!("Database error finding assignment submissions: {}", err)),
+    };
+    let graded_quiz_ids: HashSet<i32> = match attempt_result {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|attempt| attempt.is_graded && attempt.submitted_at.is_some())
+            .map(|attempt| attempt.quiz_id)
+            .collect(),
+        Err(err) => return HttpResponse::InternalServerError()
+            .body(format!("Database error finding quiz attempts: {}", err)),
+    };
+
+    let mut latest_submission_by_assignment = HashMap::new();
+    for submission in submission_rows {
+        latest_submission_by_assignment
+            .entry(submission.assignment_id)
+            .and_modify(|current: &mut submissions::Model| {
+                if submission.submitted_at > current.submitted_at
+                    || (submission.submitted_at == current.submitted_at
+                        && submission.submission_id > current.submission_id)
+                {
+                    *current = submission.clone();
+                }
+            })
+            .or_insert(submission);
+    }
+
+    let mut module_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
+    for module in module_rows {
+        module_ids_by_course
+            .entry(module.course_id)
+            .or_default()
+            .push(module.module_id);
+    }
+
+    let mut assignment_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
+    for assignment in assignment_rows {
+        assignment_ids_by_course
+            .entry(assignment.course_id)
+            .or_default()
+            .push(assignment.assignment_id);
+    }
+
+    let mut quiz_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
+    for quiz in quiz_rows {
+        quiz_ids_by_course
+            .entry(quiz.course_id)
+            .or_default()
+            .push(quiz.quiz_id);
+    }
+
+    let payloads = course_rows
+        .into_iter()
+        .map(|course| {
+            let course_module_ids = module_ids_by_course
+                .get(&course.course_id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let course_assignment_ids = assignment_ids_by_course
+                .get(&course.course_id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let course_quiz_ids = quiz_ids_by_course
+                .get(&course.course_id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+
+            let content_complete = !course_module_ids.is_empty()
+                && course_module_ids
+                    .iter()
+                    .all(|module_id| completed_module_ids.contains(module_id));
+            let assignments_graded = course_assignment_ids.iter().all(|assignment_id| {
+                latest_submission_by_assignment
+                    .get(assignment_id)
+                    .is_some_and(|submission| submission.score.is_some())
+            });
+            let quizzes_graded = course_quiz_ids
+                .iter()
+                .all(|quiz_id| graded_quiz_ids.contains(quiz_id));
+
+            CourseCompletionOverviewPayload {
+                course,
+                completed: content_complete && assignments_graded && quizzes_graded,
+                content_complete,
+                quizzes_graded,
+                assignments_graded,
+            }
+        })
+        .collect::<Vec<_>>();
 
     HttpResponse::Ok().json(payloads)
 }

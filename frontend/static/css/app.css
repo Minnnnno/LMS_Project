@@ -940,18 +940,15 @@ body {
 }
 
 .my-courses-list {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0.15rem 0.15rem 0.85rem;
-    scroll-snap-type: x proximity;
+    padding: 0.15rem;
 }
 
 .my-course-item {
-    width: min(21.5rem, 82vw);
+    width: 100%;
     min-height: 15rem;
-    flex: 0 0 min(21.5rem, 82vw);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -960,8 +957,14 @@ body {
     border-radius: 1rem;
     color: #222222;
     background: #ffffff;
-    scroll-snap-align: start;
     transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.my-courses-list > .d-flex,
+.my-courses-list > .text-center,
+.my-courses-list > .alert,
+.my-courses-list > .my-courses-empty {
+    grid-column: 1 / -1;
 }
 
 .my-course-item:hover {
@@ -1028,6 +1031,12 @@ body {
     font-size: 1.1rem;
 }
 
+@media (max-width: 991.98px) {
+    .my-courses-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 @media (max-width: 575.98px) {
     .my-courses-header {
         align-items: flex-start;
@@ -1038,9 +1047,8 @@ body {
         width: 100%;
     }
 
-    .my-course-item {
-        width: min(18rem, 82vw);
-        flex-basis: min(18rem, 82vw);
+    .my-courses-list {
+        grid-template-columns: 1fr;
     }
 
     .my-course-thumb {

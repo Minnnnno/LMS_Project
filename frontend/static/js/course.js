@@ -36,6 +36,7 @@ class CoursesPage {
     constructor() {
         this.organisationCourseIds = new Set();
         this.enrolledCourseIds     = new Set();
+        this.completedCourseIds    = new Set();
         this.canManageOrg          = false;
         this.selectedPresetImage   = null;
         this.selectedImageFile     = null;
@@ -373,28 +374,44 @@ class CoursesPage {
         if (this.isManagedOnly) return;
 
         const section = document.getElementById("enrolled-courses-section");
+        const completedSection = document.getElementById("completed-courses-section");
         if (!section || !document.getElementById("enrolled-course-grid")) return;
 
         if (this.canManageOrg) {
             section.hidden = true;
+            if (completedSection) completedSection.hidden = true;
             this.enrolledCourseIds = new Set();
+            this.completedCourseIds = new Set();
             return;
         }
 
         try {
-            const data    = await LmsApi.get("/api/my-courses");
-            const courses = data
-                .filter(c => !this.organisationCourseIds.has(c.course_id))
-                .map(c => new Course(c));
+            const data = await LmsApi.get("/api/my-courses/completion-overview");
+            const rows = data.filter(row => !this.organisationCourseIds.has(row.course.course_id));
+            const completedCourses = rows
+                .filter(row => row.completed)
+                .map(row => new Course(row.course));
+            const activeCourses = rows
+                .filter(row => !row.completed)
+                .map(row => new Course(row.course));
 
-            this.enrolledCourseIds = new Set(courses.map(c => c.id));
+            this.enrolledCourseIds = new Set(rows.map(row => row.course.course_id));
+            this.completedCourseIds = new Set(completedCourses.map(course => course.id));
 
-            if (courses.length) {
-                section.hidden = false;
-                this.renderGrid("enrolled-course-grid", courses);
+            section.hidden = activeCourses.length === 0;
+            if (activeCourses.length) {
+                this.renderGrid("enrolled-course-grid", activeCourses);
+            }
+
+            if (completedSection) {
+                completedSection.hidden = completedCourses.length === 0;
+                if (completedCourses.length) {
+                    this.renderGrid("completed-course-grid", completedCourses);
+                }
             }
         } catch (error) {
             this.enrolledCourseIds = new Set();
+            this.completedCourseIds = new Set();
             if (error.response?.status !== 401) {
                 console.error("Failed to load enrolled courses:", error);
             }
@@ -492,6 +509,17 @@ class CoursesPage {
             button.textContent = button.dataset.idleLabel;
         });
     }
+
+    async refreshCourseLists() {
+        await this.loadOrganisationCourses();
+
+        if (this.isManagedOnly) {
+            return;
+        }
+
+        await this.loadEnrolledCourses();
+        await this.loadCourses();
+    }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -499,6 +527,10 @@ document.addEventListener("DOMContentLoaded", () => {
     window.coursesPage.init();
 });
 
-window.addEventListener("pageshow", () => {
+window.addEventListener("pageshow", (event) => {
     window.coursesPage?.resetEnrollmentButtons();
+
+    if (event.persisted) {
+        window.coursesPage?.refreshCourseLists();
+    }
 });

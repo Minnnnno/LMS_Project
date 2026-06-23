@@ -542,12 +542,12 @@ function formatGradeNumber(value) {
     return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(2);
 }
 
-function formatGradeScore(score, maxScore) {
+function formatGradeScore(score, maxScore, emptyLabel = "Pending") {
     const formattedScore = formatGradeNumber(score);
     const formattedMaxScore = formatGradeNumber(maxScore);
 
     if (formattedScore === null) {
-        return "Pending";
+        return emptyLabel;
     }
 
     if (formattedMaxScore !== null && Number(maxScore) > 0) {
@@ -585,7 +585,16 @@ function getGradeDateLabel(value, prefix) {
     return `${prefix}: ${formatAssignmentDate(value)}`;
 }
 
-function buildGradeRow({ title, meta, score, maxScore, feedback, actionHtml = "" }) {
+function buildGradeRow({
+    title,
+    meta,
+    score,
+    maxScore,
+    feedback,
+    actionHtml = "",
+    emptyScoreLabel = "Pending",
+    emptyScoreClass = "pending",
+}) {
     const hasScore = score !== null && score !== undefined;
     const percent = getGradePercent(score, maxScore);
     const percentLabel = percent === null ? "" : ` (${percent}%)`;
@@ -596,8 +605,8 @@ function buildGradeRow({ title, meta, score, maxScore, feedback, actionHtml = ""
                 <div class="grade-title">${escapeHtml(title)}</div>
                 <div class="grade-meta">${escapeHtml(meta || "No activity yet")}</div>
             </div>
-            <div class="grade-score ${hasScore ? "" : "pending"}">
-                ${formatGradeScore(score, maxScore)}${percentLabel}
+            <div class="grade-score ${hasScore ? "" : emptyScoreClass}">
+                ${formatGradeScore(score, maxScore, emptyScoreLabel)}${percentLabel}
             </div>
             ${feedback ? `<p class="grade-feedback"><strong>Feedback:</strong> ${escapeHtml(feedback)}</p>` : ""}
             ${actionHtml}
@@ -646,9 +655,10 @@ function renderGrades(data) {
     }
 
     const assignmentRows = assignments.map((assignment) => {
+        const hasSubmission = Boolean(assignment.submitted_at);
         const metaParts = [
             getGradeDateLabel(assignment.submitted_at, "Submitted"),
-            !assignment.submitted_at ? getGradeDateLabel(assignment.due_date, "Due") : "",
+            !hasSubmission ? getGradeDateLabel(assignment.due_date, "Due") : "",
         ].filter(Boolean);
 
         return buildGradeRow({
@@ -657,6 +667,8 @@ function renderGrades(data) {
             score: assignment.score,
             maxScore: assignment.max_score,
             feedback: assignment.feedback,
+            emptyScoreLabel: hasSubmission ? "Pending" : "Not submitted",
+            emptyScoreClass: hasSubmission ? "pending" : "not-submitted",
         });
     });
 
