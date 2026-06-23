@@ -59,55 +59,186 @@ class CertificationPage {
         this.state = new PageState("certification-container");
     }
 
-    renderCertItem(course, progress) {
-        const pct     = Math.round((progress?.progress_percentage ?? 0));
-        const isComplete = pct >= 100;
-        const progressBar = isComplete
-            ? `<span class="badge bg-success"><i class="bi bi-patch-check-fill me-1"></i>Complete</span>`
-            : `
-                <div class="progress mt-1" style="height: 6px;" role="progressbar"
-                     aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
-                    <div class="progress-bar bg-dark" style="width: ${pct}%"></div>
-                </div>
-                <small class="text-muted">${pct}% complete</small>`;
+    completionSourceLabel(source) {
+        if (source === "manual") return "Staff marked";
+        if (source === "automatic") return "Automatic";
+        return "Completed";
+    }
+
+    formatDate(value) {
+        if (!value) return "Issue date unavailable";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "Issue date unavailable";
+        return date.toLocaleDateString("en-SG", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+        });
+    }
+
+    renderCertItem(row) {
+        const course = new Course(row.course || {});
+        const certificate = row.certificate || {};
+        const source = row.status?.completion_source || certificate.completion_source;
+        const url = certificate.verification_url || "#";
 
         return `
-            <div class="list-group-item list-group-item-action d-flex align-items-center gap-3 py-3">
-                <div class="cert-thumb flex-shrink-0 rounded-3 bg-light"
-                     style="width:3.5rem;height:3.5rem;background-image:url('${HtmlUtils.escape(course.imageUrl)}');background-size:cover;background-position:center;"></div>
-                <div class="flex-grow-1 min-w-0">
-                    <div class="fw-semibold text-truncate">${HtmlUtils.escape(course.name)}</div>
-                    ${progressBar}
+            <div class="certificate-list-item">
+                <div class="certificate-thumb"
+                     style="background-image:url('${HtmlUtils.escape(course.imageUrl)}')"></div>
+                <div class="certificate-body">
+                    <div class="certificate-title">${HtmlUtils.escape(course.name)}</div>
+                    <div class="certificate-meta">
+                        <span><i class="bi bi-patch-check-fill" aria-hidden="true"></i>${HtmlUtils.escape(this.completionSourceLabel(source))}</span>
+                        <span><i class="bi bi-calendar3" aria-hidden="true"></i>Issued ${HtmlUtils.escape(this.formatDate(certificate.issued_at))}</span>
+                    </div>
+                    <div class="certificate-link-text">${HtmlUtils.escape(url)}</div>
                 </div>
-                ${isComplete ? `<button class="btn btn-sm btn-outline-dark flex-shrink-0"
-                    onclick="window.print()">
-                    <i class="bi bi-printer me-1"></i>Print
-                </button>` : ""}
+                <div class="certificate-actions">
+                    <a class="btn btn-sm btn-dark" href="${HtmlUtils.escape(url)}" target="_blank" rel="noopener">
+                        <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>View
+                    </a>
+                    <button class="btn btn-sm btn-outline-dark" type="button" data-copy-certificate="${HtmlUtils.escape(url)}">
+                        <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy
+                    </button>
+                </div>
             </div>`;
+    }
+
+    async copyCertificateLink(url, button) {
+        try {
+            await navigator.clipboard.writeText(url);
+            const original = button.innerHTML;
+            button.innerHTML = `<i class="bi bi-check2 me-1" aria-hidden="true"></i>Copied`;
+            window.setTimeout(() => {
+                button.innerHTML = original;
+            }, 1600);
+        } catch (_) {
+            window.prompt("Certificate verification link:", url);
+        }
+    }
+
+    bindCopyActions() {
+        if (!this.state.container) return;
+        this.state.container.querySelectorAll("[data-copy-certificate]").forEach((button) => {
+            button.addEventListener("click", () => {
+                this.copyCertificateLink(button.dataset.copyCertificate || "", button);
+            });
+        });
     }
 
     async load() {
         this.state.loading("Loading your certifications...");
 
         try {
-            const courseProgressRows = await LmsApi.get("/api/my-courses/progress-overview");
+            const certificates = await LmsApi.get("/api/certificates/my");
 
-            if (!courseProgressRows.length) {
+            if (!certificates.length) {
                 this.state.empty(
-                    "You are not enrolled in any courses yet.",
+                    "Complete a course to receive a verification link.",
                     "bi-patch-check"
                 );
                 return;
             }
 
-            const items = courseProgressRows
-                .map(row => this.renderCertItem(new Course(row.course), row.progress))
+            const items = certificates
+                .map(row => this.renderCertItem(row))
                 .join("");
 
-            this.state.html(`<div class="list-group list-group-flush">${items}</div>`);
+            this.state.html(`<div class="certificate-list">${items}</div>`);
+            this.bindCopyActions();
         } catch (error) {
             LmsApi.handleError(error);
             this.state.error("Unable to load certifications. Please try again.");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CertificateVerificationPage - public verification result
+// ---------------------------------------------------------------------------
+class CertificateVerificationPage {
+    constructor() {
+        this.state = new PageState("certificate-verification-container");
+    }
+
+    formatDate(value) {
+        if (!value) return "Unavailable";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "Unavailable";
+        return date.toLocaleDateString("en-SG", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+        });
+    }
+
+    completionSourceLabel(source) {
+        if (source === "manual") return "Staff marked";
+        if (source === "automatic") return "Automatic";
+        return "Completed";
+    }
+
+    render(payload) {
+        const validClass = payload.valid ? "valid" : "invalid";
+        const icon = payload.valid ? "bi-patch-check-fill" : "bi-exclamation-octagon-fill";
+        const title = payload.valid ? "Valid certificate" : "Invalid certificate";
+
+        this.state.html(`
+            <section class="certificate-verify-card ${validClass}">
+                <div class="certificate-verify-status">
+                    <i class="bi ${icon}" aria-hidden="true"></i>
+                    <span>${title}</span>
+                </div>
+                <dl class="certificate-verify-grid">
+                    <div>
+                        <dt>Student</dt>
+                        <dd>${HtmlUtils.escape(payload.student_name)}</dd>
+                    </div>
+                    <div>
+                        <dt>Course</dt>
+                        <dd>${HtmlUtils.escape(payload.course_name)}</dd>
+                    </div>
+                    <div>
+                        <dt>Issued</dt>
+                        <dd>${HtmlUtils.escape(this.formatDate(payload.issued_at))}</dd>
+                    </div>
+                    <div>
+                        <dt>Completion source</dt>
+                        <dd>${HtmlUtils.escape(this.completionSourceLabel(payload.completion_source))}</dd>
+                    </div>
+                </dl>
+                ${payload.valid ? "" : `<p class="certificate-invalid-note">This link exists, but the certificate is not currently valid.</p>`}
+            </section>
+        `);
+    }
+
+    async load() {
+        const token = window.location.pathname.split("/").filter(Boolean).pop();
+        if (!token) {
+            this.state.error("Certificate link is missing.");
+            return;
+        }
+
+        this.state.loading("Checking certificate...");
+
+        try {
+            const payload = await LmsApi.get(`/api/certificates/verify/${encodeURIComponent(token)}`);
+            this.render(payload);
+        } catch (error) {
+            if (error.response?.status === 404) {
+                this.state.html(`
+                    <section class="certificate-verify-card invalid">
+                        <div class="certificate-verify-status">
+                            <i class="bi bi-exclamation-octagon-fill" aria-hidden="true"></i>
+                            <span>Certificate not found</span>
+                        </div>
+                        <p class="certificate-invalid-note mb-0">This verification link does not match a SkillUp certificate.</p>
+                    </section>
+                `);
+                return;
+            }
+            this.state.error("Unable to verify this certificate right now.");
         }
     }
 }
@@ -205,6 +336,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (document.getElementById("certification-container")) {
         new CertificationPage().load();
+    }
+    if (document.getElementById("certificate-verification-container")) {
+        new CertificateVerificationPage().load();
     }
     if (document.getElementById("challenges-container")) {
         new ChallengesPage().load();

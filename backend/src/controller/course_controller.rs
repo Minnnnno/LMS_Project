@@ -6,6 +6,7 @@ use crate::entity::{
 };
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::models::module_progress::{CourseModuleProgress, CourseProgress};
+use crate::services::certificate_service::revoke_certificate_if_incomplete;
 use crate::services::course_completion_service::{
     CourseCompletionStatus, load_completion_statuses,
 };
@@ -706,7 +707,12 @@ pub async fn undo_course_manual_completion(
     active_enrollment.manual_completion_note = Set(None);
 
     match active_enrollment.update(db.get_ref()).await {
-        Ok(saved) => HttpResponse::Ok().json(saved),
+        Ok(saved) => {
+            if let Err(response) = revoke_certificate_if_incomplete(db.get_ref(), &saved).await {
+                return response;
+            }
+            HttpResponse::Ok().json(saved)
+        }
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Database error undoing manual completion: {}", err)),
     }

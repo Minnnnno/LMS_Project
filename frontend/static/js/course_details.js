@@ -565,7 +565,7 @@ function renderCompletionRoster() {
     if (!body) return;
 
     if (!completionRosterRows.length) {
-        body.innerHTML = '<tr><td colspan="5" class="grades-empty">No enrolled learners found for this course.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="grades-empty">No enrolled learners found for this course.</td></tr>';
         if (statusText) statusText.textContent = "0 enrolled learners";
         return;
     }
@@ -597,6 +597,15 @@ function renderCompletionRoster() {
         const action = status.manual_completed
             ? `<button class="course-card-action-btn completion-undo-btn" type="button" data-completion-undo="${row.user_id}">Undo</button>`
             : `<button class="course-card-action-btn" type="button" data-completion-mark="${row.user_id}">Mark Complete</button>`;
+        const certificate = row.certificate;
+        const certificateCell = certificate?.verification_url
+            ? `
+                <div class="completion-certificate-actions">
+                    <a class="course-card-action-btn" href="${escapeHtml(certificate.verification_url)}" target="_blank" rel="noopener">View</a>
+                    <button class="course-card-action-btn" type="button" data-certificate-copy="${escapeHtml(certificate.verification_url)}">Copy</button>
+                </div>
+            `
+            : `<span class="completion-meta">Available when complete</span>`;
 
         return `
             <tr>
@@ -619,6 +628,7 @@ function renderCompletionRoster() {
                     ${manualMeta}
                     ${note}
                 </td>
+                <td>${certificateCell}</td>
                 <td class="completion-action-cell">${action}</td>
             </tr>
         `;
@@ -634,22 +644,40 @@ async function loadCompletionRoster(force = false) {
     const body = document.getElementById("completion-roster-body");
     const statusText = document.getElementById("completion-roster-status");
     if (body) {
-        body.innerHTML = '<tr><td colspan="5" class="grades-empty">Loading completion roster...</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="grades-empty">Loading completion roster...</td></tr>';
     }
     if (statusText) {
         statusText.textContent = "";
     }
 
     try {
-        completionRosterRows = await axios.get(`/api/courses/${courseId}/completion-roster`)
-            .then(response => Array.isArray(response.data) ? response.data : []);
+        const [rosterRows, certificateRows] = await Promise.all([
+            axios.get(`/api/courses/${courseId}/completion-roster`)
+                .then(response => Array.isArray(response.data) ? response.data : []),
+            axios.get(`/api/courses/${courseId}/certificates`)
+                .then(response => Array.isArray(response.data) ? response.data : []),
+        ]);
+        const certificatesByUser = new Map(certificateRows.map(row => [Number(row.user_id), row.certificate]));
+        completionRosterRows = rosterRows.map(row => ({
+            ...row,
+            certificate: certificatesByUser.get(Number(row.user_id)) || null,
+        }));
         completionRosterLoaded = true;
         renderCompletionRoster();
     } catch (error) {
         console.error("Failed to load completion roster:", error);
         if (body) {
-            body.innerHTML = '<tr><td colspan="5" class="grades-empty text-danger">Unable to load completion roster.</td></tr>';
+            body.innerHTML = '<tr><td colspan="6" class="grades-empty text-danger">Unable to load completion roster.</td></tr>';
         }
+    }
+}
+
+async function copyCertificateLink(url) {
+    try {
+        await navigator.clipboard.writeText(url);
+        showActionMessage("Certificate link copied.", "success");
+    } catch (_) {
+        window.prompt("Certificate verification link:", url);
     }
 }
 
@@ -1456,11 +1484,14 @@ function bindInstructorControls() {
     document.getElementById("completion-roster-body")?.addEventListener("click", (event) => {
         const markButton = event.target.closest("[data-completion-mark]");
         const undoButton = event.target.closest("[data-completion-undo]");
+        const copyButton = event.target.closest("[data-certificate-copy]");
 
         if (markButton) {
             markLearnerComplete(markButton.dataset.completionMark);
         } else if (undoButton) {
             undoLearnerCompletion(undoButton.dataset.completionUndo);
+        } else if (copyButton) {
+            copyCertificateLink(copyButton.dataset.certificateCopy || "");
         }
     });
 

@@ -351,7 +351,7 @@
 .completion-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 880px;
+    min-width: 1020px;
 }
 
 .completion-table th,
@@ -431,6 +431,20 @@
 .completion-action-cell {
     text-align: right;
     white-space: nowrap;
+}
+
+.completion-certificate-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    max-width: 220px;
+}
+
+.completion-certificate-actions .course-card-action-btn {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    text-decoration: none;
 }
 
 .completion-undo-btn {

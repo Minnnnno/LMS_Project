@@ -1,4 +1,5 @@
 pub mod assignments;
+pub mod course_certificates;
 pub mod courses;
 pub mod course_instructors;
 pub mod email_verification_tokens;

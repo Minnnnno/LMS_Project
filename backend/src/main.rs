@@ -94,6 +94,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/api")
                     .configure(routes::assignment_routes::init)
                     .configure(routes::cloudinary::init)
+                    .configure(routes::certificate_routes::init)
                     .configure(routes::mailer::init)
                     .configure(routes::payment_routes::init)
                     .configure(routes::course_routes::init)

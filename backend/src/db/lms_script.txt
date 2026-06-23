@@ -178,6 +178,25 @@ CREATE TABLE IF NOT EXISTS enrollments (
     ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS course_certificates (
+  certificate_id     SERIAL PRIMARY KEY,
+  user_id            INT NOT NULL,
+  course_id          INT NOT NULL,
+  verification_token UUID NOT NULL UNIQUE,
+  issued_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completion_source  VARCHAR(32) NOT NULL,
+  revoked_at         TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         TIMESTAMPTZ,
+  UNIQUE (user_id, course_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
+
 -- ============================================================
 -- MODULES
 -- ============================================================
@@ -497,6 +516,25 @@ BEGIN
     ON DELETE SET NULL;
   END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS course_certificates (
+  certificate_id     SERIAL PRIMARY KEY,
+  user_id            INT NOT NULL,
+  course_id          INT NOT NULL,
+  verification_token UUID NOT NULL UNIQUE,
+  issued_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completion_source  VARCHAR(32) NOT NULL,
+  revoked_at         TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         TIMESTAMPTZ,
+  UNIQUE (user_id, course_id),
+  FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  FOREIGN KEY (course_id)
+    REFERENCES courses(course_id)
+    ON DELETE CASCADE
+);
 
 ALTER TABLE payments
 DROP COLUMN IF EXISTS provider_payment_ref,
