@@ -41,6 +41,7 @@ class CoursesPage {
         this.selectedPresetImage   = null;
         this.selectedImageFile     = null;
         this.selectedImageObjectUrl = null;
+        this.feedbackDismissTimer  = null;
     }
 
     // ---------------------------------------------------------------------------
@@ -97,6 +98,62 @@ class CoursesPage {
                     </div>
                 </div>`;
         }).join("");
+    }
+
+    showCourseFeedback({
+        variant = "danger",
+        icon = "bi-exclamation-triangle-fill",
+        title = "Unable to continue",
+        message = "Unable to process this course right now.",
+        actionHref = "",
+        actionLabel = "",
+        autoHide = false,
+    } = {}) {
+        const feedback = document.getElementById("course-action-feedback");
+        if (!feedback) return;
+
+        if (this.feedbackDismissTimer) {
+            window.clearTimeout(this.feedbackDismissTimer);
+            this.feedbackDismissTimer = null;
+        }
+
+        const action = actionHref && actionLabel
+            ? `<a class="course-feedback-action" href="${HtmlUtils.escape(actionHref)}">${HtmlUtils.escape(actionLabel)}</a>`
+            : "";
+
+        feedback.className = `course-feedback ${variant === "warning" ? "course-feedback-warning" : "course-feedback-danger"}`;
+        feedback.innerHTML = `
+            <i class="bi ${HtmlUtils.escape(icon)} course-feedback-icon" aria-hidden="true"></i>
+            <div class="course-feedback-copy">
+                <strong>${HtmlUtils.escape(title)}</strong>
+                <span>${HtmlUtils.escape(message)}</span>
+            </div>
+            ${action}
+            <button class="course-feedback-dismiss" type="button" aria-label="Dismiss notice">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
+        `;
+        feedback.hidden = false;
+        feedback.querySelector(".course-feedback-dismiss")
+            ?.addEventListener("click", () => this.hideCourseFeedback());
+        feedback.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        if (autoHide) {
+            this.feedbackDismissTimer = window.setTimeout(() => this.hideCourseFeedback(), 6000);
+        }
+    }
+
+    hideCourseFeedback() {
+        const feedback = document.getElementById("course-action-feedback");
+        if (!feedback) return;
+
+        feedback.hidden = true;
+        feedback.innerHTML = "";
+
+        if (this.feedbackDismissTimer) {
+            window.clearTimeout(this.feedbackDismissTimer);
+            this.feedbackDismissTimer = null;
+        }
     }
 
     // ---------------------------------------------------------------------------
@@ -452,6 +509,7 @@ class CoursesPage {
         const originalText = button.textContent.trim();
         const isPaid      = originalText === "Buy Course";
 
+        this.hideCourseFeedback();
         button.disabled    = true;
         button.textContent = isPaid ? "Opening checkout..." : "Enrolling...";
 
@@ -473,7 +531,24 @@ class CoursesPage {
             }
             button.disabled    = false;
             button.textContent = originalText;
-            alert(error.response?.data || "Unable to process this course right now.");
+            const message = error.response?.data || "Unable to process this course right now.";
+
+            if (error.response?.status === 403 && /verify/i.test(message)) {
+                this.showCourseFeedback({
+                    variant: "warning",
+                    icon: "bi-shield-check",
+                    title: "Verify your email to buy this course",
+                    message: "Checkout is ready after your email is verified. Open your profile to resend the verification email.",
+                    actionHref: "/profile",
+                    actionLabel: "Open Profile",
+                });
+                return;
+            }
+
+            this.showCourseFeedback({
+                title: "Course action failed",
+                message,
+            });
         }
     }
 

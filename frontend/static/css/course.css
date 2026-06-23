@@ -68,6 +68,104 @@
     margin-top: 24px;
 }
 
+.course-feedback {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 10px 0 22px;
+    border: 1px solid;
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: #ffffff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.course-feedback[hidden] {
+    display: none;
+}
+
+.course-feedback-warning {
+    border-color: #f2c94c;
+    background: #fffbeb;
+    color: #7a4d00;
+}
+
+.course-feedback-danger {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #991b1b;
+}
+
+.course-feedback-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    font-size: 1.1rem;
+}
+
+.course-feedback-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.course-feedback-copy strong {
+    color: #111827;
+    font-size: 0.98rem;
+    line-height: 1.25;
+}
+
+.course-feedback-copy span {
+    color: #475467;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.course-feedback-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    padding: 0 13px;
+    background: #111827;
+    color: #ffffff;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.course-feedback-action:hover {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.course-feedback-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #667085;
+    cursor: pointer;
+}
+
+.course-feedback-dismiss:hover {
+    background: rgba(17, 24, 39, 0.08);
+    color: #111827;
+}
+
 .modern-course-card {
     background: white;
     border-radius: 18px;
@@ -359,6 +457,17 @@
 
     .course-card-action {
         width: 100%;
+    }
+
+    .course-feedback {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .course-feedback-action {
+        margin-left: 48px;
+        width: calc(100% - 48px);
+        order: 4;
     }
 
     .course-form-row {
