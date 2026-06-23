@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=24">
+<link rel="stylesheet" href="/static/css/course_details.css?v=25">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -57,6 +57,7 @@
     <button type="button" class="course-tab" data-course-tab="grades">Grades</button>
     <button type="button" class="course-tab" data-course-tab="dropbox">Dropbox</button>
     <button type="button" id="course-submissions-tab-btn" class="course-tab" data-course-tab="submissions" style="display: none;">Submissions</button>
+    <button type="button" id="course-completion-tab-btn" class="course-tab" data-course-tab="completion" style="display: none;">Completion</button>
 </div>
 
 <div id="course-content-panel" class="course-tab-panel active">
@@ -133,6 +134,36 @@
             </div>
             <div id="course-quiz-analytics-list" class="quiz-analytics-list">
                 <p class="grades-empty">Quiz analytics will appear here.</p>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="course-completion-panel" class="course-tab-panel">
+    <div class="grades-layout">
+        <div class="course-card grades-card completion-card">
+            <div class="course-card-heading">
+                <div>
+                    <h2>Course Completion</h2>
+                    <p class="completion-subtitle">Mark enrolled learners as complete or review automatic completion status.</p>
+                </div>
+                <button id="refresh-completion-roster-btn" class="course-card-action-btn" type="button">Refresh</button>
+            </div>
+            <p id="completion-roster-status" class="grades-summary" role="status" aria-live="polite"></p>
+            <div class="completion-table-wrap">
+                <table class="completion-table">
+                    <thead>
+                        <tr>
+                            <th>Learner</th>
+                            <th>Progress</th>
+                            <th>Checks</th>
+                            <th>Status</th>
+                            <th class="completion-action-cell">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="completion-roster-body">
+                        <tr><td colspan="5" class="grades-empty">Completion roster will appear here.</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -400,5 +431,5 @@
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/static/js/course_assignments.js?v=2"></script>
 <script src="/static/js/course_quizzes.js?v=10"></script>
-<script src="/static/js/course_details.js?v=45"></script>
+<script src="/static/js/course_details.js?v=47"></script>
 {% endblock content %}

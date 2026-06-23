@@ -2,10 +2,13 @@ use crate::entity::courses::{self, CourseStatus};
 use crate::entity::enrollments;
 use crate::entity::{
     assignments, module_contents, module_prerequisites, module_progress, modules, quiz,
-    quiz_attempts, quiz_prerequisites, submissions,
+    quiz_attempts, quiz_prerequisites, users,
 };
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::models::module_progress::{CourseModuleProgress, CourseProgress};
+use crate::services::course_completion_service::{
+    CourseCompletionStatus, load_completion_statuses,
+};
 use crate::services::course_service::{
     can_manage_course, can_view_course, get_instructor_course_ids_for_session,
     get_instructor_courses_for_session, get_organisation_courses_for_session,
@@ -14,14 +17,14 @@ use crate::services::course_service::{
 };
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
-use chrono::Local;
+use chrono::{Local, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, Set,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Serialize)]
@@ -69,9 +72,29 @@ struct CourseProgressOverviewPayload {
 struct CourseCompletionOverviewPayload {
     course: courses::Model,
     completed: bool,
+    automatic_completed: bool,
+    manual_completed: bool,
+    completion_source: String,
     content_complete: bool,
     quizzes_graded: bool,
     assignments_graded: bool,
+    manual_completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    manual_completed_by: Option<i32>,
+    manual_completion_note: Option<String>,
+    progress: CourseProgress,
+}
+
+#[derive(Serialize)]
+struct CourseCompletionRosterItem {
+    user_id: i32,
+    student_name: String,
+    student_email: String,
+    status: CourseCompletionStatus,
+}
+
+#[derive(Deserialize)]
+struct ManualCompletionRequest {
+    note: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -150,6 +173,46 @@ fn session_user_id(session: &Session) -> Result<i32, HttpResponse> {
             Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)))
         }
     }
+}
+
+async fn require_manageable_course(
+    db: &DatabaseConnection,
+    session: &Session,
+    course_id: i32,
+) -> Result<courses::Model, HttpResponse> {
+    let course = courses::Entity::find_by_id(course_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
+
+    match can_manage_course(db, session, &course).await {
+        Ok(true) => Ok(course),
+        Ok(false) => Err(HttpResponse::Forbidden().body("You cannot manage this course")),
+        Err(response) => Err(response),
+    }
+}
+
+fn normalize_manual_completion_note(note: Option<String>) -> Result<Option<String>, HttpResponse> {
+    let Some(note) = note else {
+        return Ok(None);
+    };
+
+    let note = note.trim().to_string();
+    if note.is_empty() {
+        return Ok(None);
+    }
+
+    if note.chars().count() > 500 {
+        return Err(
+            HttpResponse::BadRequest().body("Completion note must be 500 characters or fewer")
+        );
+    }
+
+    Ok(Some(note))
 }
 
 async fn get_enrolled_courses(
@@ -448,156 +511,205 @@ pub async fn get_my_courses_completion_overview(
     }
 
     let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
-    let (module_result, assignment_result, quiz_result) = tokio::join!(
-        modules::Entity::find()
-            .filter(modules::Column::CourseId.is_in(course_ids.clone()))
-            .all(db.get_ref()),
-        assignments::Entity::find()
-            .filter(assignments::Column::CourseId.is_in(course_ids.clone()))
-            .all(db.get_ref()),
-        quiz::Entity::find()
-            .filter(quiz::Column::CourseId.is_in(course_ids))
-            .all(db.get_ref()),
-    );
-
-    let module_rows = match module_result {
+    let enrollment_rows = match enrollments::Entity::find()
+        .filter(enrollments::Column::UserId.eq(user_id))
+        .filter(enrollments::Column::CourseId.is_in(course_ids))
+        .all(db.get_ref())
+        .await
+    {
         Ok(rows) => rows,
-        Err(err) => return HttpResponse::InternalServerError()
-            .body(format!("Database error finding course modules: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding enrollments: {}", err));
+        }
     };
-    let assignment_rows = match assignment_result {
-        Ok(rows) => rows,
-        Err(err) => return HttpResponse::InternalServerError()
-            .body(format!("Database error finding course assignments: {}", err)),
+    let completion_statuses = match load_completion_statuses(db.get_ref(), &enrollment_rows).await {
+        Ok(statuses) => statuses,
+        Err(response) => return response,
     };
-    let quiz_rows = match quiz_result {
-        Ok(rows) => rows,
-        Err(err) => return HttpResponse::InternalServerError()
-            .body(format!("Database error finding course quizzes: {}", err)),
-    };
-
-    let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
-    let assignment_ids: Vec<i32> = assignment_rows
-        .iter()
-        .map(|assignment| assignment.assignment_id)
-        .collect();
-    let quiz_ids: Vec<i32> = quiz_rows.iter().map(|quiz| quiz.quiz_id).collect();
-
-    let (progress_result, submission_result, attempt_result) = tokio::join!(
-        module_progress::Entity::find()
-            .filter(module_progress::Column::UserId.eq(user_id))
-            .filter(module_progress::Column::ModuleId.is_in(module_ids))
-            .filter(module_progress::Column::CompletedAt.is_not_null())
-            .all(db.get_ref()),
-        submissions::Entity::find()
-            .filter(submissions::Column::UserId.eq(user_id))
-            .filter(submissions::Column::AssignmentId.is_in(assignment_ids))
-            .all(db.get_ref()),
-        quiz_attempts::Entity::find()
-            .filter(quiz_attempts::Column::UserId.eq(user_id))
-            .filter(quiz_attempts::Column::QuizId.is_in(quiz_ids))
-            .all(db.get_ref()),
-    );
-
-    let completed_module_ids: HashSet<i32> = match progress_result {
-        Ok(rows) => rows.into_iter().map(|row| row.module_id).collect(),
-        Err(err) => return HttpResponse::InternalServerError()
-            .body(format!("Database error finding module progress: {}", err)),
-    };
-    let submission_rows = match submission_result {
-        Ok(rows) => rows,
-        Err(err) => return HttpResponse::InternalServerError()
-            .body(format!("Database error finding assignment submissions: {}", err)),
-    };
-    let graded_quiz_ids: HashSet<i32> = match attempt_result {
-        Ok(rows) => rows
-            .into_iter()
-            .filter(|attempt| attempt.is_graded && attempt.submitted_at.is_some())
-            .map(|attempt| attempt.quiz_id)
-            .collect(),
-        Err(err) => return HttpResponse::InternalServerError()
-            .body(format!("Database error finding quiz attempts: {}", err)),
-    };
-
-    let mut latest_submission_by_assignment = HashMap::new();
-    for submission in submission_rows {
-        latest_submission_by_assignment
-            .entry(submission.assignment_id)
-            .and_modify(|current: &mut submissions::Model| {
-                if submission.submitted_at > current.submitted_at
-                    || (submission.submitted_at == current.submitted_at
-                        && submission.submission_id > current.submission_id)
-                {
-                    *current = submission.clone();
-                }
-            })
-            .or_insert(submission);
-    }
-
-    let mut module_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
-    for module in module_rows {
-        module_ids_by_course
-            .entry(module.course_id)
-            .or_default()
-            .push(module.module_id);
-    }
-
-    let mut assignment_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
-    for assignment in assignment_rows {
-        assignment_ids_by_course
-            .entry(assignment.course_id)
-            .or_default()
-            .push(assignment.assignment_id);
-    }
-
-    let mut quiz_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
-    for quiz in quiz_rows {
-        quiz_ids_by_course
-            .entry(quiz.course_id)
-            .or_default()
-            .push(quiz.quiz_id);
-    }
 
     let payloads = course_rows
         .into_iter()
-        .map(|course| {
-            let course_module_ids = module_ids_by_course
-                .get(&course.course_id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let course_assignment_ids = assignment_ids_by_course
-                .get(&course.course_id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let course_quiz_ids = quiz_ids_by_course
-                .get(&course.course_id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-
-            let content_complete = !course_module_ids.is_empty()
-                && course_module_ids
-                    .iter()
-                    .all(|module_id| completed_module_ids.contains(module_id));
-            let assignments_graded = course_assignment_ids.iter().all(|assignment_id| {
-                latest_submission_by_assignment
-                    .get(assignment_id)
-                    .is_some_and(|submission| submission.score.is_some())
-            });
-            let quizzes_graded = course_quiz_ids
-                .iter()
-                .all(|quiz_id| graded_quiz_ids.contains(quiz_id));
-
-            CourseCompletionOverviewPayload {
-                course,
-                completed: content_complete && assignments_graded && quizzes_graded,
-                content_complete,
-                quizzes_graded,
-                assignments_graded,
-            }
+        .filter_map(|course| {
+            completion_statuses
+                .get(&(user_id, course.course_id))
+                .map(|status| CourseCompletionOverviewPayload {
+                    course,
+                    completed: status.completed,
+                    automatic_completed: status.automatic_completed,
+                    manual_completed: status.manual_completed,
+                    completion_source: status.completion_source.clone(),
+                    content_complete: status.content_complete,
+                    quizzes_graded: status.quizzes_graded,
+                    assignments_graded: status.assignments_graded,
+                    manual_completed_at: status.manual_completed_at,
+                    manual_completed_by: status.manual_completed_by,
+                    manual_completion_note: status.manual_completion_note.clone(),
+                    progress: status.progress.clone(),
+                })
         })
         .collect::<Vec<_>>();
 
     HttpResponse::Ok().json(payloads)
+}
+
+#[get("/courses/{course_id}/completion-roster")]
+pub async fn get_course_completion_roster(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let course_id = path.into_inner();
+    if let Err(response) = require_manageable_course(db.get_ref(), &session, course_id).await {
+        return response;
+    }
+
+    let enrollment_rows = match enrollments::Entity::find()
+        .filter(enrollments::Column::CourseId.eq(course_id))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding enrollments: {}", err));
+        }
+    };
+
+    if enrollment_rows.is_empty() {
+        return HttpResponse::Ok().json(Vec::<CourseCompletionRosterItem>::new());
+    }
+
+    let completion_statuses = match load_completion_statuses(db.get_ref(), &enrollment_rows).await {
+        Ok(statuses) => statuses,
+        Err(response) => return response,
+    };
+    let user_ids: Vec<i32> = enrollment_rows
+        .iter()
+        .map(|enrollment| enrollment.user_id)
+        .collect();
+    let user_rows = match users::Entity::find()
+        .filter(users::Column::UserId.is_in(user_ids))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding users: {}", err));
+        }
+    };
+    let users_by_id: HashMap<i32, users::Model> = user_rows
+        .into_iter()
+        .map(|user| (user.user_id, user))
+        .collect();
+
+    let mut roster = enrollment_rows
+        .into_iter()
+        .filter_map(|enrollment| {
+            let user = users_by_id.get(&enrollment.user_id)?;
+            let status = completion_statuses
+                .get(&(enrollment.user_id, enrollment.course_id))?
+                .clone();
+
+            Some(CourseCompletionRosterItem {
+                user_id: enrollment.user_id,
+                student_name: format!("{} {}", user.first_name, user.last_name)
+                    .trim()
+                    .to_string(),
+                student_email: user.email.clone(),
+                status,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    roster.sort_by(|a, b| {
+        a.student_name
+            .to_lowercase()
+            .cmp(&b.student_name.to_lowercase())
+            .then_with(|| a.student_email.cmp(&b.student_email))
+    });
+
+    HttpResponse::Ok().json(roster)
+}
+
+#[put("/courses/{course_id}/completions/{user_id}/manual")]
+pub async fn mark_course_manual_completion(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+    body: web::Json<ManualCompletionRequest>,
+) -> impl Responder {
+    let (course_id, user_id) = path.into_inner();
+    let staff_user_id = match session_user_id(&session) {
+        Ok(user_id) => user_id,
+        Err(response) => return response,
+    };
+    if let Err(response) = require_manageable_course(db.get_ref(), &session, course_id).await {
+        return response;
+    }
+    let note = match normalize_manual_completion_note(body.into_inner().note) {
+        Ok(note) => note,
+        Err(response) => return response,
+    };
+
+    let enrollment = match enrollments::Entity::find_by_id((user_id, course_id))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(enrollment)) => enrollment,
+        Ok(None) => return HttpResponse::NotFound().body("Enrollment not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding enrollment: {}", err));
+        }
+    };
+
+    let mut active_enrollment = enrollment.into_active_model();
+    active_enrollment.manual_completed_at = Set(Some(Utc::now()));
+    active_enrollment.manual_completed_by = Set(Some(staff_user_id));
+    active_enrollment.manual_completion_note = Set(note);
+
+    match active_enrollment.update(db.get_ref()).await {
+        Ok(saved) => HttpResponse::Ok().json(saved),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error marking course complete: {}", err)),
+    }
+}
+
+#[delete("/courses/{course_id}/completions/{user_id}/manual")]
+pub async fn undo_course_manual_completion(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+) -> impl Responder {
+    let (course_id, user_id) = path.into_inner();
+    if let Err(response) = require_manageable_course(db.get_ref(), &session, course_id).await {
+        return response;
+    }
+
+    let enrollment = match enrollments::Entity::find_by_id((user_id, course_id))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(enrollment)) => enrollment,
+        Ok(None) => return HttpResponse::NotFound().body("Enrollment not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding enrollment: {}", err));
+        }
+    };
+
+    let mut active_enrollment = enrollment.into_active_model();
+    active_enrollment.manual_completed_at = Set(None);
+    active_enrollment.manual_completed_by = Set(None);
+    active_enrollment.manual_completion_note = Set(None);
+
+    match active_enrollment.update(db.get_ref()).await {
+        Ok(saved) => HttpResponse::Ok().json(saved),
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error undoing manual completion: {}", err)),
+    }
 }
 
 #[get("/my-courses/assignments-overview")]

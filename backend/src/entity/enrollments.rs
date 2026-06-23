@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "enrollments")]
@@ -16,6 +16,12 @@ pub struct Model {
     pub stripe_checkout_session_id: Option<String>,
 
     pub paid_at: Option<DateTime<Utc>>,
+
+    pub manual_completed_at: Option<DateTime<Utc>>,
+
+    pub manual_completed_by: Option<i32>,
+
+    pub manual_completion_note: Option<String>,
 
     pub created_at: Option<DateTimeWithTimeZone>,
 

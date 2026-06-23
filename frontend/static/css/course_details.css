@@ -333,6 +333,111 @@
     gap: 12px;
 }
 
+.completion-card {
+    max-width: 1180px;
+}
+
+.completion-subtitle {
+    margin: 4px 0 0;
+    color: #667085;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.completion-table-wrap {
+    overflow-x: auto;
+}
+
+.completion-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 880px;
+}
+
+.completion-table th,
+.completion-table td {
+    border-bottom: 1px solid #e4e7ec;
+    padding: 14px 12px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.completion-table th {
+    color: #667085;
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.completion-meta {
+    display: block;
+    margin-top: 4px;
+    color: #667085;
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.completion-progress {
+    display: grid;
+    gap: 8px;
+    min-width: 150px;
+    color: #111827;
+    font-weight: 800;
+}
+
+.completion-progress-track {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e4e7ec;
+}
+
+.completion-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+}
+
+.completion-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 240px;
+}
+
+.completion-check,
+.completion-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.completion-check.passed,
+.completion-badge.complete {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.completion-check.pending,
+.completion-badge.pending {
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.completion-action-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.completion-undo-btn {
+    background: #fef2f2;
+    color: #991b1b;
+}
+
 .grade-section {
     display: grid;
     gap: 8px;

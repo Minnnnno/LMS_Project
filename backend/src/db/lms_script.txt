@@ -163,13 +163,19 @@ CREATE TABLE IF NOT EXISTS enrollments (
   enrolled_at                TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   stripe_checkout_session_id VARCHAR(255) UNIQUE,
   paid_at                    TIMESTAMP,
+  manual_completed_at        TIMESTAMPTZ,
+  manual_completed_by        INT,
+  manual_completion_note     TEXT,
   PRIMARY KEY (user_id, course_id),
   FOREIGN KEY (user_id)
     REFERENCES users(user_id)
     ON DELETE CASCADE,
   FOREIGN KEY (course_id)
     REFERENCES courses(course_id)
-    ON DELETE CASCADE
+    ON DELETE CASCADE,
+  FOREIGN KEY (manual_completed_by)
+    REFERENCES users(user_id)
+    ON DELETE SET NULL
 );
 
 -- ============================================================
@@ -470,6 +476,28 @@ ADD COLUMN background_image_url TEXT;
 ALTER TABLE enrollments
 ALTER COLUMN enrolled_at TYPE TIMESTAMPTZ
 USING enrolled_at AT TIME ZONE 'Asia/Singapore';
+
+-- Manual course completion overrides for staff-approved completion.
+ALTER TABLE enrollments
+ADD COLUMN IF NOT EXISTS manual_completed_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS manual_completed_by INT,
+ADD COLUMN IF NOT EXISTS manual_completion_note TEXT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'enrollments_manual_completed_by_fkey'
+  ) THEN
+    ALTER TABLE enrollments
+    ADD CONSTRAINT enrollments_manual_completed_by_fkey
+    FOREIGN KEY (manual_completed_by)
+    REFERENCES users(user_id)
+    ON DELETE SET NULL;
+  END IF;
+END $$;
+
 ALTER TABLE payments
 DROP COLUMN IF EXISTS provider_payment_ref,
 DROP COLUMN IF EXISTS amount;
