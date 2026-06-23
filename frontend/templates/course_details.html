@@ -375,6 +375,17 @@
         </div>
     </div>
 </div>
+<div id="delete-quiz-attempt-modal" style="display: none;">
+    <div class="modal-content delete-quiz-attempt-modal">
+        <h2>Delete Quiz Attempt</h2>
+        <p id="delete-quiz-attempt-message">Delete this quiz attempt?</p>
+        <p id="delete-quiz-attempt-status" class="quiz-answer-save-status" role="status" aria-live="polite"></p>
+        <div class="modal-actions">
+            <button id="confirm-delete-quiz-attempt-btn" class="danger-btn" type="button">Delete Attempt</button>
+            <button id="cancel-delete-quiz-attempt-btn" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
 <div id="quiz-analytics-modal" style="display: none;">
     <div class="modal-content quiz-analytics-modal-content">
         <h2 id="quiz-analytics-title">Quiz Analytics</h2>
@@ -388,6 +399,6 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/static/js/course_assignments.js?v=2"></script>
-<script src="/static/js/course_quizzes.js?v=9"></script>
+<script src="/static/js/course_quizzes.js?v=10"></script>
 <script src="/static/js/course_details.js?v=45"></script>
 {% endblock content %}

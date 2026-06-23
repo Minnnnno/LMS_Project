@@ -879,6 +879,7 @@
 #assignment-modal,
 #assignment-details-modal,
 #quiz-attempts-modal,
+#delete-quiz-attempt-modal,
 #quiz-analytics-modal {
     position: fixed;
     inset: 0;
@@ -901,6 +902,7 @@
 
 #assignment-details-modal,
 #quiz-attempts-modal,
+#delete-quiz-attempt-modal,
 #quiz-analytics-modal {
     padding: 32px;
 }
@@ -910,6 +912,39 @@
 #quiz-analytics-modal .quiz-analytics-modal-content {
     width: min(860px, 100%);
     max-height: min(820px, calc(100vh - 64px));
+}
+
+#delete-quiz-attempt-modal {
+    z-index: 1060;
+}
+
+.delete-quiz-attempt-modal {
+    display: grid;
+    gap: 14px;
+}
+
+.delete-quiz-attempt-modal h2 {
+    margin: 0;
+    color: #101828;
+    font-size: 1.25rem;
+    font-weight: 900;
+}
+
+.delete-quiz-attempt-modal p {
+    margin: 0;
+    color: #475467;
+    line-height: 1.5;
+}
+
+.quiz-attempt-delete-btn {
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: #fef2f2;
+    color: #b42318;
+    font-size: 0.82rem;
+    font-weight: 800;
+    cursor: pointer;
 }
 
 .quiz-analytics-list,

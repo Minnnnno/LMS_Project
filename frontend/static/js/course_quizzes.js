@@ -1,4 +1,6 @@
 // Quiz list, attempt review, and quiz attempt modal behavior for course details.
+let pendingDeleteQuizAttemptId = null;
+
 async function loadQuizzes() {
     try {
         const response = await axios.get("/api/quiz/" + courseId);
@@ -437,6 +439,17 @@ function getBestAttemptLabel(group) {
         : "Pending";
 }
 
+function getQuizAttemptDeleteSummary(attempt) {
+    if (!attempt) {
+        return "Delete this quiz attempt?";
+    }
+
+    const student = attempt.student_name || "this student";
+    const date = formatAssignmentDate(attempt.submitted_at || attempt.started_at);
+
+    return `Delete ${student}'s attempt from ${date}? This will remove the submitted answers and grade for this attempt.`;
+}
+
 function findQuizAttemptAnswer(answerId) {
     for (const attempt of currentQuizAttemptRows) {
         const answers = Array.isArray(attempt.answers) ? attempt.answers : [];
@@ -632,6 +645,7 @@ function renderQuizStudentAttempts(group, savedAnswerId = null) {
                                 <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
                                 <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
                                 <span class="${isPerfectQuizAttempt(attempt) ? "quiz-perfect-score" : ""}">Score: ${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                                <button type="button" class="quiz-attempt-delete-btn" onclick="openDeleteQuizAttemptModal(event, ${attempt.attempt_id})">Delete</button>
                             </div>
                         </div>
                         <div class="quiz-attempt-question-summary">
@@ -669,6 +683,7 @@ function renderQuizAttemptDetail(attempt, savedAnswerId = null) {
                         <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
                         <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
                         <span>${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+                        <button type="button" class="quiz-attempt-delete-btn" onclick="openDeleteQuizAttemptModal(event, ${attempt.attempt_id})">Delete</button>
                     </div>
                 </div>
                 ${answers.length ? answers.map((answer) => renderQuizAttemptAnswer(answer, savedAnswerId)).join("") : '<p class="grades-empty">No answers recorded for this attempt.</p>'}
@@ -741,9 +756,107 @@ async function openQuizAttempts(event, quizId) {
 function closeQuizAttempts() {
     currentQuizAttemptsQuizId = null;
     currentQuizAttemptRows = [];
+    closeDeleteQuizAttemptModal();
     const modal = document.getElementById("quiz-attempts-modal");
     if (modal) {
         modal.style.display = "none";
+    }
+}
+
+function openDeleteQuizAttemptModal(event, attemptId) {
+    event?.stopPropagation();
+
+    const attempt = currentQuizAttemptRows.find((item) => Number(item.attempt_id) === Number(attemptId));
+    const modal = document.getElementById("delete-quiz-attempt-modal");
+    const message = document.getElementById("delete-quiz-attempt-message");
+    const status = document.getElementById("delete-quiz-attempt-status");
+
+    if (!attempt || !modal) {
+        showActionMessage("Quiz attempt not found.", "error");
+        return;
+    }
+
+    pendingDeleteQuizAttemptId = Number(attemptId);
+
+    if (message) {
+        message.textContent = getQuizAttemptDeleteSummary(attempt);
+    }
+
+    if (status) {
+        status.textContent = "";
+        status.className = "quiz-answer-save-status";
+    }
+
+    modal.style.display = "flex";
+}
+
+function closeDeleteQuizAttemptModal() {
+    pendingDeleteQuizAttemptId = null;
+    const modal = document.getElementById("delete-quiz-attempt-modal");
+    const confirmButton = document.getElementById("confirm-delete-quiz-attempt-btn");
+    const status = document.getElementById("delete-quiz-attempt-status");
+
+    if (confirmButton) {
+        confirmButton.disabled = false;
+    }
+
+    if (status) {
+        status.textContent = "";
+        status.className = "quiz-answer-save-status";
+    }
+
+    if (modal) {
+        modal.style.display = "none";
+    }
+}
+
+async function confirmDeleteQuizAttempt() {
+    if (!pendingDeleteQuizAttemptId || !currentQuizAttemptsQuizId) {
+        closeDeleteQuizAttemptModal();
+        return;
+    }
+
+    const attemptId = pendingDeleteQuizAttemptId;
+    const attempt = currentQuizAttemptRows.find((item) => Number(item.attempt_id) === attemptId);
+    const userId = attempt?.user_id;
+    const confirmButton = document.getElementById("confirm-delete-quiz-attempt-btn");
+    const status = document.getElementById("delete-quiz-attempt-status");
+
+    try {
+        if (confirmButton) {
+            confirmButton.disabled = true;
+        }
+
+        if (status) {
+            status.textContent = "Deleting attempt...";
+            status.className = "quiz-answer-save-status";
+        }
+
+        await axios.delete(`/api/quiz-attempts/${attemptId}`);
+
+        const response = await axios.get(`/api/quiz-attempts/quiz/${currentQuizAttemptsQuizId}`);
+        currentQuizAttemptRows = Array.isArray(response.data) ? response.data : [];
+        gradesLoaded = false;
+        closeDeleteQuizAttemptModal();
+
+        if (userId && currentQuizAttemptRows.some((item) => Number(item.user_id) === Number(userId))) {
+            showQuizStudentAttempts(userId);
+        } else {
+            showQuizAttemptList();
+        }
+
+        showActionMessage("Quiz attempt deleted.", "success");
+    } catch (error) {
+        if (confirmButton) {
+            confirmButton.disabled = false;
+        }
+
+        if (status) {
+            status.textContent = error.response?.data || "Failed to delete quiz attempt.";
+            status.className = "quiz-answer-save-status error";
+        }
+
+        showActionMessage(error.response?.data || "Failed to delete quiz attempt.", "error");
     }
 }
 
