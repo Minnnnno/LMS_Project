@@ -6,6 +6,10 @@
 <link rel="stylesheet" href="/static/css/organisation_signup.css">
 {% endblock extra_css %}
 
+{% block extra_js %}
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+{% endblock extra_js %}
+
 {% block content %}
 <section class="org-signup-page">
     <div class="org-signup-layout">
@@ -178,6 +182,10 @@
                         </div>
                     </div>
                     {% endif %}
+
+                    <div class="org-recaptcha-field">
+                        <div class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}"></div>
+                    </div>
 
                     <button type="submit" class="btn btn-dark w-100 org-signup-submit-btn">
                         Create organisation

@@ -187,6 +187,12 @@
     box-shadow: 0 0 0 0.22rem rgba(17, 24, 39, 0.12);
 }
 
+.org-recaptcha-field {
+    min-height: 78px;
+    margin-bottom: 1.25rem;
+    overflow-x: auto;
+}
+
 .org-signup-submit-btn {
     min-height: 56px;
     border-radius: 14px;

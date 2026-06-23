@@ -28,6 +28,9 @@ pub struct OrganisationSignupForm {
     pub admin_password: Option<String>,
 
     pub confirm_password: Option<String>,
+
+    #[serde(rename = "g-recaptcha-response")]
+    pub recaptcha_response: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

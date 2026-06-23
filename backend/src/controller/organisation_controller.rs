@@ -1,6 +1,6 @@
 use actix_session::Session;
 use actix_web::{
-    HttpResponse, Responder, delete, get,
+    HttpRequest, HttpResponse, Responder, delete, get,
     http::{StatusCode, header},
     post, web,
 };
@@ -22,6 +22,7 @@ use crate::models::organisation::{
     OrgMemberDto, OrganisationSignupForm,
 };
 use crate::services::auth_helpers::redirect_to_login;
+use crate::services::captcha_service::{recaptcha_site_key, verify_recaptcha};
 use crate::services::course_service::{get_session_user_org_id, has_role};
 use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::organisation_service;
@@ -104,6 +105,7 @@ pub async fn organisation_signup_page(
 #[post("/organisations/signup")]
 pub async fn organisation_signup_submit(
     db: web::Data<DatabaseConnection>,
+    req: HttpRequest,
     session: Session,
     form: web::Form<OrganisationSignupForm>,
 ) -> impl Responder {
@@ -159,6 +161,30 @@ pub async fn organisation_signup_submit(
             None,
             Some(&form),
         );
+    }
+
+    match verify_recaptcha(form.recaptcha_response.as_deref(), request_ip_address(&req)).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return render_signup_page(
+                &session,
+                StatusCode::BAD_REQUEST,
+                Some("Please complete the reCAPTCHA challenge."),
+                current_user.as_ref(),
+                None,
+                Some(&form),
+            );
+        }
+        Err(message) => {
+            return render_signup_page(
+                &session,
+                StatusCode::BAD_REQUEST,
+                Some(&message),
+                current_user.as_ref(),
+                None,
+                Some(&form),
+            );
+        }
     }
 
     let org_name = form.org_name.trim().to_string();
@@ -408,6 +434,12 @@ async fn current_session_user(
         })
 }
 
+fn request_ip_address(req: &HttpRequest) -> Option<String> {
+    req.connection_info()
+        .realip_remote_addr()
+        .map(|value| value.to_string())
+}
+
 fn render_signup_page(
     session: &Session,
     status: StatusCode,
@@ -423,6 +455,19 @@ fn render_signup_page(
     context.insert("show_admin_fields", &current_user.is_none());
     context.insert("already_belongs", &already_belongs);
     context.insert("dashboard_path", &ORG_DASHBOARD_PATH);
+    if !already_belongs {
+        match recaptcha_site_key() {
+            Ok(site_key) => {
+                context.insert("recaptcha_site_key", &site_key);
+            }
+            Err(message) => {
+                println!("reCAPTCHA site key error: {}", message);
+                return HttpResponse::InternalServerError()
+                    .content_type("text/plain")
+                    .body(message);
+            }
+        }
+    }
 
     if let Some(error) = error {
         context.insert("error", error);
