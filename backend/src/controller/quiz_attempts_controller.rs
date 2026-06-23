@@ -1,6 +1,6 @@
 use crate::services::{quiz_attempt_service, quiz_review_service};
 use actix_session::Session;
-use actix_web::{Responder, get, post, put, web};
+use actix_web::{delete, get, post, put, web, Responder};
 use sea_orm::DatabaseConnection;
 
 // Staff only: see all attempts for a quiz
@@ -56,4 +56,14 @@ pub async fn submit_quiz_attempt(
     session: Session,
 ) -> impl Responder {
     quiz_attempt_service::submit_attempt(db.get_ref(), &session, path.into_inner()).await
+}
+
+// Staff can delete attempts for quizzes they can manage
+#[delete("/quiz-attempts/{attempt_id}")]
+pub async fn delete_quiz_attempt(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>,
+    session: Session,
+) -> impl Responder {
+    quiz_attempt_service::delete_attempt(db.get_ref(), &session, path.into_inner()).await
 }

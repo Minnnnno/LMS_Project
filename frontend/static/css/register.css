@@ -285,6 +285,11 @@
     font-size: 0.85rem;
 }
 
+.recaptcha-field {
+    min-height: 78px;
+    overflow-x: auto;
+}
+
 .register-submit-btn {
     min-height: 56px;
     margin-top: 0.35rem;

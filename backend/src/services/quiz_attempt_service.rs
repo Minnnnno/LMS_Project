@@ -657,3 +657,74 @@ pub async fn submit_attempt(
         Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
     }
 }
+
+pub async fn delete_attempt(
+    db: &DatabaseConnection,
+    session: &Session,
+    attempt_id: i32,
+) -> HttpResponse {
+    if let Err(response) = quiz_helper::require_staff(session) {
+        return response;
+    }
+
+    let attempt = match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
+        Ok(Some(attempt)) => attempt,
+        Ok(None) => return HttpResponse::NotFound().body("Attempt not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
+    };
+
+    if let Err(response) = quiz_helper::require_can_manage_quiz(db, session, attempt.quiz_id).await {
+        return response;
+    }
+
+    let transaction = match db.begin().await {
+        Ok(transaction) => transaction,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Could not start attempt delete: {}", err));
+        }
+    };
+
+    if let Err(response) = quiz_helper::lock_attempt(&transaction, attempt_id).await {
+        let _ = transaction.rollback().await;
+        return response;
+    }
+
+    match QuizAnswerEntity::delete_many()
+        .filter(QuizAnswerColumn::AttemptId.eq(attempt_id))
+        .exec(&transaction)
+        .await
+    {
+        Ok(_) => {}
+        Err(err) => {
+            let _ = transaction.rollback().await;
+            return HttpResponse::InternalServerError()
+                .body(format!("Attempt answer delete error: {}", err));
+        }
+    }
+
+    match QuizAttemptEntity::delete_by_id(attempt_id)
+        .exec(&transaction)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {}
+        Ok(_) => {
+            let _ = transaction.rollback().await;
+            return HttpResponse::NotFound().body("Attempt not found");
+        }
+        Err(err) => {
+            let _ = transaction.rollback().await;
+            return HttpResponse::InternalServerError()
+                .body(format!("Attempt delete error: {}", err));
+        }
+    }
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body("Quiz attempt deleted"),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Attempt delete commit error: {}", err))
+        }
+    }
+}

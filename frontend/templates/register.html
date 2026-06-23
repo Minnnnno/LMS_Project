@@ -6,6 +6,10 @@
 <link rel="stylesheet" href="/static/css/register.css">
 {% endblock extra_css %}
 
+{% block extra_js %}
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+{% endblock extra_js %}
+
 {% block content %}
 <section class="register-page">
     <div class="register-layout">
@@ -135,6 +139,12 @@
                                 minlength="8"
                                 required
                             >
+                        </div>
+
+                        <div class="col-12">
+                            <div class="recaptcha-field">
+                                <div class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}"></div>
+                            </div>
                         </div>
 
                         <div class="col-12">

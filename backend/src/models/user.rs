@@ -17,6 +17,9 @@ pub struct RegisterForm {
 
     #[validate(length(min = 8, max = 128, message = "Confirm password must be between 8 and 128 characters."))]
     pub confirm_password: String,
+
+    #[serde(rename = "g-recaptcha-response")]
+    pub recaptcha_response: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]

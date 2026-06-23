@@ -2,7 +2,7 @@ use crate::entity::{roles, user_roles, users};
 use crate::models::student::ChangePasswordForm;
 use crate::models::user::{ForgotPasswordForm, LoginForm, RegisterForm, ResetPasswordForm};
 use actix_session::Session;
-use actix_web::http::header;
+use actix_web::http::{header, StatusCode};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
@@ -10,7 +10,8 @@ use sea_orm::{
 };
 use serde::Deserialize;
 
-use crate::ssr::pages::{build_page_context, render_page};
+use crate::ssr::pages::build_page_context;
+use crate::services::captcha_service::{recaptcha_site_key, verify_recaptcha};
 use crate::services::email_verification_service::{
     create_email_verification_token, send_verification_email, verify_email_token, VerifyEmailError,
 };
@@ -81,29 +82,66 @@ fn redirect_login_with_error(session: &Session, error_message: &str) -> HttpResp
         .finish()
 }
 
-fn render_register_error(
-    error_message: &str,
-    first_name: &str,
-    last_name: &str,
-    email: &str,
+fn insert_recaptcha_site_key(context: &mut Context) -> Result<(), HttpResponse> {
+    match recaptcha_site_key() {
+        Ok(site_key) => {
+            context.insert("recaptcha_site_key", &site_key);
+            Ok(())
+        }
+        Err(message) => {
+            println!("reCAPTCHA site key error: {}", message);
+            Err(HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(message))
+        }
+    }
+}
+
+fn render_register_page(
+    session: &Session,
+    status: StatusCode,
+    error_message: Option<&str>,
+    first_name: Option<&str>,
+    last_name: Option<&str>,
+    email: Option<&str>,
 ) -> HttpResponse {
     let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
 
-    let mut context = Context::new();
-    context.insert("is_logged_in", &false);
-    context.insert("role_names", &Vec::<String>::new());
-    context.insert("error", error_message);
-    context.insert("first_name", first_name);
-    context.insert("last_name", last_name);
-    context.insert("email", email);
+    let mut context = build_page_context(session);
+    if let Err(response) = insert_recaptcha_site_key(&mut context) {
+        return response;
+    }
+    if let Some(error_message) = error_message {
+        context.insert("error", error_message);
+    }
+    context.insert("first_name", &first_name.unwrap_or_default());
+    context.insert("last_name", &last_name.unwrap_or_default());
+    context.insert("email", &email.unwrap_or_default());
 
     let html = tera
         .render("register.html", &context)
         .expect("Failed to render register.html");
 
-    HttpResponse::BadRequest()
+    HttpResponse::build(status)
         .content_type("text/html")
         .body(html)
+}
+
+fn render_register_error(
+    session: &Session,
+    error_message: &str,
+    first_name: &str,
+    last_name: &str,
+    email: &str,
+) -> HttpResponse {
+    render_register_page(
+        session,
+        StatusCode::BAD_REQUEST,
+        Some(error_message),
+        Some(first_name),
+        Some(last_name),
+        Some(email),
+    )
 }
 
 fn render_login_error(error_message: &str, email: &str) -> HttpResponse {
@@ -338,12 +376,13 @@ pub async fn register(session: Session) -> impl Responder {
         return redirect_home();
     }
 
-    render_page("register.html", &session)
+    render_register_page(&session, StatusCode::OK, None, None, None, None)
 }
 
 #[post("/register")]
 pub async fn register_submit(
     db: web::Data<DatabaseConnection>,
+    req: HttpRequest,
     session: Session,
     form: web::Form<RegisterForm>,
 ) -> impl Responder {
@@ -369,6 +408,7 @@ pub async fn register_submit(
         };
 
         return render_register_error(
+            &session,
             error_message,
             &form.first_name,
             &form.last_name,
@@ -378,6 +418,7 @@ pub async fn register_submit(
 
     if form.password != form.confirm_password {
         return render_register_error(
+            &session,
             "Passwords do not match.",
             &form.first_name,
             &form.last_name,
@@ -385,10 +426,38 @@ pub async fn register_submit(
         );
     }
 
+    match verify_recaptcha(form.recaptcha_response.as_deref(), request_ip_address(&req)).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return render_register_error(
+                &session,
+                "Please complete the reCAPTCHA challenge.",
+                &form.first_name,
+                &form.last_name,
+                &form.email,
+            );
+        }
+        Err(message) => {
+            return render_register_error(
+                &session,
+                &message,
+                &form.first_name,
+                &form.last_name,
+                &form.email,
+            );
+        }
+    }
+
     let password_hash = match hash_password(form.password.clone()).await {
         Ok(hash) => hash,
         Err(message) => {
-            return render_register_error(&message, &form.first_name, &form.last_name, &form.email);
+            return render_register_error(
+                &session,
+                &message,
+                &form.first_name,
+                &form.last_name,
+                &form.email,
+            );
         }
     };
     // trim and sanitize input
@@ -403,6 +472,7 @@ pub async fn register_submit(
         .await
     {
         return render_register_error(
+            &session,
             "Email is already registered.",
             &first_name,
             &last_name,
@@ -434,6 +504,7 @@ pub async fn register_submit(
         Err(err) => {
             println!("Registration transaction error: {:?}", err);
             return render_register_error(
+                &session,
                 "Unable to register your account right now.",
                 &first_name,
                 &last_name,
@@ -447,6 +518,7 @@ pub async fn register_submit(
         Err(err) => {
             println!("Insert user error: {:?}", err);
             return render_register_error(
+                &session,
                 "This email is already in use. Please log in or use a different email.",
                 &first_name,
                 &last_name,
@@ -460,6 +532,7 @@ pub async fn register_submit(
     {
         println!("Assign student role error: {:?}", err);
         return render_register_error(
+            &session,
             "Unable to assign the student role right now.",
             &first_name,
             &last_name,
@@ -473,6 +546,7 @@ pub async fn register_submit(
         Err(err) => {
             println!("Email verification token error: {:?}", err);
             return render_register_error(
+                &session,
                 "Unable to prepare email verification right now.",
                 &first_name,
                 &last_name,
@@ -484,6 +558,7 @@ pub async fn register_submit(
     if let Err(err) = txn.commit().await {
         println!("Registration commit error: {:?}", err);
         return render_register_error(
+            &session,
             "Unable to register your account right now.",
             &first_name,
             &last_name,

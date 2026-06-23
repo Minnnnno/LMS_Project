@@ -90,12 +90,43 @@ async function loadQuizAttemptStatuses() {
     }
 }
 
+function parseQuizScheduleDateTime(value) {
+    if (typeof value !== "string") {
+        return new Date(value);
+    }
+
+    const normalizedValue = value.includes("T") ? value : value.replace(" ", "T");
+
+    if (TIMEZONE_OFFSET_PATTERN.test(normalizedValue)) {
+        return new Date(normalizedValue);
+    }
+
+    const match = normalizedValue.match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/
+    );
+
+    if (!match) {
+        return new Date(normalizedValue);
+    }
+
+    const [, year, month, day, hour, minute, second = "0"] = match;
+
+    return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+    );
+}
+
 function formatQuizDate(value) {
     if (!value) {
         return "Available anytime";
     }
 
-    const date = parseApiDateTime(value);
+    const date = parseQuizScheduleDateTime(value);
 
     if (Number.isNaN(date.getTime())) {
         return value;
@@ -104,7 +135,6 @@ function formatQuizDate(value) {
     return date.toLocaleString("en-SG", {
         dateStyle: "medium",
         timeStyle: "short",
-        timeZone: SG_TIME_ZONE,
     });
 }
 
@@ -407,27 +437,70 @@ function getBestAttemptLabel(group) {
         : "Pending";
 }
 
-function renderQuizAttemptAnswer(answer, savedAnswerId = null, questionNumber = null) {
+function findQuizAttemptAnswer(answerId) {
+    for (const attempt of currentQuizAttemptRows) {
+        const answers = Array.isArray(attempt.answers) ? attempt.answers : [];
+        const answer = answers.find((item) => Number(item.answer_id) === Number(answerId));
+
+        if (answer) {
+            return { attempt, answer };
+        }
+    }
+
+    return null;
+}
+
+function renderQuizAnswerGradeForm(answer, savedAnswerId = null) {
     const score = answer.score ?? "";
     const feedback = answer.feedback || "";
-    const answerType = answer.question_type;
     const saveStatus = Number(savedAnswerId) === Number(answer.answer_id)
         ? '<p class="quiz-answer-save-status success" role="status">Changes are saved.</p>'
         : "";
 
+    return `
+        <div class="staff-grade-form">
+            <label for="quiz-answer-score-${answer.answer_id}">Score out of ${escapeHtml(answer.points)}</label>
+            <input id="quiz-answer-score-${answer.answer_id}" type="number" min="0" max="${answer.points}" step="1" value="${escapeHtml(score)}">
+            <label for="quiz-answer-feedback-${answer.answer_id}">Feedback</label>
+            <textarea id="quiz-answer-feedback-${answer.answer_id}" rows="2">${escapeHtml(feedback)}</textarea>
+            <div class="staff-grade-actions">
+                <button type="button" onclick="saveQuizAnswerGrade(${answer.answer_id}, ${answer.points})">Save Mark</button>
+            </div>
+            <p id="quiz-answer-save-status-${answer.answer_id}" class="quiz-answer-save-status" role="status" aria-live="polite"></p>
+            ${saveStatus}
+        </div>
+    `;
+}
+
+function renderQuizAnswerGradeReadonly(answer, savedAnswerId = null) {
+    const score = answer.score === null || answer.score === undefined
+        ? "Not marked"
+        : formatGradeNumber(answer.score);
+    const saveStatus = Number(savedAnswerId) === Number(answer.answer_id)
+        ? '<p class="quiz-answer-save-status success" role="status">Changes are saved.</p>'
+        : "";
+
+    return `
+        <div class="staff-grade-readonly">
+            <span>Score: ${escapeHtml(score)} / ${escapeHtml(answer.points)}</span>
+            ${answer.feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(answer.feedback)}</p>` : ""}
+            <button type="button" class="staff-grade-edit-btn" onclick="editQuizAnswerGrade(${answer.answer_id})">Edit</button>
+        </div>
+        ${saveStatus}
+    `;
+}
+
+function renderQuizAttemptAnswer(answer, savedAnswerId = null, questionNumber = null) {
+    const score = answer.score ?? "";
+    const answerType = answer.question_type;
+
     if (answerType === "long_answer") {
         const gradeControls = answer.answer_id
             ? `
-                <div class="staff-grade-form">
-                    <label for="quiz-answer-score-${answer.answer_id}">Score out of ${escapeHtml(answer.points)}</label>
-                    <input id="quiz-answer-score-${answer.answer_id}" type="number" min="0" max="${answer.points}" step="1" value="${escapeHtml(score)}">
-                    <label for="quiz-answer-feedback-${answer.answer_id}">Feedback</label>
-                    <textarea id="quiz-answer-feedback-${answer.answer_id}" rows="2">${escapeHtml(feedback)}</textarea>
-                    <div class="staff-grade-actions">
-                        <button type="button" onclick="saveQuizAnswerGrade(${answer.answer_id}, ${answer.points})">Save Mark</button>
-                    </div>
-                    <p id="quiz-answer-save-status-${answer.answer_id}" class="quiz-answer-save-status" role="status" aria-live="polite"></p>
-                    ${saveStatus}
+                <div id="quiz-answer-grade-controls-${answer.answer_id}">
+                    ${answer.score === null || answer.score === undefined
+                        ? renderQuizAnswerGradeForm(answer, savedAnswerId)
+                        : renderQuizAnswerGradeReadonly(answer, savedAnswerId)}
                 </div>
             `
             : '<div class="staff-grade-readonly"><span>No answer submitted.</span></div>';
@@ -436,7 +509,10 @@ function renderQuizAttemptAnswer(answer, savedAnswerId = null, questionNumber = 
             <div class="quiz-review-answer">
                 <h4>${escapeHtml(answer.question_text)}</h4>
                 <p class="grade-meta">Short answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
-                <p>${escapeHtml(answer.answer_text || "No answer submitted.")}</p>
+                <div class="quiz-student-answer-block">
+                    <strong>Student's Answer:</strong>
+                    <p>${escapeHtml(answer.answer_text || "No answer submitted.")}</p>
+                </div>
                 ${gradeControls}
             </div>
         `;
@@ -460,6 +536,19 @@ function renderQuizAttemptAnswer(answer, savedAnswerId = null, questionNumber = 
             </div>
         </div>
     `;
+}
+
+function editQuizAnswerGrade(answerId) {
+    const match = findQuizAttemptAnswer(answerId);
+    const controls = document.getElementById(`quiz-answer-grade-controls-${answerId}`);
+
+    if (!match || !controls) {
+        showActionMessage("Could not find this quiz answer.", "error");
+        return;
+    }
+
+    controls.innerHTML = renderQuizAnswerGradeForm(match.answer);
+    document.getElementById(`quiz-answer-score-${answerId}`)?.focus();
 }
 
 function getAttemptQuestionStats(answers) {
