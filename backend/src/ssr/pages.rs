@@ -27,6 +27,16 @@ async fn courses(session: Session) -> impl Responder {
     render_page("courses.html", &session)
 }
 
+#[get("/features")]
+async fn features(session: Session) -> impl Responder {
+    render_page("features.html", &session)
+}
+
+#[get("/about")]
+async fn about(session: Session) -> impl Responder {
+    render_page("about.html", &session)
+}
+
 #[get("/lessons")]
 async fn lessons(session: Session) -> impl Responder {
     render_page("lessons.html", &session)
@@ -298,6 +308,8 @@ async fn user_can_manage_course_content(
 pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
         .service(courses)
+        .service(features)
+        .service(about)
         .service(lessons)
         .service(assessments)
         .service(challenges)

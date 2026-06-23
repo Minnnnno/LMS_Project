@@ -42,6 +42,7 @@ class CoursesPage {
         this.selectedImageFile     = null;
         this.selectedImageObjectUrl = null;
         this.feedbackDismissTimer  = null;
+        this.searchQuery = new URLSearchParams(window.location.search).get("q")?.trim() || "";
     }
 
     // ---------------------------------------------------------------------------
@@ -58,7 +59,10 @@ class CoursesPage {
         if (!el) return;
 
         if (!courses.length) {
-            el.innerHTML = `<p class="course-empty">No courses available.</p>`;
+            const emptyMessage = this.searchQuery && containerId === "course-grid"
+                ? `No courses match “${HtmlUtils.escape(this.searchQuery)}”.`
+                : "No courses available.";
+            el.innerHTML = `<p class="course-empty">${emptyMessage}</p>`;
             return;
         }
 
@@ -403,8 +407,11 @@ class CoursesPage {
         if (!section || !document.getElementById("organisation-course-grid")) return;
 
         try {
-            const data    = await LmsApi.get("/api/courses/organisation");
-            const courses = data.map(d => new Course(d));
+            const data = await LmsApi.get("/api/courses/organisation");
+            const normalizedQuery = this.searchQuery.toLowerCase();
+            const courses = data
+                .filter(course => !normalizedQuery || String(course.name || "").toLowerCase().includes(normalizedQuery))
+                .map(d => new Course(d));
 
             this.organisationCourseIds = new Set(courses.map(c => c.id));
             this.canManageOrg = true;
@@ -479,7 +486,10 @@ class CoursesPage {
         if (this.isManagedOnly) return;
 
         try {
-            const data    = await LmsApi.get("/api/courses");
+            const endpoint = this.searchQuery
+                ? `/api/courses/search?name=${encodeURIComponent(this.searchQuery)}`
+                : "/api/courses";
+            const data = await LmsApi.get(endpoint);
             const courses = data
                 .filter(c =>
                     !this.organisationCourseIds.has(c.course_id) &&
@@ -494,6 +504,12 @@ class CoursesPage {
 
             this.renderGrid("course-grid", courses, { showEnrollmentAction: true });
         } catch (error) {
+            if (this.searchQuery && error.response?.status === 404) {
+                const allSection = document.getElementById("all-courses-section");
+                if (allSection) allSection.hidden = false;
+                this.renderGrid("course-grid", [], { showEnrollmentAction: true });
+                return;
+            }
             console.error("Failed to load courses:", error);
         }
     }
@@ -576,6 +592,16 @@ class CoursesPage {
         }
 
         await this.loadEnrolledCourses();
+
+        if (this.searchQuery) {
+            document.getElementById("enrolled-courses-section")?.setAttribute("hidden", "");
+            document.getElementById("completed-courses-section")?.setAttribute("hidden", "");
+            const title = document.getElementById("available-courses-title");
+            const subtitle = document.getElementById("available-courses-subtitle");
+            if (title) title.textContent = "Search Results";
+            if (subtitle) subtitle.textContent = `Courses matching “${this.searchQuery}”.`;
+        }
+
         await this.loadCourses();
     }
 

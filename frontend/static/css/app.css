@@ -109,7 +109,27 @@ a {
 }
 
 .search-box {
-    width: min(24rem, 32vw);
+    width: min(18rem, 22vw);
+}
+
+.topbar-wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-right: 0.25rem;
+    color: var(--skillup-dark);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+@media (max-width: 1199.98px) {
+    .topbar-wordmark {
+        display: none;
+    }
+}
+
+.top-actions {
+    min-width: 0;
 }
 
 .search-box .form-control:focus,

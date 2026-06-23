@@ -1200,7 +1200,12 @@ pub async fn search_course(
     let mut db_query = courses::Entity::find();
 
     if let Some(name) = &query.name {
-        db_query = db_query.filter(Expr::col(courses::Column::Name).ilike(format!("%{}%", name)));
+        let pattern = format!("%{}%", name.trim());
+        db_query = db_query.filter(
+            Condition::any()
+                .add(Expr::col(courses::Column::Name).ilike(pattern.clone()))
+                .add(Expr::col(courses::Column::Description).ilike(pattern)),
+        );
     }
 
     if let Some(instructor_id) = &query.instructor_id {

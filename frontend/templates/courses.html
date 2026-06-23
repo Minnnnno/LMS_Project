@@ -45,8 +45,8 @@
 <section id="all-courses-section" class="course-section" {% if is_instructor_managed_only %}hidden{% elif role_names and "Organisation Admin" in role_names %}hidden{% elif role_names and "LMS Admin" in role_names %}hidden{% endif %}>
     <div class="course-section-heading">
         <div>
-            <h1 class="section-title">Available Courses</h1>
-            <p class="page-subtitle">Courses available for enrolment.</p>
+            <h1 class="section-title" id="available-courses-title">Available Courses</h1>
+            <p class="page-subtitle" id="available-courses-subtitle">Courses available for enrolment.</p>
         </div>
     </div>
 <div id="course-action-feedback" class="course-feedback" role="alert" aria-live="polite" hidden></div>
@@ -128,5 +128,5 @@
     </div>
 </div>
 
-<script src="/static/js/course.js?v=19"></script>
+<script src="/static/js/course.js?v=20"></script>
 {% endblock content %}

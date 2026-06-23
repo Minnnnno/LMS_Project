@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
     const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
+    const searchQuery = new URLSearchParams(window.location.search).get("q") || "";
     const sectionPaths = {
         "/course": "/courses",
         "/module-content": "/courses",
@@ -18,5 +19,9 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             link.removeAttribute("aria-current");
         }
+    });
+
+    document.querySelectorAll('form[action="/courses"] input[name="q"]').forEach((input) => {
+        input.value = searchQuery;
     });
 });
