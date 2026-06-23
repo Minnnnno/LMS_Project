@@ -1545,7 +1545,38 @@ function editButton(domain, id, label) {
 }
 
 function actionButtons(buttons) {
-    return `<div class="d-flex justify-content-end gap-2">${buttons.join("")}</div>`;
+    return `<div class="d-flex flex-wrap justify-content-end gap-2">${buttons.join("")}</div>`;
+}
+
+function courseActionButtons(courseId) {
+    const safeCourseId = escapeHtml(courseId);
+
+    return `
+        <div class="d-flex flex-nowrap justify-content-end gap-1" role="group" aria-label="Course actions">
+            <a
+                class="btn btn-outline-primary btn-sm"
+                href="/course/${encodeURIComponent(courseId)}"
+                title="Manage modules"
+                aria-label="Manage modules"
+            ><i class="bi bi-list-task" aria-hidden="true"></i></a>
+            <button
+                type="button"
+                class="btn btn-outline-dark btn-sm"
+                data-inline-edit-domain="courses"
+                data-inline-edit-id="${safeCourseId}"
+                title="Edit course"
+                aria-label="Edit course"
+            ><i class="bi bi-pencil" aria-hidden="true"></i></button>
+            <button
+                type="button"
+                class="btn btn-outline-danger btn-sm"
+                data-delete-endpoint="/admin/courses/${safeCourseId}"
+                data-delete-label="course #${safeCourseId}"
+                title="Delete course"
+                aria-label="Delete course"
+            ><i class="bi bi-trash" aria-hidden="true"></i></button>
+        </div>
+    `;
 }
 
 function selectOptions(records, valueKey, labelForRecord, selectedValue, emptyLabel) {
@@ -1968,10 +1999,7 @@ async function loadAdminTables() {
                 escapeHtml(course.status ?? "-"),
                 escapeHtml(formatPrice(course.price_cents, course.currency)),
                 renderYesNo(course.is_paid),
-                actionButtons([
-                    editButton("courses", course.course_id, "course"),
-                    deleteButton(`/admin/courses/${course.course_id}`, `course #${course.course_id}`),
-                ]),
+                courseActionButtons(course.course_id),
             ])).join(""),
             "No courses found.",
             8,

@@ -60,7 +60,7 @@
                 <a href="/admin/manage/users" class="nav-link"><i class="bi bi-people"></i><span>Users</span></a>
                 <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
                 <a href="/admin/manage/enrollments" class="nav-link"><i class="bi bi-card-checklist"></i><span>Enrollments</span></a>
-                {% else %}
+                {% elif is_logged_in %}
                 <a href="/" class="nav-link"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
                 <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
                 <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Assessments</span></a>
@@ -68,6 +68,9 @@
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
                 <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Projects</span></a>
                 <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Downloads</span></a>
+                {% else %}
+                <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
+                <a href="/register" class="nav-link"><i class="bi bi-person-plus"></i><span>Sign Up</span></a>
                 {% endif %}
                 {% if role_names and "Organisation Admin" in role_names %}
                 <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
@@ -100,7 +103,7 @@
                 <a href="/admin/manage/users" class="nav-link"><i class="bi bi-people"></i><span>Users</span></a>
                 <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
                 <a href="/admin/manage/enrollments" class="nav-link"><i class="bi bi-card-checklist"></i><span>Enrollments</span></a>
-                {% else %}
+                {% elif is_logged_in %}
                 <a href="/" class="nav-link"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
                 <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
                 <a href="/assessments" class="nav-link"><i class="bi bi-clipboard-check"></i><span>Assessments</span></a>
@@ -108,6 +111,9 @@
                 <a href="/certification" class="nav-link"><i class="bi bi-patch-check"></i><span>Certification</span></a>
                 <a href="/projects" class="nav-link"><i class="bi bi-kanban"></i><span>Projects</span></a>
                 <a href="/downloads" class="nav-link"><i class="bi bi-download"></i><span>Downloads</span></a>
+                {% else %}
+                <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
+                <a href="/register" class="nav-link"><i class="bi bi-person-plus"></i><span>Sign Up</span></a>
                 {% endif %}
                 {% if role_names and "Organisation Admin" in role_names %}
                 <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
