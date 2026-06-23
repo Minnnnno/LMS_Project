@@ -42,7 +42,7 @@
     <div id="enrolled-course-grid" class="course-grid"></div>
 </section>
 
-<section id="all-courses-section" class="course-section" {% if is_instructor_managed_only %}hidden{% endif %}>
+<section id="all-courses-section" class="course-section" {% if is_instructor_managed_only %}hidden{% elif role_names and "Organisation Admin" in role_names %}hidden{% elif role_names and "LMS Admin" in role_names %}hidden{% endif %}>
     <div class="course-section-heading">
         <div>
             <h1 class="section-title">Available Courses</h1>
@@ -127,5 +127,5 @@
     </div>
 </div>
 
-<script src="/static/js/course.js?v=18"></script>
+<script src="/static/js/course.js?v=19"></script>
 {% endblock content %}

@@ -493,9 +493,10 @@ class CoursesPage {
 
         await this.loadOrganisationCourses();
 
-        if (this.isManagedOnly) {
+        if (this.isManagedOnly || this.canManageOrg) {
             document.getElementById("enrolled-courses-section")?.setAttribute("hidden", "");
             document.getElementById("all-courses-section")?.setAttribute("hidden", "");
+            document.getElementById("completed-courses-section")?.setAttribute("hidden", "");
             return;
         }
 
@@ -513,7 +514,10 @@ class CoursesPage {
     async refreshCourseLists() {
         await this.loadOrganisationCourses();
 
-        if (this.isManagedOnly) {
+        if (this.isManagedOnly || this.canManageOrg) {
+            document.getElementById("enrolled-courses-section")?.setAttribute("hidden", "");
+            document.getElementById("all-courses-section")?.setAttribute("hidden", "");
+            document.getElementById("completed-courses-section")?.setAttribute("hidden", "");
             return;
         }
 

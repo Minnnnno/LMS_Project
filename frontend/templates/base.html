@@ -61,6 +61,11 @@
                 <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
                 <a href="/courses" class="nav-link"><i class="bi bi-pencil-square"></i><span>Edit Courses</span></a>
                 <a href="/admin/manage/enrollments" class="nav-link"><i class="bi bi-card-checklist"></i><span>Enrollments</span></a>
+                {% elif role_names and "Organisation Admin" in role_names %}
+                <a href="/" class="nav-link"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+                <a href="/courses" class="nav-link"><i class="bi bi-journals"></i><span>Organisation Courses</span></a>
+                <a href="/instructor/submissions" class="nav-link"><i class="bi bi-inbox"></i><span>Assignments</span></a>
+                <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% elif is_instructor_managed_only %}
                 <a href="/courses" class="nav-link"><i class="bi bi-journals"></i><span>Assigned Courses</span></a>
                 <a href="/instructor/submissions" class="nav-link"><i class="bi bi-inbox"></i><span>Assignments</span></a>
@@ -75,9 +80,6 @@
                 {% else %}
                 <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
                 <a href="/register" class="nav-link"><i class="bi bi-person-plus"></i><span>Sign Up</span></a>
-                {% endif %}
-                {% if role_names and "Organisation Admin" in role_names %}
-                <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% endif %}
             </nav>
 
@@ -108,6 +110,11 @@
                 <a href="/admin/manage/courses" class="nav-link"><i class="bi bi-journals"></i><span>Courses</span></a>
                 <a href="/courses" class="nav-link"><i class="bi bi-pencil-square"></i><span>Edit Courses</span></a>
                 <a href="/admin/manage/enrollments" class="nav-link"><i class="bi bi-card-checklist"></i><span>Enrollments</span></a>
+                {% elif role_names and "Organisation Admin" in role_names %}
+                <a href="/" class="nav-link"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+                <a href="/courses" class="nav-link"><i class="bi bi-journals"></i><span>Organisation Courses</span></a>
+                <a href="/instructor/submissions" class="nav-link"><i class="bi bi-inbox"></i><span>Assignments</span></a>
+                <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% elif is_instructor_managed_only %}
                 <a href="/courses" class="nav-link"><i class="bi bi-journals"></i><span>Assigned Courses</span></a>
                 <a href="/instructor/submissions" class="nav-link"><i class="bi bi-inbox"></i><span>Assignments</span></a>
@@ -122,9 +129,6 @@
                 {% else %}
                 <a href="/courses" class="nav-link"><i class="bi bi-journal-bookmark"></i><span>Courses</span></a>
                 <a href="/register" class="nav-link"><i class="bi bi-person-plus"></i><span>Sign Up</span></a>
-                {% endif %}
-                {% if role_names and "Organisation Admin" in role_names %}
-                <a href="/organisation" class="nav-link"><i class="bi bi-building"></i><span>Organisation</span></a>
                 {% endif %}
             </nav>
         </aside>

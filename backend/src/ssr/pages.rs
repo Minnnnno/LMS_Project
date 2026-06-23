@@ -13,6 +13,12 @@ use crate::services::course_service::{can_manage_course, has_role};
 
 #[get("/")]
 async fn index(session: Session) -> impl Responder {
+    if session.get::<i32>("user_id").ok().flatten().is_none() {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/courses"))
+            .finish();
+    }
+
     render_page("index.html", &session)
 }
 
