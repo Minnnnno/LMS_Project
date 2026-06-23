@@ -1,6 +1,6 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
-use chrono::{Duration, Local};
+use chrono::Duration;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
     TransactionTrait,
@@ -19,7 +19,7 @@ use crate::entity::quiz_questions::{
     Column as QuizQuestionColumn, Entity as QuizQuestionEntity, QuestionType,
 };
 use crate::models::quiz_answers::{GradeQuizAnswer, SaveQuizAnswers};
-use crate::services::auth_helpers::{get_role_ids, get_user_id, is_student_only};
+use crate::services::auth_helpers::{get_role_ids, is_student_only};
 use crate::services::quiz_helper::{self, QuizResult, QuizServiceError};
 
 const AUTO_SUBMIT_GRACE_SECONDS: i64 = 30;
@@ -31,7 +31,7 @@ async fn load_accessible_attempt_result(
     attempt_id: i32,
     forbidden_message: &str,
 ) -> QuizResult<QuizAttemptModel> {
-    let user_id = get_user_id(session).map_err(quiz_helper::response_error)?;
+    let user_id = quiz_helper::get_user_id_for_service(session)?;
     let role_ids = get_role_ids(session);
 
     match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
@@ -67,7 +67,7 @@ async fn ensure_attempt_accepts_answers_result(
         let expires_at = attempt.started_at + Duration::minutes(minutes as i64);
         let cutoff = expires_at + Duration::seconds(AUTO_SUBMIT_GRACE_SECONDS);
 
-        if Local::now().naive_local() > cutoff {
+        if quiz_helper::quiz_now() > cutoff {
             return Err(QuizServiceError::BadRequest(
                 "The time limit for this quiz has ended".to_string(),
             ));
@@ -164,7 +164,7 @@ pub async fn save_answers(
     data: SaveQuizAnswers,
 ) -> HttpResponse {
     if let Err(response) = quiz_helper::require_student(session) {
-        return response;
+        return response.into_response();
     }
 
     match save_answers_result(db, session, attempt_id, data).await {
@@ -333,7 +333,7 @@ pub async fn grade_answer(
     data: GradeQuizAnswer,
 ) -> HttpResponse {
     if let Err(response) = quiz_helper::require_staff(session) {
-        return response;
+        return response.into_response();
     }
 
     match grade_answer_result(db, session, answer_id, data).await {
@@ -362,9 +362,7 @@ async fn grade_answer_result(
 
     validate_manual_grade(&question, &data)?;
 
-    quiz_helper::require_can_manage_quiz(db, session, question.quiz_id)
-        .await
-        .map_err(quiz_helper::response_error)?;
+    quiz_helper::require_can_manage_quiz(db, session, question.quiz_id).await?;
 
     apply_manual_grade(db, record, question.quiz_id, data).await?;
 

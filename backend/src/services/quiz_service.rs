@@ -15,52 +15,66 @@ use crate::entity::quiz_questions::{
 };
 use crate::models::quiz::{QuizEditorPayload, SaveQuizDraft};
 use crate::services::prerequisite_service;
-use crate::services::quiz_helper;
+use crate::services::quiz_helper::{self, QuizResult, QuizServiceError};
 
 fn validate_quiz_fields(
     title: Option<&str>,
     max_attempts: Option<i32>,
     time_limit: Option<i32>,
-) -> Result<(), HttpResponse> {
+) -> QuizResult<()> {
     if title.map(|value| value.trim().is_empty()).unwrap_or(false) {
-        return Err(HttpResponse::BadRequest().body("Quiz title cannot be empty"));
+        return Err(QuizServiceError::BadRequest(
+            "Quiz title cannot be empty".to_string(),
+        ));
     }
 
     if max_attempts.map(|value| value < 1).unwrap_or(false) {
-        return Err(HttpResponse::BadRequest().body("Max attempts must be 1 or higher"));
+        return Err(QuizServiceError::BadRequest(
+            "Max attempts must be 1 or higher".to_string(),
+        ));
     }
 
     if time_limit.map(|value| value < 1).unwrap_or(false) {
-        return Err(HttpResponse::BadRequest().body("Time limit must be 1 minute or higher"));
+        return Err(QuizServiceError::BadRequest(
+            "Time limit must be 1 minute or higher".to_string(),
+        ));
     }
 
     Ok(())
 }
 
-fn validate_quiz_draft(data: &SaveQuizDraft) -> Result<(), HttpResponse> {
+fn validate_quiz_draft(data: &SaveQuizDraft) -> QuizResult<()> {
     validate_quiz_fields(Some(&data.title), data.max_attempts, data.time_limit)?;
     if data.questions.is_empty() {
-        return Err(HttpResponse::BadRequest().body("A quiz must contain at least one question"));
+        return Err(QuizServiceError::BadRequest(
+            "A quiz must contain at least one question".to_string(),
+        ));
     }
 
     let mut question_positions = HashSet::new();
     for question in &data.questions {
         if question.question_text.trim().is_empty() {
-            return Err(HttpResponse::BadRequest().body("Question text cannot be empty"));
+            return Err(QuizServiceError::BadRequest(
+                "Question text cannot be empty".to_string(),
+            ));
         }
         if question.position < 1 || !question_positions.insert(question.position) {
-            return Err(HttpResponse::BadRequest()
-                .body("Question positions must be unique and 1 or higher"));
+            return Err(QuizServiceError::BadRequest(
+                "Question positions must be unique and 1 or higher".to_string(),
+            ));
         }
         if question.points < 1 {
-            return Err(HttpResponse::BadRequest().body("Question points must be 1 or higher"));
+            return Err(QuizServiceError::BadRequest(
+                "Question points must be 1 or higher".to_string(),
+            ));
         }
 
         match question.question_type {
             QuestionType::Mcq => {
                 if question.options.len() < 2 {
-                    return Err(HttpResponse::BadRequest()
-                        .body("Each MCQ must contain at least two options"));
+                    return Err(QuizServiceError::BadRequest(
+                        "Each MCQ must contain at least two options".to_string(),
+                    ));
                 }
                 if question
                     .options
@@ -69,23 +83,28 @@ fn validate_quiz_draft(data: &SaveQuizDraft) -> Result<(), HttpResponse> {
                     .count()
                     != 1
                 {
-                    return Err(HttpResponse::BadRequest()
-                        .body("Each MCQ must contain exactly one correct option"));
+                    return Err(QuizServiceError::BadRequest(
+                        "Each MCQ must contain exactly one correct option".to_string(),
+                    ));
                 }
                 let mut option_positions = HashSet::new();
                 for option in &question.options {
                     if option.option_text.trim().is_empty() {
-                        return Err(HttpResponse::BadRequest().body("Option text cannot be empty"));
+                        return Err(QuizServiceError::BadRequest(
+                            "Option text cannot be empty".to_string(),
+                        ));
                     }
                     if option.position < 1 || !option_positions.insert(option.position) {
-                        return Err(HttpResponse::BadRequest()
-                            .body("Option positions must be unique and 1 or higher"));
+                        return Err(QuizServiceError::BadRequest(
+                            "Option positions must be unique and 1 or higher".to_string(),
+                        ));
                     }
                 }
             }
             QuestionType::LongAnswer if !question.options.is_empty() => {
-                return Err(HttpResponse::BadRequest()
-                    .body("Long answer questions cannot contain MCQ options"));
+                return Err(QuizServiceError::BadRequest(
+                    "Long answer questions cannot contain MCQ options".to_string(),
+                ));
             }
             QuestionType::LongAnswer => {}
         }
@@ -101,7 +120,7 @@ pub async fn save_quiz_draft(
     data: SaveQuizDraft,
 ) -> HttpResponse {
     if let Err(response) = validate_quiz_draft(&data) {
-        return response;
+        return response.into_response();
     }
 
     let existing_quiz = if let Some(quiz_id) = quiz_id {
@@ -114,21 +133,21 @@ pub async fn save_quiz_draft(
                 if let Err(response) =
                     quiz_helper::require_can_manage_course_id(db, session, quiz.course_id).await
                 {
-                    return response;
+                    return response.into_response();
                 }
                 if let Err(response) = quiz_helper::ensure_content_editable(db, quiz_id).await {
-                    return response;
+                    return response.into_response();
                 }
                 Some(quiz)
             }
             Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
-            Err(err) => return quiz_helper::db_error(err),
+            Err(err) => return quiz_helper::db_service_error(err).into_response(),
         }
     } else {
         if let Err(response) =
             quiz_helper::require_can_manage_course_id(db, session, data.course_id).await
         {
-            return response;
+            return response.into_response();
         }
         None
     };
@@ -142,10 +161,11 @@ pub async fn save_quiz_draft(
     };
 
     if let Some(existing_quiz) = existing_quiz.as_ref()
-        && let Err(response) = quiz_helper::lock_quiz(&transaction, existing_quiz.quiz_id).await
+        && let Err(response) =
+            quiz_helper::lock_quiz_for_service(&transaction, existing_quiz.quiz_id).await
     {
         let _ = transaction.rollback().await;
-        return response;
+        return response.into_response();
     }
 
     let saved_quiz = if let Some(existing_quiz) = existing_quiz {
@@ -153,7 +173,7 @@ pub async fn save_quiz_draft(
             quiz_helper::ensure_content_editable(&transaction, existing_quiz.quiz_id).await
         {
             let _ = transaction.rollback().await;
-            return response;
+            return response.into_response();
         }
 
         let quiz_id = existing_quiz.quiz_id;
@@ -203,7 +223,7 @@ pub async fn save_quiz_draft(
         }
     };
 
-    if let Err(response) = prerequisite_service::replace_quiz_prerequisites(
+    if let Err(response) = prerequisite_service::replace_quiz_prerequisites_for_service(
         &transaction,
         saved_quiz.course_id,
         saved_quiz.quiz_id,
@@ -212,7 +232,7 @@ pub async fn save_quiz_draft(
     .await
     {
         let _ = transaction.rollback().await;
-        return response;
+        return response.into_response();
     }
 
     for question in data.questions {
@@ -267,16 +287,16 @@ pub async fn get_quiz_editor(
 ) -> HttpResponse {
     let quiz = match quiz_helper::require_can_manage_quiz(db, session, quiz_id).await {
         Ok(quiz) => quiz,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     let questions = match quiz_helper::load_editor_questions(db, quiz_id).await {
         Ok(questions) => questions,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     let prerequisite_module_ids =
-        match prerequisite_service::get_quiz_prerequisite_ids(db, quiz_id).await {
+        match prerequisite_service::get_quiz_prerequisite_ids_for_service(db, quiz_id).await {
             Ok(ids) => ids,
-            Err(response) => return response,
+            Err(response) => return response.into_response(),
         };
 
     HttpResponse::Ok().json(QuizEditorPayload {
@@ -309,12 +329,12 @@ struct QuizPayload {
 async fn quiz_payloads(
     db: &DatabaseConnection,
     quizzes: Vec<quiz::Model>,
-) -> Result<Vec<QuizPayload>, HttpResponse> {
+) -> QuizResult<Vec<QuizPayload>> {
     let mut payloads = Vec::with_capacity(quizzes.len());
 
     for quiz in quizzes {
         let prerequisite_module_ids =
-            prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await?;
+            prerequisite_service::get_quiz_prerequisite_ids_for_service(db, quiz.quiz_id).await?;
 
         payloads.push(QuizPayload {
             quiz_id: quiz.quiz_id,
@@ -342,9 +362,9 @@ pub async fn list_quizzes_by_course(db: &DatabaseConnection, course_id: i32) -> 
         Ok(quizzes) if quizzes.is_empty() => HttpResponse::NotFound().body("No quizzes found"),
         Ok(quizzes) => match quiz_payloads(db, quizzes).await {
             Ok(payloads) => HttpResponse::Ok().json(payloads),
-            Err(response) => response,
+            Err(response) => response.into_response(),
         },
-        Err(err) => quiz_helper::db_error(err),
+        Err(err) => quiz_helper::db_service_error(err).into_response(),
     }
 }
 
@@ -354,7 +374,7 @@ pub async fn delete_quiz(db: &DatabaseConnection, session: &Session, quiz_id: i3
             if let Err(response) =
                 quiz_helper::require_can_manage_course_id(db, session, target_quiz.course_id).await
             {
-                return response;
+                return response.into_response();
             }
 
             let active_model: quiz::ActiveModel = target_quiz.into();

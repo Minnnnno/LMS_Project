@@ -1,6 +1,5 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
-use chrono::Local;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
     Set, TransactionTrait,
@@ -15,15 +14,9 @@ use crate::entity::quiz_attempts::{
 };
 use crate::entity::quiz_questions::QuestionType;
 use crate::models::quiz_attempts::{AttemptAccess, AttemptTimer, StartAttemptResponse};
-use crate::services::auth_helpers::{
-    get_role_ids, get_user_id, has_staff_role, is_enrolled, is_student_only,
-};
+use crate::services::auth_helpers::{get_role_ids, has_staff_role, is_student_only};
 use crate::services::prerequisite_service;
 use crate::services::quiz_helper::{self, QuizResult, QuizServiceError};
-
-fn response_to_quiz_error(response: HttpResponse) -> QuizServiceError {
-    quiz_helper::response_error(response)
-}
 
 #[derive(Serialize)]
 struct QuizAttemptStatus {
@@ -89,11 +82,8 @@ fn build_attempt_timer(
         time_limit_minutes: quiz.time_limit,
         expires_at,
         remaining_seconds: attempt.and_then(|attempt| {
-            quiz_helper::attempt_expires_at(quiz.time_limit, attempt.started_at).map(|expires_at| {
-                (expires_at - Local::now().naive_local())
-                    .num_seconds()
-                    .max(0)
-            })
+            quiz_helper::attempt_expires_at(quiz.time_limit, attempt.started_at)
+                .map(|expires_at| (expires_at - quiz_helper::quiz_now()).num_seconds().max(0))
         }),
         message: quiz
             .time_limit
@@ -147,7 +137,7 @@ async fn finalize_attempt(
         .filter_map(|answer| answer.score)
         .sum::<i32>();
     let mut active: QuizAttemptActiveModel = attempt.into();
-    active.submitted_at = Set(Some(Local::now().naive_local()));
+    active.submitted_at = Set(Some(quiz_helper::quiz_now()));
     active.total_score = Set(Some(total_score));
     active.is_graded = Set(!requires_manual_grading);
 
@@ -164,13 +154,13 @@ fn build_attempt_status(
     let context = attempt_status_context(&quiz, attempts);
 
     if let Some(starts_at) = quiz.starts_at {
-        if starts_at > Local::now().naive_local() {
+        if starts_at > quiz_helper::quiz_now() {
             return quiz_attempt_status(&context, false, "This quiz is not open yet");
         }
     }
 
     if let Some(ends_at) = quiz.ends_at {
-        if ends_at < Local::now().naive_local() {
+        if ends_at < quiz_helper::quiz_now() {
             return quiz_attempt_status(&context, false, "This quiz is closed");
         }
     }
@@ -209,12 +199,13 @@ async fn build_attempt_status_for_quiz(
 ) -> QuizResult<QuizAttemptStatus> {
     let attempts = get_user_attempts_for_quiz(db, quiz.quiz_id, user_id).await?;
 
-    if let Some(prerequisite) = prerequisite_service::get_first_incomplete_required_module(
-        db,
-        user_id,
-        prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id).await?,
-    )
-    .await?
+    if let Some(prerequisite) =
+        prerequisite_service::get_first_incomplete_required_module_for_service(
+            db,
+            user_id,
+            prerequisite_service::get_quiz_prerequisite_ids_for_service(db, quiz.quiz_id).await?,
+        )
+        .await?
     {
         return Ok(quiz_attempt_status(
             &attempt_status_context(quiz, &attempts),
@@ -259,13 +250,15 @@ async fn ensure_prerequisites_complete(
     user_id: i32,
     quiz: &QuizModel,
 ) -> QuizResult<()> {
-    let prerequisite_ids = prerequisite_service::get_quiz_prerequisite_ids(db, quiz.quiz_id)
-        .await
-        .map_err(response_to_quiz_error)?;
+    let prerequisite_ids =
+        prerequisite_service::get_quiz_prerequisite_ids_for_service(db, quiz.quiz_id).await?;
 
-    match prerequisite_service::get_first_incomplete_required_module(db, user_id, prerequisite_ids)
-        .await
-        .map_err(response_to_quiz_error)?
+    match prerequisite_service::get_first_incomplete_required_module_for_service(
+        db,
+        user_id,
+        prerequisite_ids,
+    )
+    .await?
     {
         Some(prerequisite) => Err(QuizServiceError::Forbidden(format!(
             "Complete {} before attempting this quiz",
@@ -275,22 +268,22 @@ async fn ensure_prerequisites_complete(
     }
 }
 
-async fn ensure_student_can_attempt_quiz(
+async fn ensure_student_enrolled_for_quiz(
     db: &DatabaseConnection,
     user_id: i32,
     quiz: &QuizModel,
 ) -> QuizResult<()> {
-    match is_enrolled(db, user_id, quiz.course_id).await {
+    match quiz_helper::is_enrolled_for_service(db, user_id, quiz.course_id).await {
         Ok(true) => {}
         Ok(false) => {
             return Err(QuizServiceError::Forbidden(
                 "You must be enrolled to attempt this quiz".to_string(),
             ));
         }
-        Err(response) => return Err(response_to_quiz_error(response)),
+        Err(error) => return Err(error),
     }
 
-    ensure_prerequisites_complete(db, user_id, quiz).await
+    Ok(())
 }
 
 async fn build_staff_preview_response(
@@ -298,9 +291,7 @@ async fn build_staff_preview_response(
     session: &Session,
     quiz: QuizModel,
 ) -> QuizResult<StartAttemptResponse> {
-    quiz_helper::require_can_manage_quiz(db, session, quiz.quiz_id)
-        .await
-        .map_err(response_to_quiz_error)?;
+    quiz_helper::require_can_manage_quiz(db, session, quiz.quiz_id).await?;
     build_start_response(db, quiz, None, staff_preview_access()).await
 }
 
@@ -361,7 +352,7 @@ async fn start_student_attempt_in_transaction(
     let attempt = QuizAttemptActiveModel {
         quiz_id: Set(quiz_id),
         user_id: Set(user_id),
-        started_at: Set(Local::now().naive_local()),
+        started_at: Set(quiz_helper::quiz_now()),
         is_graded: Set(false),
         ..Default::default()
     }
@@ -377,7 +368,7 @@ async fn create_attempt_response(
     session: &Session,
     quiz_id: i32,
 ) -> QuizResult<StartAttemptResponse> {
-    let user_id = get_user_id(session).map_err(response_to_quiz_error)?;
+    let user_id = quiz_helper::get_user_id_for_service(session)?;
     let role_ids = get_role_ids(session);
     let quiz = load_quiz(db, quiz_id).await?;
 
@@ -391,7 +382,7 @@ async fn create_attempt_response(
         ));
     }
 
-    ensure_student_can_attempt_quiz(db, user_id, &quiz).await?;
+    ensure_student_enrolled_for_quiz(db, user_id, &quiz).await?;
 
     let transaction = db.begin().await.map_err(|err| {
         quiz_helper::internal_service_error(format!("Could not start attempt: {}", err))
@@ -417,9 +408,9 @@ pub async fn list_my_attempt_statuses_by_course(
     session: &Session,
     course_id: i32,
 ) -> HttpResponse {
-    let user_id = match get_user_id(session) {
+    let user_id = match quiz_helper::get_user_id_for_service(session) {
         Ok(id) => id,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
 
     let quizzes = match QuizEntity::find()
@@ -428,7 +419,7 @@ pub async fn list_my_attempt_statuses_by_course(
         .await
     {
         Ok(quizzes) => quizzes,
-        Err(err) => return quiz_helper::db_error(err),
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
 
     let mut statuses = Vec::with_capacity(quizzes.len());
@@ -508,9 +499,9 @@ pub async fn submit_attempt(
     session: &Session,
     attempt_id: i32,
 ) -> HttpResponse {
-    let user_id = match get_user_id(session) {
+    let user_id = match quiz_helper::get_user_id_for_service(session) {
         Ok(id) => id,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
     let role_ids = get_role_ids(session);
 
@@ -573,18 +564,18 @@ pub async fn delete_attempt(
     attempt_id: i32,
 ) -> HttpResponse {
     if let Err(response) = quiz_helper::require_staff(session) {
-        return response;
+        return response.into_response();
     }
 
     let attempt = match QuizAttemptEntity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => attempt,
         Ok(None) => return HttpResponse::NotFound().body("Attempt not found"),
-        Err(err) => return quiz_helper::db_error(err),
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
 
     if let Err(response) = quiz_helper::require_can_manage_quiz(db, session, attempt.quiz_id).await
     {
-        return response;
+        return response.into_response();
     }
 
     let transaction = match db.begin().await {

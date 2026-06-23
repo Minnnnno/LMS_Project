@@ -8,8 +8,7 @@ use crate::entity::{quiz_answers, quiz_attempts, quiz_options, quiz_questions, u
 use crate::models::quiz_attempts::{
     QuizAttemptReviewAnswer, StaffQuizAttempt, StudentQuizAttemptReview,
 };
-use crate::services::auth_helpers::get_user_id;
-use crate::services::quiz_helper;
+use crate::services::quiz_helper::{self, QuizResult};
 
 struct QuizReviewData {
     questions: Vec<quiz_questions::Model>,
@@ -21,7 +20,7 @@ struct QuizReviewData {
 async fn load_quiz_review_data(
     db: &DatabaseConnection,
     quiz_id: i32,
-) -> Result<QuizReviewData, HttpResponse> {
+) -> QuizResult<QuizReviewData> {
     let questions = quiz_helper::load_quiz_questions(db, quiz_id).await?;
     let options = quiz_helper::load_options_for_quiz(db, &questions).await?;
     let max_score = questions.iter().map(|question| question.points).sum();
@@ -76,12 +75,12 @@ pub async fn list_staff_attempts(
     quiz_id: i32,
 ) -> HttpResponse {
     if let Err(response) = quiz_helper::require_can_manage_quiz(db, session, quiz_id).await {
-        return response;
+        return response.into_response();
     }
 
     let review_data = match load_quiz_review_data(db, quiz_id).await {
         Ok(review_data) => review_data,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
     let attempts = match quiz_attempts::Entity::find()
         .filter(quiz_attempts::Column::QuizId.eq(quiz_id))
@@ -90,7 +89,7 @@ pub async fn list_staff_attempts(
         .await
     {
         Ok(attempts) => attempts,
-        Err(err) => return quiz_helper::db_error(err),
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
     let attempt_ids = attempts
         .iter()
@@ -110,7 +109,7 @@ pub async fn list_staff_attempts(
             .await
         {
             Ok(students) => students,
-            Err(err) => return quiz_helper::db_error(err),
+            Err(err) => return quiz_helper::db_service_error(err).into_response(),
         }
     };
     let answers = if attempt_ids.is_empty() {
@@ -122,7 +121,7 @@ pub async fn list_staff_attempts(
             .await
         {
             Ok(answers) => answers,
-            Err(err) => return quiz_helper::db_error(err),
+            Err(err) => return quiz_helper::db_service_error(err).into_response(),
         }
     };
 
@@ -173,14 +172,14 @@ pub async fn get_student_review(
     session: &Session,
     attempt_id: i32,
 ) -> HttpResponse {
-    let user_id = match get_user_id(session) {
+    let user_id = match quiz_helper::get_user_id_for_service(session) {
         Ok(user_id) => user_id,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
     let attempt = match quiz_attempts::Entity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => attempt,
         Ok(None) => return HttpResponse::NotFound().body("Attempt not found"),
-        Err(err) => return quiz_helper::db_error(err),
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
     if attempt.user_id != user_id {
         return HttpResponse::Forbidden().body("You can only view your own quiz attempt");
@@ -191,7 +190,7 @@ pub async fn get_student_review(
 
     let review_data = match load_quiz_review_data(db, attempt.quiz_id).await {
         Ok(review_data) => review_data,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
     let answers = match quiz_answers::Entity::find()
         .filter(quiz_answers::Column::AttemptId.eq(attempt_id))
@@ -199,7 +198,7 @@ pub async fn get_student_review(
         .await
     {
         Ok(answers) => answers,
-        Err(err) => return quiz_helper::db_error(err),
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
     let answers_by_question = answers
         .into_iter()
