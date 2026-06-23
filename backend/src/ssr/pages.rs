@@ -9,7 +9,7 @@ use tera::{Context, Tera};
 
 use crate::entity::{courses as course_entity, modules, quiz};
 use crate::services::auth_helpers::is_enrolled;
-use crate::services::course_service::can_manage_course;
+use crate::services::course_service::{can_manage_course, has_role};
 
 #[get("/")]
 async fn index(session: Session) -> impl Responder {
@@ -49,6 +49,24 @@ async fn projects(session: Session) -> impl Responder {
 #[get("/downloads")]
 async fn downloads(session: Session) -> impl Responder {
     render_page("downloads.html", &session)
+}
+
+#[get("/instructor/submissions")]
+async fn instructor_submissions(session: Session) -> impl Responder {
+    if session.get::<i32>("user_id").ok().flatten().is_none() {
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, "/login"))
+            .finish();
+    }
+
+    if !has_role(&session, "Instructor")
+        && !has_role(&session, "Organisation Admin")
+        && !has_role(&session, "LMS Admin")
+    {
+        return redirect_to_home();
+    }
+
+    render_page("instructor_submissions.html", &session)
 }
 
 fn redirect_to_home() -> HttpResponse {
@@ -280,6 +298,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
         .service(certification)
         .service(projects)
         .service(downloads)
+        .service(instructor_submissions)
         .service(course_details_page)
         .service(quiz_builder_page)
         .service(quiz_attempt_page)

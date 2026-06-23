@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Assignments & Submissions | SkillUp LMS{% endblock title %}
+
+{% block content %}
+<section class="dashboard-header">
+    <div>
+        <h1 class="page-heading">Assignments & Submissions</h1>
+        <p class="page-subtitle">Review and grade work from students in your assigned courses.</p>
+    </div>
+</section>
+
+<div class="stats-grid mb-4" id="instructor-submission-summary">
+    <article class="stat-card">
+        <p class="stat-label">Latest submissions</p>
+        <h2 id="submission-total">0</h2>
+    </article>
+    <article class="stat-card">
+        <p class="stat-label">Awaiting grading</p>
+        <h2 id="submission-pending">0</h2>
+    </article>
+    <article class="stat-card">
+        <p class="stat-label">Graded</p>
+        <h2 id="submission-graded">0</h2>
+    </article>
+</div>
+
+<section class="card border-0 shadow-sm rounded-4">
+    <div class="card-body p-4">
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label" for="submission-course-filter">Course</label>
+                <select class="form-select" id="submission-course-filter">
+                    <option value="">All courses</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label" for="submission-assignment-filter">Assignment</label>
+                <select class="form-select" id="submission-assignment-filter">
+                    <option value="">All assignments</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-xl-2">
+                <label class="form-label" for="submission-status-filter">Status</label>
+                <select class="form-select" id="submission-status-filter">
+                    <option value="">All statuses</option>
+                    <option value="pending">Awaiting grading</option>
+                    <option value="graded">Graded</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-xl-4">
+                <label class="form-label" for="submission-student-filter">Student</label>
+                <input class="form-control" id="submission-student-filter" type="search" placeholder="Search name or email...">
+            </div>
+        </div>
+
+        <p class="small text-secondary" id="submission-result-count"></p>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Course</th>
+                        <th>Assignment</th>
+                        <th>Submitted</th>
+                        <th>Status</th>
+                        <th>Score</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="instructor-submissions-body">
+                    <tr><td colspan="7" class="text-secondary">Loading submissions...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<div class="modal fade" id="submission-review-modal" tabindex="-1" aria-labelledby="submission-review-title" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-4 shadow">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title h5 mb-1" id="submission-review-title">Review submission</h2>
+                    <p class="text-secondary small mb-0" id="submission-review-context"></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <dl class="row mb-4">
+                    <dt class="col-sm-3">Student</dt>
+                    <dd class="col-sm-9" id="submission-review-student">-</dd>
+                    <dt class="col-sm-3">Submitted</dt>
+                    <dd class="col-sm-9" id="submission-review-date">-</dd>
+                    <dt class="col-sm-3">File</dt>
+                    <dd class="col-sm-9"><a id="submission-review-file" href="#" target="_blank" rel="noopener noreferrer">Open submitted file</a><span id="submission-review-no-file">No file submitted</span></dd>
+                </dl>
+
+                <div class="mb-4">
+                    <h3 class="h6">Submission note</h3>
+                    <div class="bg-light border rounded-3 p-3 text-break" id="submission-review-text">No submission note provided.</div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label" for="submission-review-score">Score</label>
+                        <input class="form-control" id="submission-review-score" type="number" min="0" step="0.01">
+                        <div class="form-text" id="submission-review-max-score"></div>
+                    </div>
+                    <div class="col-12 col-md-8">
+                        <label class="form-label" for="submission-review-feedback">Feedback</label>
+                        <textarea class="form-control" id="submission-review-feedback" rows="4" placeholder="Feedback for the student..."></textarea>
+                    </div>
+                </div>
+                <p class="small mt-3 mb-0" id="submission-review-status" role="status" aria-live="polite"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-dark" id="submission-review-save">Save grade</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script src="/static/js/instructor_submissions.js?v=2"></script>
+{% endblock extra_js %}
