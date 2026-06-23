@@ -66,6 +66,7 @@ class CoursesPage {
                 : "";
             const actionButton = options.showEnrollmentAction
                 ? `<button class="course-card-action" type="button"
+                       data-idle-label="${HtmlUtils.escape(course.enrollLabel)}"
                        onclick="window.coursesPage.handleEnrollmentAction(event, ${course.id})">
                        ${HtmlUtils.escape(course.enrollLabel)}
                    </button>`
@@ -448,6 +449,8 @@ class CoursesPage {
             window.location.href = `/course/${courseId}`;
         } catch (error) {
             if (error.response?.status === 401) {
+                button.disabled = false;
+                button.textContent = originalText;
                 window.location.href = "/login";
                 return;
             }
@@ -482,9 +485,20 @@ class CoursesPage {
         await this.loadEnrolledCourses();
         await this.loadCourses();
     }
+
+    resetEnrollmentButtons() {
+        document.querySelectorAll(".course-card-action[data-idle-label]").forEach(button => {
+            button.disabled = false;
+            button.textContent = button.dataset.idleLabel;
+        });
+    }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     window.coursesPage = new CoursesPage();
     window.coursesPage.init();
+});
+
+window.addEventListener("pageshow", () => {
+    window.coursesPage?.resetEnrollmentButtons();
 });
