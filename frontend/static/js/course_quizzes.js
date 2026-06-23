@@ -1,6 +1,43 @@
 // Quiz list, attempt review, and quiz attempt modal behavior for course details.
 let pendingDeleteQuizAttemptId = null;
 
+function setQuizAnswerStatus(status, message = "", type = "") {
+    if (status) {
+        status.textContent = message;
+        status.className = type ? `quiz-answer-save-status ${type}` : "quiz-answer-save-status";
+    }
+}
+
+function renderSavedAnswerStatus(answerId, savedAnswerId) {
+    return Number(savedAnswerId) === Number(answerId)
+        ? '<p class="quiz-answer-save-status success" role="status">Changes are saved.</p>'
+        : "";
+}
+
+function renderQuizFeedback(feedback) {
+    return feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(feedback)}</p>` : "";
+}
+
+function renderDeleteQuizAttemptButton(attemptId) {
+    return `<button type="button" class="quiz-attempt-delete-btn" onclick="openDeleteQuizAttemptModal(event, ${attemptId})">Delete</button>`;
+}
+
+function renderQuizAttemptMeta(attempt, includeDate = false) {
+    return `
+        <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
+        <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
+        ${includeDate ? `<span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>` : ""}
+        <span class="${isPerfectQuizAttempt(attempt) ? "quiz-perfect-score" : ""}">${includeDate ? "" : "Score: "}${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+        ${renderDeleteQuizAttemptButton(attempt.attempt_id)}
+    `;
+}
+
+async function reloadCurrentQuizAttempts() {
+    const response = await axios.get(`/api/quiz-attempts/quiz/${currentQuizAttemptsQuizId}`);
+    currentQuizAttemptRows = Array.isArray(response.data) ? response.data : [];
+    return currentQuizAttemptRows;
+}
+
 async function loadQuizzes() {
     try {
         const response = await axios.get("/api/quiz/" + courseId);
@@ -320,11 +357,11 @@ function renderStudentQuizReviewAnswer(answer) {
         return `
             <div class="quiz-review-answer">
                 <h4>${escapeHtml(answer.question_text)}</h4>
-                <p class="grade-meta">Short answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
+                <p class="grade-meta">Long answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
                 <p>${escapeHtml(answer.answer_text || "No answer submitted.")}</p>
                 <div class="staff-grade-readonly">
                     <span>Score: ${escapeHtml(answer.score === null || answer.score === undefined ? "Not marked" : formatGradeNumber(answer.score))} / ${escapeHtml(answer.points)}</span>
-                    ${answer.feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(answer.feedback)}</p>` : ""}
+                    ${renderQuizFeedback(answer.feedback)}
                 </div>
             </div>
         `;
@@ -466,9 +503,6 @@ function findQuizAttemptAnswer(answerId) {
 function renderQuizAnswerGradeForm(answer, savedAnswerId = null) {
     const score = answer.score ?? "";
     const feedback = answer.feedback || "";
-    const saveStatus = Number(savedAnswerId) === Number(answer.answer_id)
-        ? '<p class="quiz-answer-save-status success" role="status">Changes are saved.</p>'
-        : "";
 
     return `
         <div class="staff-grade-form">
@@ -480,7 +514,7 @@ function renderQuizAnswerGradeForm(answer, savedAnswerId = null) {
                 <button type="button" onclick="saveQuizAnswerGrade(${answer.answer_id}, ${answer.points})">Save Mark</button>
             </div>
             <p id="quiz-answer-save-status-${answer.answer_id}" class="quiz-answer-save-status" role="status" aria-live="polite"></p>
-            ${saveStatus}
+            ${renderSavedAnswerStatus(answer.answer_id, savedAnswerId)}
         </div>
     `;
 }
@@ -489,17 +523,14 @@ function renderQuizAnswerGradeReadonly(answer, savedAnswerId = null) {
     const score = answer.score === null || answer.score === undefined
         ? "Not marked"
         : formatGradeNumber(answer.score);
-    const saveStatus = Number(savedAnswerId) === Number(answer.answer_id)
-        ? '<p class="quiz-answer-save-status success" role="status">Changes are saved.</p>'
-        : "";
 
     return `
         <div class="staff-grade-readonly">
             <span>Score: ${escapeHtml(score)} / ${escapeHtml(answer.points)}</span>
-            ${answer.feedback ? `<p class="dropbox-history-note"><strong>Feedback:</strong> ${escapeHtml(answer.feedback)}</p>` : ""}
+            ${renderQuizFeedback(answer.feedback)}
             <button type="button" class="staff-grade-edit-btn" onclick="editQuizAnswerGrade(${answer.answer_id})">Edit</button>
         </div>
-        ${saveStatus}
+        ${renderSavedAnswerStatus(answer.answer_id, savedAnswerId)}
     `;
 }
 
@@ -521,7 +552,7 @@ function renderQuizAttemptAnswer(answer, savedAnswerId = null, questionNumber = 
         return `
             <div class="quiz-review-answer">
                 <h4>${escapeHtml(answer.question_text)}</h4>
-                <p class="grade-meta">Short answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
+                <p class="grade-meta">Long answer - ${escapeHtml(answer.points)} point${answer.points === 1 ? "" : "s"}</p>
                 <div class="quiz-student-answer-block">
                     <strong>Student's Answer:</strong>
                     <p>${escapeHtml(answer.answer_text || "No answer submitted.")}</p>
@@ -642,10 +673,7 @@ function renderQuizStudentAttempts(group, savedAnswerId = null) {
                                 <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
                             </div>
                             <div class="staff-submission-meta">
-                                <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
-                                <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
-                                <span class="${isPerfectQuizAttempt(attempt) ? "quiz-perfect-score" : ""}">Score: ${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
-                                <button type="button" class="quiz-attempt-delete-btn" onclick="openDeleteQuizAttemptModal(event, ${attempt.attempt_id})">Delete</button>
+                                ${renderQuizAttemptMeta(attempt)}
                             </div>
                         </div>
                         <div class="quiz-attempt-question-summary">
@@ -679,11 +707,7 @@ function renderQuizAttemptDetail(attempt, savedAnswerId = null) {
                         <span>${escapeHtml(attempt.student_email || "")}</span>
                     </div>
                     <div class="staff-submission-meta">
-                        <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
-                        <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
-                        <span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>
-                        <span>${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
-                        <button type="button" class="quiz-attempt-delete-btn" onclick="openDeleteQuizAttemptModal(event, ${attempt.attempt_id})">Delete</button>
+                        ${renderQuizAttemptMeta(attempt, true)}
                     </div>
                 </div>
                 ${answers.length ? answers.map((answer) => renderQuizAttemptAnswer(answer, savedAnswerId)).join("") : '<p class="grades-empty">No answers recorded for this attempt.</p>'}
@@ -739,9 +763,7 @@ async function openQuizAttempts(event, quizId) {
     }
 
     try {
-        const response = await axios.get(`/api/quiz-attempts/quiz/${quizId}`);
-        const attempts = Array.isArray(response.data) ? response.data : [];
-        currentQuizAttemptRows = attempts;
+        const attempts = await reloadCurrentQuizAttempts();
         if (list) {
             list.innerHTML = renderQuizAttempts(attempts);
         }
@@ -782,10 +804,7 @@ function openDeleteQuizAttemptModal(event, attemptId) {
         message.textContent = getQuizAttemptDeleteSummary(attempt);
     }
 
-    if (status) {
-        status.textContent = "";
-        status.className = "quiz-answer-save-status";
-    }
+    setQuizAnswerStatus(status);
 
     modal.style.display = "flex";
 }
@@ -800,10 +819,7 @@ function closeDeleteQuizAttemptModal() {
         confirmButton.disabled = false;
     }
 
-    if (status) {
-        status.textContent = "";
-        status.className = "quiz-answer-save-status";
-    }
+    setQuizAnswerStatus(status);
 
     if (modal) {
         modal.style.display = "none";
@@ -827,15 +843,11 @@ async function confirmDeleteQuizAttempt() {
             confirmButton.disabled = true;
         }
 
-        if (status) {
-            status.textContent = "Deleting attempt...";
-            status.className = "quiz-answer-save-status";
-        }
+        setQuizAnswerStatus(status, "Deleting attempt...");
 
         await axios.delete(`/api/quiz-attempts/${attemptId}`);
 
-        const response = await axios.get(`/api/quiz-attempts/quiz/${currentQuizAttemptsQuizId}`);
-        currentQuizAttemptRows = Array.isArray(response.data) ? response.data : [];
+        await reloadCurrentQuizAttempts();
         gradesLoaded = false;
         closeDeleteQuizAttemptModal();
 
@@ -851,10 +863,7 @@ async function confirmDeleteQuizAttempt() {
             confirmButton.disabled = false;
         }
 
-        if (status) {
-            status.textContent = error.response?.data || "Failed to delete quiz attempt.";
-            status.className = "quiz-answer-save-status error";
-        }
+        setQuizAnswerStatus(status, error.response?.data || "Failed to delete quiz attempt.", "error");
 
         showActionMessage(error.response?.data || "Failed to delete quiz attempt.", "error");
     }
@@ -868,28 +877,19 @@ async function saveQuizAnswerGrade(answerId, maxPoints) {
     const attemptId = Number(scoreInput?.closest("[data-attempt-id]")?.dataset.attemptId);
 
     if (!Number.isFinite(score) || score < 0) {
-        if (status) {
-            status.textContent = "Enter a score of 0 or higher.";
-            status.className = "quiz-answer-save-status error";
-        }
+        setQuizAnswerStatus(status, "Enter a score of 0 or higher.", "error");
         showActionMessage("Enter a score of 0 or higher.", "error");
         return;
     }
 
     if (score > Number(maxPoints)) {
-        if (status) {
-            status.textContent = `Marks awarded exceed how much this question is worth (${maxPoints}).`;
-            status.className = "quiz-answer-save-status error";
-        }
+        setQuizAnswerStatus(status, `Marks awarded exceed how much this question is worth (${maxPoints}).`, "error");
         showActionMessage(`Marks awarded exceed how much this question is worth (${maxPoints}).`, "error");
         return;
     }
 
     try {
-        if (status) {
-            status.textContent = "Saving changes...";
-            status.className = "quiz-answer-save-status";
-        }
+        setQuizAnswerStatus(status, "Saving changes...");
 
         await axios.put(`/api/quiz-answers/${answerId}/grade`, {
             score,
@@ -900,16 +900,12 @@ async function saveQuizAnswerGrade(answerId, maxPoints) {
         showActionMessage("Quiz answer marked.", "success");
 
         if (currentQuizAttemptsQuizId && Number.isFinite(attemptId)) {
-            const response = await axios.get(`/api/quiz-attempts/quiz/${currentQuizAttemptsQuizId}`);
-            currentQuizAttemptRows = Array.isArray(response.data) ? response.data : [];
+            await reloadCurrentQuizAttempts();
             const updatedAttempt = currentQuizAttemptRows.find((item) => Number(item.attempt_id) === attemptId);
             showQuizStudentAttempts(updatedAttempt?.user_id, answerId);
         }
     } catch (error) {
-        if (status) {
-            status.textContent = error.response?.data || "Failed to save quiz mark.";
-            status.className = "quiz-answer-save-status error";
-        }
+        setQuizAnswerStatus(status, error.response?.data || "Failed to save quiz mark.", "error");
         showActionMessage(error.response?.data || "Failed to save quiz mark.", "error");
     }
 }

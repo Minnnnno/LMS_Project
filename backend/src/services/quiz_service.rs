@@ -8,7 +8,6 @@ use serde::Serialize;
 use std::collections::HashSet;
 
 use crate::entity::quiz::{self, Entity as QuizEntity};
-use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
 use crate::entity::quiz_options::ActiveModel as QuizOptionActiveModel;
 use crate::entity::quiz_questions::{
     ActiveModel as QuizQuestionActiveModel, Column as QuizQuestionColumn,
@@ -85,9 +84,8 @@ fn validate_quiz_draft(data: &SaveQuizDraft) -> Result<(), HttpResponse> {
                 }
             }
             QuestionType::LongAnswer if !question.options.is_empty() => {
-                return Err(
-                    HttpResponse::BadRequest().body("Written questions cannot contain MCQ options")
-                );
+                return Err(HttpResponse::BadRequest()
+                    .body("Long answer questions cannot contain MCQ options"));
             }
             QuestionType::LongAnswer => {}
         }
@@ -124,10 +122,7 @@ pub async fn save_quiz_draft(
                 Some(quiz)
             }
             Ok(None) => return HttpResponse::NotFound().body("Quiz not found"),
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error: {}", err));
-            }
+            Err(err) => return quiz_helper::db_error(err),
         }
     } else {
         if let Err(response) =
@@ -154,22 +149,11 @@ pub async fn save_quiz_draft(
     }
 
     let saved_quiz = if let Some(existing_quiz) = existing_quiz {
-        match QuizAttemptEntity::find()
-            .filter(QuizAttemptColumn::QuizId.eq(existing_quiz.quiz_id))
-            .one(&transaction)
-            .await
+        if let Err(response) =
+            quiz_helper::ensure_content_editable(&transaction, existing_quiz.quiz_id).await
         {
-            Ok(Some(_)) => {
-                let _ = transaction.rollback().await;
-                return HttpResponse::Conflict()
-                    .body("Quiz content cannot be changed after attempts have started");
-            }
-            Ok(None) => {}
-            Err(err) => {
-                let _ = transaction.rollback().await;
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error checking quiz attempts: {}", err));
-            }
+            let _ = transaction.rollback().await;
+            return response;
         }
 
         let quiz_id = existing_quiz.quiz_id;
@@ -360,7 +344,7 @@ pub async fn list_quizzes_by_course(db: &DatabaseConnection, course_id: i32) -> 
             Ok(payloads) => HttpResponse::Ok().json(payloads),
             Err(response) => response,
         },
-        Err(err) => HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => quiz_helper::db_error(err),
     }
 }
 

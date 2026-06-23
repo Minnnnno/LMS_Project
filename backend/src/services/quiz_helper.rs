@@ -4,7 +4,7 @@ use actix_session::Session;
 use actix_web::HttpResponse;
 use chrono::{Duration, Local, NaiveDateTime};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait, QueryFilter,
     QueryOrder, Statement,
 };
 
@@ -14,6 +14,63 @@ use crate::models::quiz_answers::SavedQuizAnswer;
 use crate::models::quiz_attempts::{AttemptQuizOption, AttemptQuizQuestion};
 use crate::services::auth_helpers::{get_role_ids, has_staff_role, is_student_only};
 use crate::services::course_service::can_manage_course;
+
+pub type QuizResult<T> = Result<T, QuizServiceError>;
+
+pub enum QuizServiceError {
+    NotFound(String),
+    Forbidden(String),
+    BadRequest(String),
+    Conflict(String),
+    Database(String),
+    Internal(String),
+    Unauthorized(String),
+    Response(HttpResponse),
+}
+
+impl QuizServiceError {
+    pub fn into_response(self) -> HttpResponse {
+        match self {
+            Self::NotFound(message) => HttpResponse::NotFound().body(message),
+            Self::Forbidden(message) => HttpResponse::Forbidden().body(message),
+            Self::BadRequest(message) => HttpResponse::BadRequest().body(message),
+            Self::Conflict(message) => HttpResponse::Conflict().body(message),
+            Self::Database(message) | Self::Internal(message) => {
+                HttpResponse::InternalServerError().body(message)
+            }
+            Self::Unauthorized(message) => HttpResponse::Unauthorized().body(message),
+            Self::Response(response) => response,
+        }
+    }
+}
+
+impl From<HttpResponse> for QuizServiceError {
+    fn from(response: HttpResponse) -> Self {
+        Self::Response(response)
+    }
+}
+
+impl From<QuizServiceError> for HttpResponse {
+    fn from(error: QuizServiceError) -> Self {
+        error.into_response()
+    }
+}
+
+pub fn response_error(response: HttpResponse) -> QuizServiceError {
+    QuizServiceError::Response(response)
+}
+
+pub fn db_service_error(err: DbErr) -> QuizServiceError {
+    QuizServiceError::Database(format!("Database error: {}", err))
+}
+
+pub fn internal_service_error(message: impl Into<String>) -> QuizServiceError {
+    QuizServiceError::Internal(message.into())
+}
+
+pub fn db_error(err: DbErr) -> HttpResponse {
+    db_service_error(err).into_response()
+}
 
 pub fn require_staff(session: &Session) -> Result<(), HttpResponse> {
     let role_ids = get_role_ids(session);
@@ -42,9 +99,7 @@ pub async fn require_can_manage_course_id(
     let course = courses::Entity::find_by_id(course_id)
         .one(db)
         .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?
+        .map_err(db_error)?
         .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
 
     match can_manage_course(db, session, &course).await {
@@ -64,9 +119,7 @@ pub async fn require_can_manage_quiz(
     let quiz = quiz::Entity::find_by_id(quiz_id)
         .one(db)
         .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?
+        .map_err(db_error)?
         .ok_or_else(|| HttpResponse::NotFound().body("Quiz not found"))?;
 
     require_can_manage_course_id(db, session, quiz.course_id).await?;
@@ -81,9 +134,7 @@ pub async fn ensure_content_editable(
         .filter(quiz_attempts::Column::QuizId.eq(quiz_id))
         .one(db)
         .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?
+        .map_err(db_error)?
         .is_some();
 
     if has_attempt {
@@ -94,10 +145,19 @@ pub async fn ensure_content_editable(
 }
 
 pub async fn lock_quiz(db: &impl ConnectionTrait, quiz_id: i32) -> Result<(), HttpResponse> {
+    advisory_lock(db, 2, quiz_id, "Quiz content")
+        .await
+        .map_err(QuizServiceError::into_response)
+}
+
+pub async fn lock_quiz_for_service(db: &impl ConnectionTrait, quiz_id: i32) -> QuizResult<()> {
     advisory_lock(db, 2, quiz_id, "Quiz content").await
 }
 
-pub async fn lock_attempt(db: &impl ConnectionTrait, attempt_id: i32) -> Result<(), HttpResponse> {
+pub async fn lock_attempt_for_service(
+    db: &impl ConnectionTrait,
+    attempt_id: i32,
+) -> QuizResult<()> {
     advisory_lock(db, 1, attempt_id, "Attempt").await
 }
 
@@ -106,7 +166,7 @@ async fn advisory_lock(
     namespace: i32,
     id: i32,
     label: &str,
-) -> Result<(), HttpResponse> {
+) -> QuizResult<()> {
     db.execute(Statement::from_sql_and_values(
         DbBackend::Postgres,
         "SELECT pg_advisory_xact_lock($1, $2)",
@@ -114,9 +174,7 @@ async fn advisory_lock(
     ))
     .await
     .map(|_| ())
-    .map_err(|err| {
-        HttpResponse::InternalServerError().body(format!("{} lock error: {}", label, err))
-    })
+    .map_err(|err| QuizServiceError::Internal(format!("{} lock error: {}", label, err)))
 }
 
 pub fn attempt_expires_at(
@@ -146,35 +204,49 @@ pub fn saved_answer_payload(answers: Vec<quiz_answers::Model>) -> Vec<SavedQuizA
         .collect()
 }
 
-pub async fn load_editor_questions(
+pub async fn load_quiz_questions(
     db: &impl ConnectionTrait,
     quiz_id: i32,
-) -> Result<Vec<SaveQuizQuestion>, HttpResponse> {
-    let questions = quiz_questions::Entity::find()
+) -> QuizResult<Vec<quiz_questions::Model>> {
+    quiz_questions::Entity::find()
         .filter(quiz_questions::Column::QuizId.eq(quiz_id))
         .order_by_asc(quiz_questions::Column::Position)
         .all(db)
         .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?;
+        .map_err(db_service_error)
+}
+
+pub async fn load_options_for_questions(
+    db: &impl ConnectionTrait,
+    question_ids: Vec<i32>,
+) -> QuizResult<Vec<quiz_options::Model>> {
+    if question_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    quiz_options::Entity::find()
+        .filter(quiz_options::Column::QuestionId.is_in(question_ids))
+        .order_by_asc(quiz_options::Column::QuestionId)
+        .order_by_asc(quiz_options::Column::Position)
+        .all(db)
+        .await
+        .map_err(db_service_error)
+}
+
+pub async fn load_options_for_quiz(
+    db: &impl ConnectionTrait,
+    questions: &[quiz_questions::Model],
+) -> QuizResult<Vec<quiz_options::Model>> {
     let question_ids = questions
         .iter()
         .map(|question| question.question_id)
         .collect::<Vec<_>>();
-    let options = if question_ids.is_empty() {
-        Vec::new()
-    } else {
-        quiz_options::Entity::find()
-            .filter(quiz_options::Column::QuestionId.is_in(question_ids))
-            .order_by_asc(quiz_options::Column::QuestionId)
-            .order_by_asc(quiz_options::Column::Position)
-            .all(db)
-            .await
-            .map_err(|err| {
-                HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-            })?
-    };
+    load_options_for_questions(db, question_ids).await
+}
+
+pub fn group_options_by_question(
+    options: Vec<quiz_options::Model>,
+) -> HashMap<i32, Vec<quiz_options::Model>> {
     let mut options_by_question = HashMap::<i32, Vec<quiz_options::Model>>::new();
     for option in options {
         options_by_question
@@ -182,6 +254,32 @@ pub async fn load_editor_questions(
             .or_default()
             .push(option);
     }
+    options_by_question
+}
+
+pub async fn load_answers_for_attempt(
+    db: &impl ConnectionTrait,
+    attempt_id: i32,
+) -> QuizResult<Vec<quiz_answers::Model>> {
+    quiz_answers::Entity::find()
+        .filter(quiz_answers::Column::AttemptId.eq(attempt_id))
+        .all(db)
+        .await
+        .map_err(db_service_error)
+}
+
+pub async fn load_editor_questions(
+    db: &impl ConnectionTrait,
+    quiz_id: i32,
+) -> Result<Vec<SaveQuizQuestion>, HttpResponse> {
+    let questions = load_quiz_questions(db, quiz_id)
+        .await
+        .map_err(QuizServiceError::into_response)?;
+    let mut options_by_question = group_options_by_question(
+        load_options_for_quiz(db, &questions)
+            .await
+            .map_err(QuizServiceError::into_response)?,
+    );
 
     Ok(questions
         .into_iter()
@@ -207,38 +305,15 @@ pub async fn load_editor_questions(
 pub async fn load_attempt_questions(
     db: &impl ConnectionTrait,
     quiz_id: i32,
-) -> Result<Vec<AttemptQuizQuestion>, HttpResponse> {
-    let questions = quiz_questions::Entity::find()
-        .filter(quiz_questions::Column::QuizId.eq(quiz_id))
-        .order_by_asc(quiz_questions::Column::Position)
-        .all(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?;
+) -> QuizResult<Vec<AttemptQuizQuestion>> {
+    let questions = load_quiz_questions(db, quiz_id).await?;
     if questions.is_empty() {
-        return Err(HttpResponse::Conflict().body("This quiz has no questions yet"));
+        return Err(QuizServiceError::Conflict(
+            "This quiz has no questions yet".to_string(),
+        ));
     }
-    let question_ids = questions
-        .iter()
-        .map(|question| question.question_id)
-        .collect::<Vec<_>>();
-    let options = quiz_options::Entity::find()
-        .filter(quiz_options::Column::QuestionId.is_in(question_ids))
-        .order_by_asc(quiz_options::Column::QuestionId)
-        .order_by_asc(quiz_options::Column::Position)
-        .all(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?;
-    let mut options_by_question = HashMap::<i32, Vec<quiz_options::Model>>::new();
-    for option in options {
-        options_by_question
-            .entry(option.question_id)
-            .or_default()
-            .push(option);
-    }
+    let mut options_by_question =
+        group_options_by_question(load_options_for_quiz(db, &questions).await?);
 
     questions
         .into_iter()
@@ -249,8 +324,9 @@ pub async fn load_attempt_questions(
             if question.question_type == quiz_questions::QuestionType::Mcq
                 && (option_rows.len() < 2 || !option_rows.iter().any(|option| option.is_correct))
             {
-                return Err(HttpResponse::Conflict()
-                    .body("This quiz has an invalid MCQ question and cannot be attempted yet"));
+                return Err(QuizServiceError::Conflict(
+                    "This quiz has an invalid MCQ question and cannot be attempted yet".to_string(),
+                ));
             }
             Ok(AttemptQuizQuestion {
                 question_id: question.question_id,

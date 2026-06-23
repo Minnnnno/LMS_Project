@@ -242,7 +242,7 @@
     margin: 0;
 }
 
-.short-answer-note {
+.long-answer-note {
     display: none;
     align-items: center;
     gap: 8px;
@@ -261,7 +261,7 @@
     display: none;
 }
 
-.question-card[data-question-type="long_answer"] .short-answer-note {
+.question-card[data-question-type="long_answer"] .long-answer-note {
     display: flex;
 }
 
