@@ -1,4 +1,5 @@
 mod app_state;
+mod config;
 mod controller;
 mod db;
 mod entity;
@@ -11,7 +12,7 @@ use actix_files::Files;
 use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
     App, HttpServer,
-    cookie::Key,
+    cookie::SameSite,
     dev::ServiceResponse,
     http::{StatusCode, header},
     middleware::{ErrorHandlerResponse, ErrorHandlers, from_fn},
@@ -71,14 +72,23 @@ async fn main() -> std::io::Result<()> {
     let db = connect_db().await;
     println!("Database connected!");
 
-    let secret_key = Key::generate();
+    let secret_key = config::session_key();
+    let secure_cookies = config::is_production();
+    let cors_allowed_origin = config::cors_allowed_origin();
     let app_state = AppState::default();
 
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allowed_origin(&cors_allowed_origin)
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+            .allowed_headers(vec![header::ACCEPT, header::AUTHORIZATION, header::CONTENT_TYPE])
+            .supports_credentials()
+            .max_age(3600);
+
         App::new()
             .app_data(actix_web::web::Data::new(db.clone()))
             .app_data(actix_web::web::Data::new(app_state.clone()))
-            .wrap(Cors::permissive())
+            .wrap(cors)
             .wrap(
                 ErrorHandlers::new()
                     .handler(StatusCode::FORBIDDEN, redirect_browser_403)
@@ -87,7 +97,9 @@ async fn main() -> std::io::Result<()> {
             .wrap(from_fn(remember_me_middleware))
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
-                    .cookie_secure(false)
+                    .cookie_http_only(true)
+                    .cookie_same_site(SameSite::Lax)
+                    .cookie_secure(secure_cookies)
                     .build(),
             )
             .service(
@@ -95,7 +107,6 @@ async fn main() -> std::io::Result<()> {
                     .configure(routes::assignment_routes::init)
                     .configure(routes::cloudinary::init)
                     .configure(routes::certificate_routes::init)
-                    .configure(routes::mailer::init)
                     .configure(routes::payment_routes::init)
                     .configure(routes::course_routes::init)
                     .configure(routes::student_routes::init)
