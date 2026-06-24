@@ -20,6 +20,8 @@ use actix_web::{
 };
 use app_state::AppState;
 use db::connection::connect_db;
+use services::csrf_service::{CsrfConfig, csrf_protection};
+use services::login_rate_limit_service::LoginRateLimiter;
 use services::remember_me_service::remember_me_middleware;
 
 fn render_browser_500<B>(
@@ -75,6 +77,8 @@ async fn main() -> std::io::Result<()> {
     let secret_key = config::session_key();
     let secure_cookies = config::is_production();
     let cors_allowed_origin = config::cors_allowed_origin();
+    let csrf_config = web::Data::new(CsrfConfig::new(cors_allowed_origin.clone()));
+    let login_rate_limiter = web::Data::new(LoginRateLimiter::default());
     let app_state = AppState::default();
 
     HttpServer::new(move || {
@@ -88,7 +92,10 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(actix_web::web::Data::new(db.clone()))
             .app_data(actix_web::web::Data::new(app_state.clone()))
+            .app_data(csrf_config.clone())
+            .app_data(login_rate_limiter.clone())
             .wrap(cors)
+            .wrap(from_fn(csrf_protection))
             .wrap(
                 ErrorHandlers::new()
                     .handler(StatusCode::FORBIDDEN, redirect_browser_403)
