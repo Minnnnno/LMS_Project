@@ -1,5 +1,51 @@
 // Organisation dashboard: members, course instructors, and learner classes.
 
+const AVATAR_PALETTE = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#0f766e','#be185d'];
+
+function avatarColor(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+}
+
+let _confirmPending = null;
+
+function confirmThen(event, fn) {
+    event.stopPropagation();
+    const btn = event.currentTarget;
+
+    if (_confirmPending?.btn === btn) {
+        clearTimeout(_confirmPending.timer);
+        resetConfirmBtn(_confirmPending);
+        _confirmPending = null;
+        fn();
+        return;
+    }
+
+    if (_confirmPending) resetConfirmBtn(_confirmPending);
+
+    const saved = { btn, html: btn.innerHTML, cls: btn.className };
+    btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Sure?';
+    btn.className = btn.className
+        .replace(/btn-outline-\w+/, 'btn-danger')
+        .replace(/btn-\w*danger/, 'btn-danger');
+    btn.classList.add('btn-confirming');
+
+    const timer = setTimeout(() => {
+        if (_confirmPending?.btn === btn) {
+            resetConfirmBtn(saved);
+            _confirmPending = null;
+        }
+    }, 3000);
+
+    _confirmPending = { ...saved, timer };
+}
+
+function resetConfirmBtn({ btn, html, cls }) {
+    btn.innerHTML = html;
+    btn.className = cls;
+}
+
 let currentOrgId = null;
 let currentOrgName = "";
 let allSystemUsers = [];
@@ -69,6 +115,8 @@ async function selectOrg(orgId, orgName) {
 
     document.querySelectorAll(".org-card").forEach(card => card.classList.remove("active"));
     document.getElementById(`org-card-${orgId}`)?.classList.add("active");
+
+    document.getElementById("workspace-placeholder").style.display = "none";
     document.getElementById("members-panel").style.display = "";
     document.getElementById("course-instructor-panel").style.display = "";
     document.getElementById("learner-class-panel").style.display = "";
@@ -104,34 +152,38 @@ async function loadOrganisationMembers(orgId) {
 
 function renderMembers(members, orgId) {
     const el = document.getElementById("members-list");
+    document.getElementById("members-feedback").innerHTML = "";
     if (!members.length) {
         el.innerHTML = '<p class="text-muted small">No members yet. Add learners through Learner Classes below.</p>';
         return;
     }
-    el.innerHTML = members.map(m => `
+    el.innerHTML = members.map(m => {
+        const color = avatarColor(`${m.first_name}${m.last_name}${m.email}`);
+        return `
         <div class="member-row">
-            <div class="member-avatar">${initials(m.first_name, m.last_name)}</div>
+            <div class="member-avatar" style="background:${color}">${initials(m.first_name, m.last_name)}</div>
             <div class="flex-grow-1 min-w-0">
                 <div class="fw-semibold">${escHtml(m.first_name)} ${escHtml(m.last_name)}</div>
                 <div class="text-muted small text-truncate">${escHtml(m.email)}</div>
             </div>
             <div class="d-flex gap-1 flex-wrap">${(m.roles || []).map(roleBadge).join("")}</div>
-            <button class="btn btn-sm btn-outline-danger rounded-3 ms-1"
-                    onclick="removeMember(${orgId}, ${m.user_id})" title="Remove from org">
+            <button class="btn btn-sm btn-outline-danger rounded-3 ms-1 member-remove-btn"
+                    onclick="removeMember(${orgId}, ${m.user_id}, event)" title="Remove from org">
                 <i class="bi bi-person-x"></i>
             </button>
         </div>
-    `).join("");
+    `}).join("");
 }
 
-async function removeMember(orgId, userId) {
-    if (!confirm("Remove this member from the organisation?")) return;
-    try {
-        await axios.delete(`/api/organisations/${orgId}/members/${userId}`);
-        await selectOrg(orgId, currentOrgName);
-    } catch (err) {
-        alert("Failed to remove member: " + (err.response?.data || err.message));
-    }
+function removeMember(orgId, userId, event) {
+    confirmThen(event, async () => {
+        try {
+            await axios.delete(`/api/organisations/${orgId}/members/${userId}`);
+            await selectOrg(orgId, currentOrgName);
+        } catch (err) {
+            showResult("members-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
+        }
+    });
 }
 
 async function loadCourseInstructorManager(orgId, options = {}) {
@@ -175,7 +227,7 @@ function renderCourseInstructorManager() {
                 <span class="course-instructor-chip">
                     ${escHtml(instructor.first_name)} ${escHtml(instructor.last_name)}
                     <button type="button" title="Remove instructor"
-                            onclick="removeCourseInstructor(${course.course_id}, ${instructor.user_id})">
+                            onclick="removeCourseInstructor(${course.course_id}, ${instructor.user_id}, event)">
                         <i class="bi bi-x-circle"></i>
                     </button>
                 </span>
@@ -237,20 +289,26 @@ function renderLearnerClassManager() {
                 <span class="class-member-chip">
                     ${escHtml(member.first_name)} ${escHtml(member.last_name)}
                     <button type="button" title="Remove learner"
-                            onclick="removeClassMember(${cls.class_id}, ${member.user_id})">
+                            onclick="removeClassMember(${cls.class_id}, ${member.user_id}, event)">
                         <i class="bi bi-x-circle"></i>
                     </button>
                 </span>
             `).join("")
             : '<span class="text-muted small">No learners assigned</span>';
-        const active = cls.class_id === selectedClassId ? " active" : "";
+        const isActive = cls.class_id === selectedClassId;
+        const active = isActive ? " active" : "";
+        const selectedBadge = isActive
+            ? '<span class="badge bg-dark ms-2" style="font-size:.65rem;vertical-align:middle">Managing</span>'
+            : "";
         return `
             <div class="col-12 col-xl-6">
-                <div class="class-manager-card${active}" onclick="selectLearnerClass(${cls.class_id})">
+                <div class="class-manager-card${active}" role="button" tabindex="0"
+                     onclick="selectLearnerClass(${cls.class_id})"
+                     onkeydown="if(event.key==='Enter'||event.key===' ')selectLearnerClass(${cls.class_id})">
                     <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                         <div>
-                            <div class="fw-semibold">${escHtml(cls.class_name)}</div>
-                            <div class="text-muted small">${escHtml(courseNames)} - ${members.length} learner${members.length === 1 ? "" : "s"}</div>
+                            <div class="fw-semibold">${escHtml(cls.class_name)}${selectedBadge}</div>
+                            <div class="text-muted small">${escHtml(courseNames)} · ${members.length} learner${members.length === 1 ? "" : "s"}</div>
                         </div>
                         <div class="btn-group btn-group-sm" onclick="event.stopPropagation()">
                             <button class="btn btn-outline-secondary" title="Rename" onclick="renameClass(${cls.class_id})">
@@ -259,7 +317,7 @@ function renderLearnerClassManager() {
                             <button class="btn btn-outline-secondary" title="Change courses" onclick="changeClassCourses(${cls.class_id})">
                                 <i class="bi bi-journal-arrow-up"></i>
                             </button>
-                            <button class="btn btn-outline-danger" title="Delete" onclick="deleteClass(${cls.class_id})">
+                            <button class="btn btn-outline-danger" title="Delete" onclick="deleteClass(${cls.class_id}, event)">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -383,6 +441,18 @@ function renderExistingLearnerOptions() {
     document.getElementById("btn-add-existing-to-class").disabled = !candidates.length;
 }
 
+function toggleCreateClassForm(forceClose = false) {
+    const wrap = document.getElementById("class-create-form-wrap");
+    const btn = document.getElementById("btn-toggle-create-class");
+    const isVisible = wrap.style.display !== "none";
+    const shouldClose = forceClose || isVisible;
+    wrap.style.display = shouldClose ? "none" : "";
+    btn.innerHTML = shouldClose
+        ? '<i class="bi bi-plus-lg me-1"></i>New Class'
+        : '<i class="bi bi-x me-1"></i>Cancel';
+    if (!shouldClose) document.getElementById("class-name-input").focus();
+}
+
 async function createClass(event) {
     event.preventDefault();
     if (!currentOrgId) return;
@@ -397,6 +467,7 @@ async function createClass(event) {
             course_ids: courseIds,
         });
         document.getElementById("class-name-input").value = "";
+        toggleCreateClassForm(true);
         showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Class created', "success");
         await loadLearnerClasses(currentOrgId, { keepFeedback: true });
     } catch (err) {
@@ -404,21 +475,17 @@ async function createClass(event) {
     }
 }
 
-async function renameClass(classId) {
+function renameClass(classId) {
     const cls = (learnerClassState.classes || []).find(item => item.class_id === classId);
     if (!cls) return;
-    const className = prompt("Class name", cls.class_name);
-    if (!className || !className.trim()) return;
-
-    try {
-        await axios.put(`/api/organisations/${currentOrgId}/classes/${classId}`, {
-            class_name: className.trim(),
-        });
-        showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Class renamed', "success");
-        await loadLearnerClasses(currentOrgId, { keepFeedback: true });
-    } catch (err) {
-        showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
-    }
+    document.getElementById("rename-class-id").value = classId;
+    const input = document.getElementById("rename-class-input");
+    input.value = cls.class_name;
+    const modal = new bootstrap.Modal(document.getElementById("rename-class-modal"));
+    modal.show();
+    document.getElementById("rename-class-modal").addEventListener("shown.bs.modal", () => {
+        input.select();
+    }, { once: true });
 }
 
 function selectedClassCourseIds() {
@@ -473,17 +540,17 @@ async function saveClassCourses(classId) {
     }
 }
 
-async function deleteClass(classId) {
-    if (!confirm("Delete this class? Learners will lose access to its course unless another class still assigns the same course.")) return;
-
-    try {
-        await axios.delete(`/api/organisations/${currentOrgId}/classes/${classId}`);
-        showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Class deleted', "success");
-        await loadLearnerClasses(currentOrgId, { keepFeedback: true });
-        await loadOrganisationMembers(currentOrgId);
-    } catch (err) {
-        showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
-    }
+function deleteClass(classId, event) {
+    confirmThen(event, async () => {
+        try {
+            await axios.delete(`/api/organisations/${currentOrgId}/classes/${classId}`);
+            showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Class deleted', "success");
+            await loadLearnerClasses(currentOrgId, { keepFeedback: true });
+            await loadOrganisationMembers(currentOrgId);
+        } catch (err) {
+            showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
+        }
+    });
 }
 
 async function addExistingLearnerToClass() {
@@ -540,16 +607,16 @@ function showClassMutationResult(data) {
     showResult("class-feedback", msg, type);
 }
 
-async function removeClassMember(classId, userId) {
-    if (!confirm("Remove this learner from the class?")) return;
-
-    try {
-        await axios.delete(`/api/organisations/${currentOrgId}/classes/${classId}/members/${userId}`);
-        showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Learner removed from class', "success");
-        await loadLearnerClasses(currentOrgId, { keepFeedback: true });
-    } catch (err) {
-        showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
-    }
+function removeClassMember(classId, userId, event) {
+    confirmThen(event, async () => {
+        try {
+            await axios.delete(`/api/organisations/${currentOrgId}/classes/${classId}/members/${userId}`);
+            showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Learner removed from class', "success");
+            await loadLearnerClasses(currentOrgId, { keepFeedback: true });
+        } catch (err) {
+            showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
+        }
+    });
 }
 
 function clearClassImportPreview() {
@@ -728,17 +795,17 @@ document.getElementById("assign-course-instructor-form")?.addEventListener("subm
     }
 });
 
-async function removeCourseInstructor(courseId, instructorId) {
+function removeCourseInstructor(courseId, instructorId, event) {
     if (!currentOrgId) return;
-    if (!confirm("Remove this instructor from the course?")) return;
-
-    try {
-        await axios.delete(`/api/organisations/${currentOrgId}/courses/${courseId}/instructors/${instructorId}`);
-        showResult("course-instructor-feedback", '<i class="bi bi-check2-circle me-1"></i>Instructor removed from course', "success");
-        await loadCourseInstructorManager(currentOrgId, { keepFeedback: true });
-    } catch (err) {
-        showResult("course-instructor-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
-    }
+    confirmThen(event, async () => {
+        try {
+            await axios.delete(`/api/organisations/${currentOrgId}/courses/${courseId}/instructors/${instructorId}`);
+            showResult("course-instructor-feedback", '<i class="bi bi-check2-circle me-1"></i>Instructor removed from course', "success");
+            await loadCourseInstructorManager(currentOrgId, { keepFeedback: true });
+        } catch (err) {
+            showResult("course-instructor-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
+        }
+    });
 }
 
 document.getElementById("invite-instructor-form")?.addEventListener("submit", async event => {
@@ -769,11 +836,26 @@ document.getElementById("invite-instructor-form")?.addEventListener("submit", as
     }
 });
 
+document.getElementById("btn-toggle-create-class")?.addEventListener("click", () => toggleCreateClassForm());
+document.getElementById("btn-cancel-create-class")?.addEventListener("click", () => toggleCreateClassForm(true));
 document.getElementById("create-class-form")?.addEventListener("submit", createClass);
 document.getElementById("btn-select-all-class-courses")?.addEventListener("click", () => setCreateCourseChecks(true));
 document.getElementById("btn-clear-class-courses")?.addEventListener("click", () => setCreateCourseChecks(false));
 document.getElementById("btn-refresh-classes")?.addEventListener("click", () => {
     if (currentOrgId) loadLearnerClasses(currentOrgId);
+});
+document.getElementById("btn-save-rename-class")?.addEventListener("click", async () => {
+    const classId = Number(document.getElementById("rename-class-id").value);
+    const className = document.getElementById("rename-class-input").value.trim();
+    if (!className || !classId) return;
+    try {
+        await axios.put(`/api/organisations/${currentOrgId}/classes/${classId}`, { class_name: className });
+        bootstrap.Modal.getInstance(document.getElementById("rename-class-modal"))?.hide();
+        showResult("class-feedback", '<i class="bi bi-check2-circle me-1"></i>Class renamed', "success");
+        await loadLearnerClasses(currentOrgId, { keepFeedback: true });
+    } catch (err) {
+        showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
+    }
 });
 document.getElementById("btn-add-existing-to-class")?.addEventListener("click", addExistingLearnerToClass);
 document.getElementById("class-new-learner-form")?.addEventListener("submit", addNewLearnerToClass);
