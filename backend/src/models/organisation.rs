@@ -63,6 +63,41 @@ pub struct AssignCourseInstructorForm {
     pub instructor_id: i32,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateOrgClassForm {
+    pub class_name: String,
+    #[serde(default)]
+    pub course_ids: Vec<i32>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UpdateOrgClassForm {
+    pub class_name: Option<String>,
+    pub course_ids: Option<Vec<i32>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AddClassMembersForm {
+    #[serde(default)]
+    pub user_ids: Vec<i32>,
+    #[serde(default)]
+    pub new_users: Vec<MassEnrollNewUserForm>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ImportClassMembersForm {
+    #[serde(default)]
+    pub rows: Vec<ImportClassMemberRow>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ImportClassMemberRow {
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub class_name: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct CourseInstructorDto {
     pub user_id: i32,
@@ -91,4 +126,33 @@ pub struct OrgMemberDto {
     pub last_name: String,
     pub email: String,
     pub roles: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OrgClassCourseDto {
+    pub course_id: i32,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OrgClassMemberDto {
+    pub user_id: i32,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OrgClassDto {
+    pub class_id: i32,
+    pub org_id: i32,
+    pub courses: Vec<OrgClassCourseDto>,
+    pub class_name: String,
+    pub members: Vec<OrgClassMemberDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OrgClassSummaryDto {
+    pub classes: Vec<OrgClassDto>,
+    pub courses: Vec<OrgClassCourseDto>,
 }

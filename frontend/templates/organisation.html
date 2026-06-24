@@ -287,6 +287,75 @@
     line-height: 1;
   }
 
+  .class-manager-card {
+    border: 1px solid #eef0f4;
+    border-radius: .85rem;
+    padding: 1rem;
+    background: #fbfcfe;
+  }
+
+  .class-manager-card.active {
+    border-color: var(--skillup-dark);
+    box-shadow: 0 0 0 2px rgba(23, 23, 23, .1);
+  }
+
+  .class-member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border: 1px solid #d7eadf;
+    border-radius: 999px;
+    padding: .25rem .45rem .25rem .6rem;
+    background: #f0fbf4;
+    color: #176534;
+    font-size: .78rem;
+    font-weight: 600;
+  }
+
+  .class-member-chip button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    line-height: 1;
+  }
+
+  .class-course-picker {
+    border: 1px solid var(--skillup-border);
+    border-radius: .65rem;
+    background: #fff;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: .35rem .65rem;
+  }
+
+  .class-course-option {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    padding: .45rem 0;
+    border-bottom: 1px solid #f1f3f6;
+    font-size: .86rem;
+  }
+
+  .class-course-option:last-child {
+    border-bottom: 0;
+  }
+
+  .class-course-actions {
+    display: flex;
+    gap: .75rem;
+    align-items: center;
+    margin-top: .35rem;
+    font-size: .78rem;
+  }
+
+  .class-course-edit-panel {
+    border-top: 1px solid #eef0f4;
+    margin-top: .85rem;
+    padding-top: .85rem;
+  }
+
   @media (max-width: 991.98px) {
     .org-dashboard-header,
     .org-section-header {
@@ -338,11 +407,6 @@
               <p class="page-subtitle mb-0">People currently attached to this organisation.</p>
             </div>
           </div>
-          {% if role_names and "Organisation Admin" in role_names %}
-          <button class="btn btn-dark rounded-3" id="btn-open-enroll">
-            <i class="bi bi-person-plus me-1"></i>Add Learners
-          </button>
-          {% endif %}
         </div>
         <div id="members-list">
           <p class="text-muted small">Select an organisation.</p>
@@ -362,6 +426,24 @@
             <i class="bi bi-arrow-clockwise"></i>
           </button>
         </div>
+
+        <form id="invite-instructor-form" class="border rounded-3 p-3 mb-3">
+          <label class="form-label fw-semibold small" for="invite-instructor-email">Instructor email</label>
+          <div class="input-group input-group-sm">
+            <input
+              class="form-control"
+              id="invite-instructor-email"
+              type="email"
+              placeholder="instructor@example.com"
+              autocomplete="email"
+              required
+            >
+            <button class="btn btn-dark" id="btn-invite-instructor" type="submit">
+              <i class="bi bi-envelope-plus me-1"></i>Invite Instructor
+            </button>
+          </div>
+          <div id="invite-instructor-feedback" class="mt-2"></div>
+        </form>
 
         <form id="assign-course-instructor-form" class="row g-2 align-items-end mb-3">
           <div class="col-12 col-md-5">
@@ -386,123 +468,119 @@
       </div>
     </div>
 
-    <div class="section-panel" id="enroll-panel" style="display:none">
+    <div class="section-panel" id="learner-class-panel" style="display:none">
       <div class="org-section-header">
         <div class="org-section-title">
-          <i class="bi bi-person-check"></i>
+          <i class="bi bi-diagram-3"></i>
           <div>
-            <h2 class="section-title mb-1">Add Learners</h2>
-            <p class="page-subtitle mb-0">Adding to <span id="enroll-org-name" class="fw-semibold text-dark"></span></p>
+            <h2 class="section-title mb-1">Learner Classes</h2>
+            <p class="page-subtitle mb-0">Assign learners to named classes that control course access.</p>
           </div>
         </div>
-        <button class="btn btn-sm btn-outline-secondary rounded-3" id="btn-cancel-enroll">
-          <i class="bi bi-x-lg"></i>
+        <button class="btn btn-sm btn-outline-secondary rounded-3" id="btn-refresh-classes">
+          <i class="bi bi-arrow-clockwise"></i>
         </button>
       </div>
 
-      <form id="invite-instructor-form" class="border rounded-3 p-3 mb-3">
-        <label class="form-label fw-semibold small" for="invite-instructor-email">Instructor email</label>
-        <div class="input-group input-group-sm">
-          <input
-            class="form-control"
-            id="invite-instructor-email"
-            type="email"
-            placeholder="instructor@example.com"
-            autocomplete="email"
-            required
-          >
-          <button class="btn btn-dark" id="btn-invite-instructor" type="submit">
-            <i class="bi bi-envelope-plus me-1"></i>Invite Instructor
+      <form id="create-class-form" class="row g-2 align-items-end mb-3">
+        <div class="col-12 col-md-5">
+          <label class="form-label fw-semibold small" for="class-name-input">Class name</label>
+          <input class="form-control form-control-sm" id="class-name-input" maxlength="255" required>
+        </div>
+        <div class="col-12 col-md-5">
+          <label class="form-label fw-semibold small">Courses</label>
+          <div class="class-course-picker" id="class-course-list">
+            <p class="text-muted small mb-0">Select an organisation first.</p>
+          </div>
+          <div class="class-course-actions">
+            <button class="btn btn-link btn-sm p-0" id="btn-select-all-class-courses" type="button">Select all</button>
+            <button class="btn btn-link btn-sm p-0 text-secondary" id="btn-clear-class-courses" type="button">Clear</button>
+          </div>
+        </div>
+        <div class="col-12 col-md-2 d-grid">
+          <button class="btn btn-dark btn-sm rounded-3" id="btn-create-class" type="submit">
+            <i class="bi bi-plus-lg me-1"></i>Create
           </button>
         </div>
-        <div id="invite-instructor-feedback" class="mt-2"></div>
       </form>
 
-      <div class="org-enroll-toolbar">
-        <div>
-          <label class="form-label fw-semibold small">Role to assign</label>
-          <select class="form-select form-select-sm" id="enroll-role" style="max-width:220px">
-            <option value="Student">Student</option>
-            <option value="Instructor">Instructor (Lecturer)</option>
-          </select>
-        </div>
+      <div id="class-feedback" class="mb-3"></div>
+      <div id="learner-class-list" class="row g-3 mb-3">
+        <div class="col-12"><p class="text-muted small mb-0">Loading classes...</p></div>
       </div>
 
-      <div class="enroll-tabs">
-        <div class="enroll-tab active" id="tab-manual" onclick="switchTab('manual')">
-          <i class="bi bi-person-check me-1"></i>Select Manually
-        </div>
-        <div class="enroll-tab" id="tab-file" onclick="switchTab('file')">
-          <i class="bi bi-file-earmark-spreadsheet me-1"></i>Upload CSV / Excel
-        </div>
-      </div>
-
-      <div id="pane-manual">
-        <input type="text" class="form-control form-control-sm mb-2" id="enroll-search"
-               placeholder="Search by name or email...">
-        <div id="enroll-user-list" class="border rounded p-2 mb-3">
-          <p class="text-muted small mb-0">Loading available users...</p>
-        </div>
-        <button class="btn btn-dark btn-sm rounded-3" id="btn-do-enroll">
-          <i class="bi bi-check2-all me-1"></i>Add Selected
-        </button>
-      </div>
-
-      <div id="pane-file" style="display:none">
-        <div class="alert alert-light border small py-2 mb-3">
-          <i class="bi bi-info-circle me-1"></i>
-          Your file needs an <strong>email</strong> column. Optionally include
-          <strong>first_name</strong> and <strong>last_name</strong>.
-          <a href="#" id="btn-download-template" class="ms-1 fw-semibold">Download template CSV</a>
-        </div>
-
-        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-          <i class="bi bi-cloud-arrow-up"></i>
-          <div class="fw-semibold">Drop your CSV or Excel file here</div>
-          <div class="text-muted small mt-1">or click to browse - .csv, .xlsx, .xls accepted</div>
-        </div>
-        <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none">
-
-        <div id="upload-progress" class="mt-3">
-          <div class="d-flex justify-content-between small mb-1">
-            <span id="progress-label">Parsing file...</span>
-            <span id="progress-pct">0%</span>
-          </div>
-          <div class="progress" style="height:6px">
-            <div class="progress-bar bg-dark" id="progress-bar" style="width:0%"></div>
+      <div id="class-roster-tools" class="border rounded-3 p-3" style="display:none">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+          <div>
+            <h3 class="section-title mb-1" id="selected-class-title">Selected class</h3>
+            <p class="page-subtitle mb-0">Add existing learners, create new learners, or import rows into classes.</p>
           </div>
         </div>
 
-        <div id="csv-preview-wrap" style="display:none">
-          <div class="d-flex align-items-center justify-content-between mt-2 mb-1">
-            <span class="small fw-semibold" id="preview-summary"></span>
-            <button class="btn btn-link btn-sm p-0 text-danger" id="btn-clear-file">
-              <i class="bi bi-trash me-1"></i>Clear
+        <div class="row g-3">
+          <div class="col-12 col-lg-6">
+            <label class="form-label fw-semibold small" for="class-member-user-select">Existing learner</label>
+            <div class="input-group input-group-sm">
+              <select class="form-select" id="class-member-user-select"></select>
+              <button class="btn btn-dark" id="btn-add-existing-to-class" type="button">
+                <i class="bi bi-person-plus me-1"></i>Add
+              </button>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <form id="class-new-learner-form">
+              <label class="form-label fw-semibold small" for="class-new-email">New learner</label>
+              <div class="input-group input-group-sm">
+                <input class="form-control" id="class-new-email" type="email" placeholder="learner@example.com" required>
+                <input class="form-control" id="class-new-first-name" placeholder="First name">
+                <input class="form-control" id="class-new-last-name" placeholder="Last name">
+                <button class="btn btn-dark" type="submit">
+                  <i class="bi bi-envelope-plus me-1"></i>Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <div class="alert alert-light border small py-2 mb-3">
+            <i class="bi bi-info-circle me-1"></i>
+            Import files need <strong>email</strong> and <strong>class_name</strong>. Optionally include
+            <strong>first_name</strong> and <strong>last_name</strong>.
+            <a href="#" id="btn-download-class-template" class="ms-1 fw-semibold">Download template CSV</a>
+          </div>
+          <div class="drop-zone" id="class-drop-zone" onclick="document.getElementById('class-file-input').click()">
+            <i class="bi bi-cloud-arrow-up"></i>
+            <div class="fw-semibold">Drop your class CSV or Excel file here</div>
+            <div class="text-muted small mt-1">or click to browse - .csv, .xlsx, .xls accepted</div>
+          </div>
+          <input type="file" id="class-file-input" accept=".csv,.xlsx,.xls" style="display:none">
+          <div id="class-import-preview" class="mt-3" style="display:none">
+            <div class="d-flex align-items-center justify-content-between mt-2 mb-1">
+              <span class="small fw-semibold" id="class-preview-summary"></span>
+              <button class="btn btn-link btn-sm p-0 text-danger" id="btn-clear-class-file" type="button">
+                <i class="bi bi-trash me-1"></i>Clear
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered mb-0">
+                <thead class="table-dark">
+                  <tr>
+                    <th>#</th><th>Email</th><th>First Name</th><th>Last Name</th><th>Class</th><th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="class-preview-body"></tbody>
+              </table>
+            </div>
+            <button class="btn btn-dark btn-sm rounded-3 mt-3" id="btn-import-classes" type="button">
+              <i class="bi bi-upload me-1"></i>Import <span id="class-import-count">0</span> Rows
             </button>
           </div>
-          <table class="table table-sm table-bordered mb-0" id="csv-preview-table">
-            <thead class="table-dark">
-              <tr>
-                <th>#</th><th>Email</th><th>First Name</th><th>Last Name</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="csv-preview-body"></tbody>
-          </table>
-          <div class="preview-legend">
-            <span><span class="legend-dot" style="background:#b6efca"></span>Matched in system</span>
-            <span><span class="legend-dot" style="background:#ffc9c9"></span>Not found / will skip</span>
-          </div>
-        </div>
-
-        <div class="mt-3" id="file-enroll-actions" style="display:none">
-          <button class="btn btn-dark btn-sm rounded-3" id="btn-do-file-enroll">
-            <i class="bi bi-upload me-1"></i>Import <span id="file-enroll-count">0</span> Users
-          </button>
         </div>
       </div>
-
-      <div id="enroll-feedback" class="mt-3"></div>
     </div>
+
   </div>
 </div>
 
@@ -511,5 +589,5 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="/static/js/organisation.js?v=4"></script>
+<script src="/static/js/organisation.js?v=5"></script>
 {% endblock extra_js %}

@@ -2,24 +2,26 @@ use actix_session::Session;
 use actix_web::{
     HttpRequest, HttpResponse, Responder, delete, get,
     http::{StatusCode, header},
-    post, web,
+    post, put, web,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
-    EntityTrait, QueryFilter, Set, TransactionTrait,
+    EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use tera::{Context, Tera};
 use validator::{validate_email, Validate};
 
 use crate::entity::{
-    course_instructors, courses, organisation_signup_requests, organisations, roles, user_roles,
-    users,
+    course_instructors, courses, enrollments, org_class_courses, org_class_members, org_classes,
+    organisation_signup_requests, organisations, roles, user_roles, users,
 };
 use crate::models::organisation::{
-    AssignCourseInstructorForm, CourseInstructorCourseDto, CourseInstructorDto,
-    CourseInstructorSummaryDto, CreateOrganisationForm, InviteInstructorForm, MassEnrollForm,
-    OrgMemberDto, OrganisationSignupForm,
+    AddClassMembersForm, AssignCourseInstructorForm, CourseInstructorCourseDto,
+    CourseInstructorDto, CourseInstructorSummaryDto, CreateOrgClassForm, CreateOrganisationForm,
+    ImportClassMembersForm, InviteInstructorForm, MassEnrollForm, OrgClassCourseDto, OrgClassDto,
+    OrgClassMemberDto, OrgClassSummaryDto, OrgMemberDto, OrganisationSignupForm,
+    UpdateOrgClassForm,
 };
 use crate::services::auth_helpers::redirect_to_login;
 use crate::services::captcha_service::{recaptcha_site_key, verify_recaptcha};
@@ -1256,6 +1258,1111 @@ pub async fn invite_instructor(
 
 // ── Mass enrollment ────────────────────────────────────────────────────────────
 
+fn normalize_class_name(value: &str) -> Result<String, HttpResponse> {
+    let name = value.trim().to_string();
+    if name.is_empty() {
+        return Err(HttpResponse::BadRequest().body("Class name is required"));
+    }
+    if name.chars().count() > 255 {
+        return Err(HttpResponse::BadRequest().body("Class name must be 255 characters or fewer"));
+    }
+    Ok(name)
+}
+
+fn class_name_key(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+async fn validate_class_course_ids(
+    db: &DatabaseConnection,
+    org_id: i32,
+    course_ids: Vec<i32>,
+) -> Result<Vec<i32>, HttpResponse> {
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+
+    for course_id in course_ids {
+        if course_id <= 0 {
+            return Err(HttpResponse::BadRequest().body("Course IDs must be valid records"));
+        }
+        if seen.insert(course_id) {
+            deduped.push(course_id);
+        }
+    }
+
+    if deduped.is_empty() {
+        return Err(HttpResponse::BadRequest().body("Select at least one course for the class"));
+    }
+
+    for &course_id in &deduped {
+        require_course_in_organisation(db, course_id, org_id).await?;
+    }
+
+    Ok(deduped)
+}
+
+async fn student_role_id<C>(db: &C) -> Result<i32, DbErr>
+where
+    C: ConnectionTrait,
+{
+    roles::Entity::find()
+        .filter(roles::Column::RoleName.eq(roles::RoleName::Student))
+        .one(db)
+        .await?
+        .map(|role| role.role_id)
+        .ok_or_else(|| DbErr::RecordNotFound("Student role not found in database".to_string()))
+}
+
+async fn require_class_in_organisation(
+    db: &DatabaseConnection,
+    class_id: i32,
+    org_id: i32,
+) -> Result<org_classes::Model, HttpResponse> {
+    let class = org_classes::Entity::find_by_id(class_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding class: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("Class not found"))?;
+
+    if class.org_id == org_id {
+        Ok(class)
+    } else {
+        Err(HttpResponse::Forbidden().body("Class is not in your organisation"))
+    }
+}
+
+async fn ensure_course_enrollment<C>(db: &C, user_id: i32, course_id: i32) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let exists = enrollments::Entity::find_by_id((user_id, course_id))
+        .one(db)
+        .await?
+        .is_some();
+
+    if !exists {
+        enrollments::ActiveModel {
+            user_id: Set(user_id),
+            course_id: Set(course_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn ensure_class_membership<C>(
+    db: &C,
+    class_id: i32,
+    user_id: i32,
+    assigned_by: i32,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let exists = org_class_members::Entity::find_by_id((class_id, user_id))
+        .one(db)
+        .await?
+        .is_some();
+
+    if !exists {
+        org_class_members::ActiveModel {
+            class_id: Set(class_id),
+            user_id: Set(user_id),
+            assigned_by: Set(Some(assigned_by)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn class_course_ids<C>(db: &C, class_id: i32) -> Result<Vec<i32>, DbErr>
+where
+    C: ConnectionTrait,
+{
+    org_class_courses::Entity::find()
+        .filter(org_class_courses::Column::ClassId.eq(class_id))
+        .all(db)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.course_id).collect())
+}
+
+async fn set_class_courses<C>(
+    db: &C,
+    class_id: i32,
+    course_ids: &[i32],
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    org_class_courses::Entity::delete_many()
+        .filter(org_class_courses::Column::ClassId.eq(class_id))
+        .exec(db)
+        .await?;
+
+    for &course_id in course_ids {
+        org_class_courses::ActiveModel {
+            class_id: Set(class_id),
+            course_id: Set(course_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn has_other_class_for_course<C>(
+    db: &C,
+    user_id: i32,
+    excluded_class_id: i32,
+    course_id: i32,
+) -> Result<bool, DbErr>
+where
+    C: ConnectionTrait,
+{
+    let same_course_classes = org_class_courses::Entity::find()
+        .filter(org_class_courses::Column::CourseId.eq(course_id))
+        .filter(org_class_courses::Column::ClassId.ne(excluded_class_id))
+        .all(db)
+        .await?;
+
+    let class_ids = same_course_classes
+        .into_iter()
+        .map(|class_course| class_course.class_id)
+        .collect::<Vec<i32>>();
+
+    if class_ids.is_empty() {
+        return Ok(false);
+    }
+
+    org_class_members::Entity::find()
+        .filter(org_class_members::Column::UserId.eq(user_id))
+        .filter(org_class_members::Column::ClassId.is_in(class_ids))
+        .one(db)
+        .await
+        .map(|row| row.is_some())
+}
+
+async fn remove_course_enrollment_if_unassigned<C>(
+    db: &C,
+    user_id: i32,
+    excluded_class_id: i32,
+    course_id: i32,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if has_other_class_for_course(db, user_id, excluded_class_id, course_id).await? {
+        return Ok(());
+    }
+
+    enrollments::Entity::delete_by_id((user_id, course_id))
+        .exec(db)
+        .await?;
+
+    Ok(())
+}
+
+async fn ensure_existing_user_for_class<C>(
+    db: &C,
+    user: users::Model,
+    org_id: i32,
+    student_role_id: i32,
+    lms_admins: &HashSet<i32>,
+) -> Result<i32, String>
+where
+    C: ConnectionTrait,
+{
+    let user_id = user.user_id;
+
+    if lms_admins.contains(&user_id) {
+        return Err(format!("User {} is an LMS admin and cannot be added", user_id));
+    }
+
+    match user.org_id {
+        Some(existing_org_id) if existing_org_id == org_id => {}
+        Some(_) => {
+            return Err(format!(
+                "User {} already belongs to another organisation",
+                user_id
+            ));
+        }
+        None => {
+            let mut active_user = sea_orm::IntoActiveModel::into_active_model(user);
+            active_user.org_id = Set(Some(org_id));
+            active_user
+                .update(db)
+                .await
+                .map_err(|err| format!("Failed to set org for user {}: {}", user_id, err))?;
+        }
+    }
+
+    assign_role_id_if_missing(db, user_id, student_role_id)
+        .await
+        .map_err(|err| format!("Failed to assign student role for user {}: {}", user_id, err))?;
+
+    Ok(user_id)
+}
+
+async fn add_user_to_class<C>(
+    db: &C,
+    class: &org_classes::Model,
+    user_id: i32,
+    assigned_by: i32,
+) -> Result<(), String>
+where
+    C: ConnectionTrait,
+{
+    ensure_class_membership(db, class.class_id, user_id, assigned_by)
+        .await
+        .map_err(|err| format!("Failed to add user {} to class: {}", user_id, err))?;
+
+    let course_ids = class_course_ids(db, class.class_id)
+        .await
+        .map_err(|err| format!("Failed to find class courses: {}", err))?;
+
+    for course_id in course_ids {
+        ensure_course_enrollment(db, user_id, course_id)
+            .await
+            .map_err(|err| format!("Failed to enroll user {} into class course: {}", user_id, err))?;
+    }
+
+    Ok(())
+}
+
+async fn sync_class_courses_change<C>(
+    db: &C,
+    class_id: i32,
+    old_course_ids: &[i32],
+    new_course_ids: &[i32],
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let members = org_class_members::Entity::find()
+        .filter(org_class_members::Column::ClassId.eq(class_id))
+        .all(db)
+        .await?;
+
+    let old_courses = old_course_ids.iter().copied().collect::<HashSet<i32>>();
+    let new_courses = new_course_ids.iter().copied().collect::<HashSet<i32>>();
+    let removed_courses = old_courses
+        .difference(&new_courses)
+        .copied()
+        .collect::<Vec<i32>>();
+    let added_courses = new_courses
+        .difference(&old_courses)
+        .copied()
+        .collect::<Vec<i32>>();
+
+    for member in members {
+        for course_id in &removed_courses {
+            remove_course_enrollment_if_unassigned(db, member.user_id, class_id, *course_id).await?;
+        }
+        for course_id in &added_courses {
+            ensure_course_enrollment(db, member.user_id, *course_id).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn org_class_member_dto(user: users::Model) -> OrgClassMemberDto {
+    OrgClassMemberDto {
+        user_id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+    }
+}
+
+async fn add_class_members_impl<C>(
+    db: &C,
+    class: &org_classes::Model,
+    body: &AddClassMembersForm,
+    assigned_by: i32,
+) -> Result<(Vec<i32>, Vec<TempPasswordAccount>, Vec<String>), String>
+where
+    C: ConnectionTrait,
+{
+    let role_id = student_role_id(db)
+        .await
+        .map_err(|err| format!("Failed to find student role: {}", err))?;
+    let lms_admins = lms_admin_user_ids(db)
+        .await
+        .map_err(|err| format!("Failed to check LMS admin users: {}", err))?;
+
+    let mut added = Vec::new();
+    let mut errors = Vec::new();
+    let mut created_accounts = Vec::new();
+    let mut seen_new_emails = HashSet::new();
+
+    for &user_id in &body.user_ids {
+        let user = match users::Entity::find_by_id(user_id).one(db).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                errors.push(format!("User {} not found", user_id));
+                continue;
+            }
+            Err(err) => {
+                errors.push(format!("Database error finding user {}: {}", user_id, err));
+                continue;
+            }
+        };
+
+        match ensure_existing_user_for_class(db, user, class.org_id, role_id, &lms_admins).await {
+            Ok(user_id) => match add_user_to_class(db, class, user_id, assigned_by).await {
+                Ok(()) => added.push(user_id),
+                Err(message) => errors.push(message),
+            },
+            Err(message) => errors.push(message),
+        }
+    }
+
+    for new_user in &body.new_users {
+        let email = new_user.email.trim().to_lowercase();
+        if email.is_empty() {
+            errors.push("Skipped a new user row with a blank email".to_string());
+            continue;
+        }
+        if !validate_email(&email) {
+            errors.push(format!("{} is not a valid email address", email));
+            continue;
+        }
+        if !seen_new_emails.insert(email.clone()) {
+            errors.push(format!("{} appears more than once in the import", email));
+            continue;
+        }
+
+        match users::Entity::find()
+            .filter(users::Column::Email.eq(email.clone()))
+            .one(db)
+            .await
+        {
+            Ok(Some(existing_user)) => {
+                match ensure_existing_user_for_class(
+                    db,
+                    existing_user,
+                    class.org_id,
+                    role_id,
+                    &lms_admins,
+                )
+                .await
+                {
+                    Ok(user_id) => match add_user_to_class(db, class, user_id, assigned_by).await {
+                        Ok(()) => added.push(user_id),
+                        Err(message) => errors.push(format!("{}: {}", email, message)),
+                    },
+                    Err(message) => errors.push(format!("{}: {}", email, message)),
+                }
+            }
+            Ok(None) => {
+                match create_temp_password_org_user(
+                    db,
+                    class.org_id,
+                    email.clone(),
+                    new_user.first_name.clone(),
+                    new_user.last_name.clone(),
+                    roles::RoleName::Student,
+                )
+                .await
+                {
+                    Ok(account) => {
+                        match add_user_to_class(db, class, account.user.user_id, assigned_by).await
+                        {
+                            Ok(()) => {
+                                added.push(account.user.user_id);
+                                created_accounts.push(account);
+                            }
+                            Err(message) => errors.push(format!("{}: {}", email, message)),
+                        }
+                    }
+                    Err(message) => errors.push(format!("{}: {}", email, message)),
+                }
+            }
+            Err(err) => errors.push(format!("Database error checking {}: {}", email, err)),
+        }
+    }
+
+    Ok((added, created_accounts, errors))
+}
+
+/// GET /api/organisations/{org_id}/classes
+#[get("/organisations/{org_id}/classes")]
+pub async fn list_org_classes(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let course_rows = match courses::Entity::find()
+        .filter(courses::Column::OrgId.eq(org_id))
+        .order_by_asc(courses::Column::Name)
+        .all(db.get_ref())
+        .await
+    {
+        Ok(courses) => courses,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding courses: {}", err));
+        }
+    };
+
+    let courses_by_id = course_rows
+        .iter()
+        .map(|course| {
+            (
+                course.course_id,
+                course
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("Course #{}", course.course_id)),
+            )
+        })
+        .collect::<HashMap<i32, String>>();
+
+    let class_rows = match org_classes::Entity::find()
+        .filter(org_classes::Column::OrgId.eq(org_id))
+        .order_by_asc(org_classes::Column::ClassName)
+        .all(db.get_ref())
+        .await
+    {
+        Ok(classes) => classes,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding classes: {}", err));
+        }
+    };
+
+    let class_ids = class_rows
+        .iter()
+        .map(|class| class.class_id)
+        .collect::<Vec<i32>>();
+
+    let class_course_rows = if class_ids.is_empty() {
+        Vec::new()
+    } else {
+        match org_class_courses::Entity::find()
+            .filter(org_class_courses::Column::ClassId.is_in(class_ids.clone()))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(class_courses) => class_courses,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding class courses: {}", err));
+            }
+        }
+    };
+
+    let mut courses_by_class: HashMap<i32, Vec<OrgClassCourseDto>> = HashMap::new();
+    for class_course in class_course_rows {
+        courses_by_class
+            .entry(class_course.class_id)
+            .or_default()
+            .push(OrgClassCourseDto {
+                course_id: class_course.course_id,
+                name: courses_by_id
+                    .get(&class_course.course_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Course #{}", class_course.course_id)),
+            });
+    }
+    for class_courses in courses_by_class.values_mut() {
+        class_courses.sort_by(|a, b| a.name.cmp(&b.name));
+    }
+
+    let member_rows = if class_ids.is_empty() {
+        Vec::new()
+    } else {
+        match org_class_members::Entity::find()
+            .filter(org_class_members::Column::ClassId.is_in(class_ids.clone()))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(members) => members,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding class members: {}", err));
+            }
+        }
+    };
+
+    let user_ids = member_rows
+        .iter()
+        .map(|member| member.user_id)
+        .collect::<HashSet<i32>>();
+
+    let users_by_id = if user_ids.is_empty() {
+        HashMap::new()
+    } else {
+        match users::Entity::find()
+            .filter(users::Column::UserId.is_in(user_ids.iter().copied()))
+            .all(db.get_ref())
+            .await
+        {
+            Ok(users) => users
+                .into_iter()
+                .map(|user| (user.user_id, org_class_member_dto(user)))
+                .collect::<HashMap<i32, OrgClassMemberDto>>(),
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding class users: {}", err));
+            }
+        }
+    };
+
+    let mut members_by_class: HashMap<i32, Vec<OrgClassMemberDto>> = HashMap::new();
+    for member in member_rows {
+        if let Some(user) = users_by_id.get(&member.user_id) {
+            members_by_class
+                .entry(member.class_id)
+                .or_default()
+                .push(user.clone());
+        }
+    }
+    for members in members_by_class.values_mut() {
+        members.sort_by(|a, b| {
+            a.last_name
+                .cmp(&b.last_name)
+                .then_with(|| a.first_name.cmp(&b.first_name))
+                .then_with(|| a.email.cmp(&b.email))
+        });
+    }
+
+    let class_dtos = class_rows
+        .into_iter()
+        .map(|class| OrgClassDto {
+            class_id: class.class_id,
+            org_id: class.org_id,
+            courses: courses_by_class
+                .remove(&class.class_id)
+                .unwrap_or_default(),
+            class_name: class.class_name,
+            members: members_by_class
+                .remove(&class.class_id)
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<OrgClassDto>>();
+
+    let course_dtos = course_rows
+        .into_iter()
+        .map(|course| OrgClassCourseDto {
+            course_id: course.course_id,
+            name: course
+                .name
+                .unwrap_or_else(|| format!("Course #{}", course.course_id)),
+        })
+        .collect::<Vec<OrgClassCourseDto>>();
+
+    HttpResponse::Ok().json(OrgClassSummaryDto {
+        classes: class_dtos,
+        courses: course_dtos,
+    })
+}
+
+/// POST /api/organisations/{org_id}/classes
+#[post("/organisations/{org_id}/classes")]
+pub async fn create_org_class(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+    body: web::Json<CreateOrgClassForm>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let body = body.into_inner();
+    let class_name = match normalize_class_name(&body.class_name) {
+        Ok(name) => name,
+        Err(response) => return response,
+    };
+    let course_ids = match validate_class_course_ids(db.get_ref(), org_id, body.course_ids).await {
+        Ok(course_ids) => course_ids,
+        Err(response) => return response,
+    };
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let class = org_classes::ActiveModel {
+        org_id: Set(org_id),
+        class_name: Set(class_name),
+        ..Default::default()
+    };
+
+    match class.insert(&txn).await {
+        Ok(saved) => {
+            if let Err(err) = set_class_courses(&txn, saved.class_id, &course_ids).await {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to assign class courses: {}", err));
+            }
+            if let Err(err) = txn.commit().await {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to commit class creation: {}", err));
+            }
+            HttpResponse::Ok().json(saved)
+        }
+        Err(DbErr::Exec(_)) => HttpResponse::Conflict().body("Class name already exists"),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to create class: {}", err))
+        }
+    }
+}
+
+/// PUT /api/organisations/{org_id}/classes/{class_id}
+#[put("/organisations/{org_id}/classes/{class_id}")]
+pub async fn update_org_class(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+    body: web::Json<UpdateOrgClassForm>,
+) -> impl Responder {
+    let (org_id, class_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let class = match require_class_in_organisation(db.get_ref(), class_id, org_id).await {
+        Ok(class) => class,
+        Err(response) => return response,
+    };
+    let body = body.into_inner();
+    let new_course_ids = match body.course_ids {
+        Some(course_ids) => match validate_class_course_ids(db.get_ref(), org_id, course_ids).await {
+            Ok(course_ids) => Some(course_ids),
+            Err(response) => return response,
+        },
+        None => None,
+    };
+
+    let new_name = match body.class_name {
+        Some(name) => match normalize_class_name(&name) {
+            Ok(name) => Some(name),
+            Err(response) => return response,
+        },
+        None => None,
+    };
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let old_course_ids = match class_course_ids(&txn, class.class_id).await {
+        Ok(course_ids) => course_ids,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to find current class courses: {}", err));
+        }
+    };
+
+    let mut active = sea_orm::IntoActiveModel::into_active_model(class.clone());
+    if let Some(name) = new_name {
+        active.class_name = Set(name);
+    }
+
+    match active.update(&txn).await {
+        Ok(saved) => {
+            if let Some(new_course_ids) = new_course_ids.as_ref() {
+                if let Err(err) = set_class_courses(&txn, class.class_id, new_course_ids).await {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Failed to update class courses: {}", err));
+                }
+                if let Err(err) =
+                    sync_class_courses_change(&txn, class.class_id, &old_course_ids, new_course_ids)
+                        .await
+                {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Failed to sync class enrollments: {}", err));
+                }
+            }
+            if let Err(err) = txn.commit().await {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to commit class update: {}", err));
+            }
+            HttpResponse::Ok().json(saved)
+        }
+        Err(DbErr::Exec(_)) => HttpResponse::Conflict().body("Class name already exists"),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to update class: {}", err))
+        }
+    }
+}
+
+/// DELETE /api/organisations/{org_id}/classes/{class_id}
+#[delete("/organisations/{org_id}/classes/{class_id}")]
+pub async fn delete_org_class(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+) -> impl Responder {
+    let (org_id, class_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let _class = match require_class_in_organisation(db.get_ref(), class_id, org_id).await {
+        Ok(class) => class,
+        Err(response) => return response,
+    };
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let course_ids = match class_course_ids(&txn, class_id).await {
+        Ok(course_ids) => course_ids,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to find class courses: {}", err));
+        }
+    };
+
+    let members = match org_class_members::Entity::find()
+        .filter(org_class_members::Column::ClassId.eq(class_id))
+        .all(&txn)
+        .await
+    {
+        Ok(members) => members,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding class members: {}", err));
+        }
+    };
+
+    if let Err(err) = org_class_members::Entity::delete_many()
+        .filter(org_class_members::Column::ClassId.eq(class_id))
+        .exec(&txn)
+        .await
+    {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to remove class members: {}", err));
+    }
+
+    for member in members {
+        for course_id in &course_ids {
+            if let Err(err) =
+                remove_course_enrollment_if_unassigned(&txn, member.user_id, class_id, *course_id)
+                    .await
+            {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to sync enrollment for user {}: {}", member.user_id, err));
+            }
+        }
+    }
+
+    if let Err(err) = org_classes::Entity::delete_by_id(class_id).exec(&txn).await {
+        return HttpResponse::InternalServerError().body(format!("Failed to delete class: {}", err));
+    }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit class delete: {}", err));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({ "message": "Class deleted" }))
+}
+
+/// POST /api/organisations/{org_id}/classes/{class_id}/members
+#[post("/organisations/{org_id}/classes/{class_id}/members")]
+pub async fn add_org_class_members(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32)>,
+    body: web::Json<AddClassMembersForm>,
+) -> impl Responder {
+    let (org_id, class_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+    let assigned_by = match session_user_id(&session) {
+        Ok(user_id) => user_id,
+        Err(response) => return response,
+    };
+    let class = match require_class_in_organisation(db.get_ref(), class_id, org_id).await {
+        Ok(class) => class,
+        Err(response) => return response,
+    };
+    let body = body.into_inner();
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let (added, created_accounts, mut errors) =
+        match add_class_members_impl(&txn, &class, &body, assigned_by).await {
+            Ok(result) => result,
+            Err(message) => return HttpResponse::InternalServerError().body(message),
+        };
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit class membership changes: {}", err));
+    }
+
+    for account in &created_accounts {
+        if let Err(err) = send_temp_password_account_email(
+            &account.email,
+            &account.temp_password,
+            &account.role_name,
+        ) {
+            errors.push(format!(
+                "{} account created, but the invite email could not be sent: {}",
+                account.email, err
+            ));
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "added": added,
+        "created": created_accounts
+            .iter()
+            .map(|account| serde_json::json!({
+                "user_id": account.user.user_id,
+                "email": account.email,
+            }))
+            .collect::<Vec<serde_json::Value>>(),
+        "errors": errors,
+        "message": format!("{} learner(s) added to class", added.len())
+    }))
+}
+
+/// DELETE /api/organisations/{org_id}/classes/{class_id}/members/{user_id}
+#[delete("/organisations/{org_id}/classes/{class_id}/members/{user_id}")]
+pub async fn remove_org_class_member(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<(i32, i32, i32)>,
+) -> impl Responder {
+    let (org_id, class_id, user_id) = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+
+    let _class = match require_class_in_organisation(db.get_ref(), class_id, org_id).await {
+        Ok(class) => class,
+        Err(response) => return response,
+    };
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let course_ids = match class_course_ids(&txn, class_id).await {
+        Ok(course_ids) => course_ids,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to find class courses: {}", err));
+        }
+    };
+
+    match org_class_members::Entity::delete_by_id((class_id, user_id))
+        .exec(&txn)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {}
+        Ok(_) => return HttpResponse::NotFound().body("Class member not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to remove class member: {}", err));
+        }
+    }
+
+    for course_id in course_ids {
+        if let Err(err) =
+            remove_course_enrollment_if_unassigned(&txn, user_id, class_id, course_id).await
+        {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to sync course enrollment: {}", err));
+        }
+    }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit class membership removal: {}", err));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({ "message": "Learner removed from class" }))
+}
+
+/// POST /api/organisations/{org_id}/classes/import
+#[post("/organisations/{org_id}/classes/import")]
+pub async fn import_org_class_members(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+    body: web::Json<ImportClassMembersForm>,
+) -> impl Responder {
+    let org_id = path.into_inner();
+    if let Err(response) =
+        require_matching_session_organisation(db.get_ref(), &session, org_id).await
+    {
+        return response;
+    }
+    let assigned_by = match session_user_id(&session) {
+        Ok(user_id) => user_id,
+        Err(response) => return response,
+    };
+
+    let body = body.into_inner();
+    if body.rows.is_empty() {
+        return HttpResponse::BadRequest().body("No import rows provided");
+    }
+
+    let classes = match org_classes::Entity::find()
+        .filter(org_classes::Column::OrgId.eq(org_id))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(classes) => classes,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding classes: {}", err));
+        }
+    };
+    let classes_by_name = classes
+        .into_iter()
+        .map(|class| (class_name_key(&class.class_name), class))
+        .collect::<HashMap<String, org_classes::Model>>();
+
+    let mut rows_by_class: HashMap<i32, AddClassMembersForm> = HashMap::new();
+    let mut errors = Vec::new();
+
+    for row in body.rows {
+        let email = row.email.trim().to_lowercase();
+        let class_key = class_name_key(&row.class_name);
+        if email.is_empty() {
+            errors.push("Skipped a row with a blank email".to_string());
+            continue;
+        }
+        if !validate_email(&email) {
+            errors.push(format!("{} is not a valid email address", email));
+            continue;
+        }
+        let Some(class) = classes_by_name.get(&class_key) else {
+            errors.push(format!("{}: class '{}' was not found", email, row.class_name.trim()));
+            continue;
+        };
+
+        rows_by_class
+            .entry(class.class_id)
+            .or_insert_with(|| AddClassMembersForm {
+                user_ids: Vec::new(),
+                new_users: Vec::new(),
+            })
+            .new_users
+            .push(crate::models::organisation::MassEnrollNewUserForm {
+                email,
+                first_name: row.first_name,
+                last_name: row.last_name,
+            });
+    }
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let mut added = Vec::new();
+    let mut created_accounts = Vec::new();
+    for (class_id, form) in rows_by_class {
+        let Some(class) = classes_by_name.values().find(|class| class.class_id == class_id) else {
+            continue;
+        };
+        match add_class_members_impl(&txn, class, &form, assigned_by).await {
+            Ok((class_added, class_created, class_errors)) => {
+                added.extend(class_added);
+                created_accounts.extend(class_created);
+                errors.extend(class_errors);
+            }
+            Err(message) => return HttpResponse::InternalServerError().body(message),
+        }
+    }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit class import: {}", err));
+    }
+
+    for account in &created_accounts {
+        if let Err(err) = send_temp_password_account_email(
+            &account.email,
+            &account.temp_password,
+            &account.role_name,
+        ) {
+            errors.push(format!(
+                "{} account created, but the invite email could not be sent: {}",
+                account.email, err
+            ));
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "added": added,
+        "created": created_accounts
+            .iter()
+            .map(|account| serde_json::json!({
+                "user_id": account.user.user_id,
+                "email": account.email,
+            }))
+            .collect::<Vec<serde_json::Value>>(),
+        "errors": errors,
+        "message": format!("{} learner(s) imported into classes", added.len())
+    }))
+}
+
 /// GET /api/organisations/{org_id}/course-instructors
 #[get("/organisations/{org_id}/course-instructors")]
 pub async fn list_course_instructors(
@@ -1669,7 +2776,7 @@ pub async fn mass_enroll(
 }
 
 /// DELETE /api/organisations/{org_id}/members/{user_id}
-/// Removes a user from the organisation (sets org_id to NULL)
+/// Removes a user from the organisation, its classes, and synced class enrollments.
 #[delete("/organisations/{org_id}/members/{user_id}")]
 pub async fn remove_org_member(
     db: web::Data<DatabaseConnection>,
@@ -1695,15 +2802,115 @@ pub async fn remove_org_member(
         return HttpResponse::Forbidden().body("Member does not belong to your organisation");
     }
 
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    let class_rows = match org_classes::Entity::find()
+        .filter(org_classes::Column::OrgId.eq(org_id))
+        .all(&txn)
+        .await
+    {
+        Ok(classes) => classes,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding organisation classes: {}", err));
+        }
+    };
+
+    let class_ids = class_rows
+        .iter()
+        .map(|class| class.class_id)
+        .collect::<Vec<i32>>();
+
+    let class_course_rows = if class_ids.is_empty() {
+        Vec::new()
+    } else {
+        match org_class_courses::Entity::find()
+            .filter(org_class_courses::Column::ClassId.is_in(class_ids.clone()))
+            .all(&txn)
+            .await
+        {
+            Ok(rows) => rows,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding class courses: {}", err));
+            }
+        }
+    };
+
+    let mut course_ids_by_class: HashMap<i32, Vec<i32>> = HashMap::new();
+    for class_course in class_course_rows {
+        course_ids_by_class
+            .entry(class_course.class_id)
+            .or_default()
+            .push(class_course.course_id);
+    }
+
+    let member_rows = if class_ids.is_empty() {
+        Vec::new()
+    } else {
+        match org_class_members::Entity::find()
+            .filter(org_class_members::Column::ClassId.is_in(class_ids.clone()))
+            .filter(org_class_members::Column::UserId.eq(user_id))
+            .all(&txn)
+            .await
+        {
+            Ok(members) => members,
+            Err(err) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Database error finding class memberships: {}", err));
+            }
+        }
+    };
+
+    if !member_rows.is_empty() {
+        if let Err(err) = org_class_members::Entity::delete_many()
+            .filter(org_class_members::Column::ClassId.is_in(class_ids))
+            .filter(org_class_members::Column::UserId.eq(user_id))
+            .exec(&txn)
+            .await
+        {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to remove class memberships: {}", err));
+        }
+
+        for member in member_rows {
+            if let Some(course_ids) = course_ids_by_class.get(&member.class_id) {
+                for course_id in course_ids {
+                    if let Err(err) =
+                        remove_course_enrollment_if_unassigned(&txn, user_id, member.class_id, *course_id)
+                            .await
+                    {
+                        return HttpResponse::InternalServerError()
+                            .body(format!("Failed to sync enrollment for user {}: {}", user_id, err));
+                    }
+                }
+            }
+        }
+    }
+
     let mut active_user = sea_orm::IntoActiveModel::into_active_model(user);
     active_user.org_id = Set(None);
 
-    match active_user.update(db.get_ref()).await {
-        Ok(_) => HttpResponse::Ok().body("Member removed from organisation"),
+    match active_user.update(&txn).await {
+        Ok(_) => {}
         Err(err) => {
-            HttpResponse::InternalServerError().body(format!("Failed to remove member: {}", err))
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to remove member: {}", err));
         }
     }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit member removal: {}", err));
+    }
+
+    HttpResponse::Ok().body("Member removed from organisation")
 }
 
 /// GET /api/users/all  –  users visible to this organisation admin for CSV/Excel matching
