@@ -135,7 +135,7 @@ async fn main() -> std::io::Result<()> {
             .service(controller::organisation_controller::organisation_page)
             .service(controller::organisation_controller::organisation_signup_page)
             .service(controller::organisation_controller::organisation_signup_submit)
-            .service(Files::new("/static", "../frontend/static").show_files_listing())
+            .service(Files::new("/static", "../frontend/static"))
             .default_service(web::route().to(ssr::pages::not_found_page))
     })
     .bind(("127.0.0.1", 8080))?

@@ -1,2 +1,17 @@
-backend/target/
-backend/.env
+# Rust build output
+/target/
+/backend/target/
+
+# Local environment files and secrets (keep documented examples)
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Runtime uploads, logs, and temporary files
+/backend/tmp/
+*.log
+*.upload
+
+# Editor/cloud-sync conflict copies
+*.sync-conflict-*
