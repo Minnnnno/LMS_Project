@@ -1105,6 +1105,142 @@ body {
     font-size: 1.1rem;
 }
 
+.certificate-list {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.certificate-list-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--skillup-border);
+    border-radius: 0.85rem;
+    background: #ffffff;
+}
+
+.certificate-thumb {
+    width: 4rem;
+    height: 4rem;
+    flex: 0 0 auto;
+    border-radius: 0.7rem;
+    background: #f2f4f7;
+    background-position: center;
+    background-size: cover;
+}
+
+.certificate-body {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.certificate-title {
+    color: var(--skillup-dark);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.certificate-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    color: var(--skillup-muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.certificate-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.certificate-link-text {
+    overflow: hidden;
+    color: #475467;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.certificate-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.certificate-verify-card {
+    display: grid;
+    gap: 1.15rem;
+    max-width: 780px;
+    padding: 1.25rem;
+    border: 1px solid var(--skillup-border);
+    border-left: 5px solid #98a2b3;
+    border-radius: 0.9rem;
+    background: #ffffff;
+}
+
+.certificate-verify-card.valid {
+    border-left-color: #16a34a;
+}
+
+.certificate-verify-card.invalid {
+    border-left-color: #dc2626;
+}
+
+.certificate-verify-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--skillup-dark);
+    font-size: 1.05rem;
+    font-weight: 900;
+}
+
+.certificate-verify-status .bi-patch-check-fill {
+    color: #16a34a;
+}
+
+.certificate-verify-status .bi-exclamation-octagon-fill {
+    color: #dc2626;
+}
+
+.certificate-verify-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
+}
+
+.certificate-verify-grid div {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.certificate-verify-grid dt {
+    color: var(--skillup-muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.certificate-verify-grid dd {
+    margin: 0;
+    color: var(--skillup-dark);
+    font-weight: 800;
+}
+
+.certificate-invalid-note {
+    margin: 0;
+    color: #667085;
+    font-weight: 700;
+}
+
 @media (max-width: 991.98px) {
     .my-courses-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1128,5 +1264,22 @@ body {
     .my-course-thumb {
         width: 100%;
         height: 8rem;
+    }
+
+    .certificate-list-item {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .certificate-actions {
+        width: 100%;
+    }
+
+    .certificate-actions > * {
+        flex: 1 1 0;
+    }
+
+    .certificate-verify-grid {
+        grid-template-columns: 1fr;
     }
 }

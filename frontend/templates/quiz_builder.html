@@ -3,7 +3,7 @@
 {% block title %}Quiz Builder | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/quiz_builder.css?v=4">
+<link rel="stylesheet" href="/static/css/quiz_builder.css?v=5">
 
 <div class="quiz-builder-page">
     <header class="quiz-builder-header">
@@ -101,8 +101,8 @@
                         <dd id="quiz-mcq-count">0</dd>
                     </div>
                     <div>
-                        <dt>Short answer</dt>
-                        <dd id="quiz-short-answer-count">0</dd>
+                        <dt>Long answer</dt>
+                        <dd id="quiz-long-answer-count">0</dd>
                     </div>
                 </dl>
             </div>
@@ -124,7 +124,7 @@
                 <label>Question type</label>
                 <select class="question-type-input">
                     <option value="mcq">MCQ</option>
-                    <option value="long_answer">Short answer</option>
+                    <option value="long_answer">Long answer</option>
                 </select>
             </div>
             <div>
@@ -143,9 +143,9 @@
             <span>Add Option</span>
         </button>
 
-        <div class="short-answer-note">
+        <div class="long-answer-note">
             <i class="bi bi-input-cursor-text" aria-hidden="true"></i>
-            <span>Short answer questions will be manually reviewed later.</span>
+            <span>Long answer questions will be manually reviewed later.</span>
         </div>
     </article>
 </template>
@@ -160,5 +160,5 @@
     </div>
 </template>
 
-<script src="/static/js/quiz_builder.js?v=6"></script>
+<script src="/static/js/quiz_builder.js?v=7"></script>
 {% endblock content %}

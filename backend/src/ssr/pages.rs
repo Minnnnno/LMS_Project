@@ -57,6 +57,11 @@ async fn certification(session: Session) -> impl Responder {
     render_page("certification.html", &session)
 }
 
+#[get("/verify/certificate/{token}")]
+async fn certificate_verification(session: Session) -> impl Responder {
+    render_page("certificate_verification.html", &session)
+}
+
 #[get("/projects")]
 async fn projects(session: Session) -> impl Responder {
     render_page("projects.html", &session)
@@ -314,6 +319,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
         .service(assessments)
         .service(challenges)
         .service(certification)
+        .service(certificate_verification)
         .service(projects)
         .service(downloads)
         .service(instructor_submissions)

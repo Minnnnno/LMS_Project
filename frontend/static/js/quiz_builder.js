@@ -33,11 +33,11 @@ function renumberQuestions() {
 function updateSummary() {
     const cards = [...questionList.querySelectorAll(".question-card")];
     const mcqCount = cards.filter((card) => card.dataset.questionType === "mcq").length;
-    const shortAnswerCount = cards.filter((card) => card.dataset.questionType === "long_answer").length;
+    const longAnswerCount = cards.filter((card) => card.dataset.questionType === "long_answer").length;
 
     document.getElementById("quiz-question-count").textContent = String(cards.length);
     document.getElementById("quiz-mcq-count").textContent = String(mcqCount);
-    document.getElementById("quiz-short-answer-count").textContent = String(shortAnswerCount);
+    document.getElementById("quiz-long-answer-count").textContent = String(longAnswerCount);
 }
 
 function createOption(card, text = "", checked = false) {
@@ -296,7 +296,7 @@ function renderPreview() {
     const previewContent = document.getElementById("quiz-preview-content");
 
     previewContent.innerHTML = draft.questions.map((question) => {
-        const questionType = question.question_type === "mcq" ? "MCQ" : "Short answer";
+        const questionType = question.question_type === "mcq" ? "MCQ" : "Long answer";
         const options = question.question_type === "mcq"
             ? `<ul>${question.options
                 .filter((option) => option.option_text)
@@ -306,7 +306,7 @@ function renderPreview() {
                     </li>
                 `)
                 .join("")}</ul>`
-            : "<p>Short answer response field</p>";
+            : "<p>Long answer response field</p>";
 
         return `
             <article class="preview-question">
@@ -322,13 +322,13 @@ function renderPreview() {
     setSaveStatus("Preview updated.", "success");
 }
 
-async function postJson(url, payload) {
+async function requestJson(url, method = "GET", payload = null) {
     const response = await fetch(url, {
-        method: "POST",
+        method,
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        ...(payload ? { body: JSON.stringify(payload) } : {}),
     });
 
     if (!response.ok) {
@@ -336,35 +336,8 @@ async function postJson(url, payload) {
         throw new Error(message || "Request failed.");
     }
 
-    return response.json();
-}
-
-async function putJson(url, payload) {
-    const response = await fetch(url, {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || "Request failed.");
-    }
-
-    return response.text();
-}
-
-async function getJson(url) {
-    const response = await fetch(url);
-
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || "Request failed.");
-    }
-
-    return response.json();
+    const contentType = response.headers.get("content-type") || "";
+    return contentType.includes("application/json") ? response.json() : response.text();
 }
 
 function setDateTimeInputs(value) {
@@ -407,7 +380,7 @@ async function loadExistingQuiz() {
 
     setSaveStatus("Loading quiz...");
 
-    const quiz = await getJson(`/api/quiz/${editingQuizId}/draft`);
+    const quiz = await requestJson(`/api/quiz/${editingQuizId}/draft`);
 
     document.querySelector(".quiz-builder-header h1").textContent = "Edit Quiz";
     document.querySelector("#save-quiz-draft-btn span").textContent = "Save Changes";
@@ -476,9 +449,9 @@ async function saveDraft() {
         };
 
         if (editingQuizId) {
-            await putJson(`/api/quiz/${editingQuizId}/draft`, quizPayload);
+            await requestJson(`/api/quiz/${editingQuizId}/draft`, "PUT", quizPayload);
         } else {
-            await postJson("/api/quiz/draft", quizPayload);
+            await requestJson("/api/quiz/draft", "POST", quizPayload);
         }
 
         setSaveStatus(editingQuizId ? "Quiz updated." : "Quiz draft saved.", "success");

@@ -110,6 +110,22 @@ function disableQuestionInputs() {
         });
 }
 
+function isAnswerComplete(answer) {
+    return answer.question_type === "mcq"
+        ? answer.selected_option_id !== null
+        : Boolean(answer.answer_text);
+}
+
+function renderQuestionCard(question, index, content) {
+    return `
+        <article class="quiz-question-card" data-question-id="${question.question_id}" data-question-type="${question.question_type}">
+            <h2>Question ${index + 1}: ${escapeHtml(question.question_text)}</h2>
+            <p class="quiz-question-points">${question.points} point${question.points === 1 ? "" : "s"}</p>
+            ${content}
+        </article>
+    `;
+}
+
 function renderQuestionNavigation() {
     const navList = document.getElementById("quiz-question-nav-list");
 
@@ -133,13 +149,7 @@ function updateQuestionNavigation() {
     const answers = collectAnswers();
     const answeredQuestionIds = new Set(
         answers
-            .filter((answer) => {
-                if (answer.question_type === "mcq") {
-                    return answer.selected_option_id !== null;
-                }
-
-                return Boolean(answer.answer_text);
-            })
+            .filter(isAnswerComplete)
             .map((answer) => answer.question_id)
     );
 
@@ -207,28 +217,18 @@ function renderQuiz() {
                 </label>
             `).join("");
 
-            return `
-                <article class="quiz-question-card" data-question-id="${question.question_id}" data-question-type="mcq">
-                    <h2>Question ${index + 1}: ${escapeHtml(question.question_text)}</h2>
-                    <p class="quiz-question-points">${question.points} point${question.points === 1 ? "" : "s"}</p>
-                    <div class="quiz-option-list">${options}</div>
-                </article>
-            `;
+            return renderQuestionCard(question, index, `<div class="quiz-option-list">${options}</div>`);
         }
 
-        return `
-            <article class="quiz-question-card" data-question-id="${question.question_id}" data-question-type="long_answer">
-                <h2>Question ${index + 1}: ${escapeHtml(question.question_text)}</h2>
-                <p class="quiz-question-points">${question.points} point${question.points === 1 ? "" : "s"}</p>
-                <textarea
-                    class="quiz-long-answer"
-                    data-question-id="${question.question_id}"
-                    data-question-type="long_answer"
-                    placeholder="${readonly ? "Preview only" : "Type your answer here"}"
-                    ${disabled}
-                ></textarea>
-            </article>
-        `;
+        return renderQuestionCard(question, index, `
+            <textarea
+                class="quiz-long-answer"
+                data-question-id="${question.question_id}"
+                data-question-type="long_answer"
+                placeholder="${readonly ? "Preview only" : "Type your answer here"}"
+                ${disabled}
+            ></textarea>
+        `);
     }).join("");
 
     renderQuestionNavigation();
@@ -344,13 +344,7 @@ function updateProgress() {
     }
 
     const answers = collectAnswers();
-    const answered = answers.filter((answer) => {
-        if (answer.question_type === "mcq") {
-            return answer.selected_option_id !== null;
-        }
-
-        return Boolean(answer.answer_text);
-    }).length;
+    const answered = answers.filter(isAnswerComplete).length;
 
     document.getElementById("quiz-progress-text").textContent =
         `${answered} of ${answers.length} answered`;

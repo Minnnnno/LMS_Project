@@ -16,7 +16,8 @@ serde_json = "1.0.149"
 sea-orm = { version = "1.1", features = [
   "sqlx-postgres",
   "runtime-tokio-native-tls",
-  "macros"
+  "macros",
+  "with-uuid"
 ] }
 sha1 = "0.11.0"
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "macros"] }
@@ -31,5 +32,5 @@ actix-session = { version = "0.8", features = ["cookie-session"] }
 actix-multipart = "0.7"
 futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json", "multipart"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 include_dir = "0.7.4"

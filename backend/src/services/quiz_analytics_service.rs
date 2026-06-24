@@ -8,11 +8,8 @@ use crate::entity::courses;
 use crate::entity::quiz::{Column as QuizColumn, Entity as QuizEntity, Model as QuizModel};
 use crate::entity::quiz_answers::{Column as QuizAnswerColumn, Entity as QuizAnswerEntity};
 use crate::entity::quiz_attempts::{Column as QuizAttemptColumn, Entity as QuizAttemptEntity};
-use crate::entity::quiz_questions::{
-    Column as QuizQuestionColumn, Entity as QuizQuestionEntity, QuestionType,
-};
-use crate::services::course_service::can_manage_course;
-use crate::services::quiz_helper;
+use crate::entity::quiz_questions::QuestionType;
+use crate::services::quiz_helper::{self, QuizResult, QuizServiceError};
 
 const ANALYTICS_UNAVAILABLE_MESSAGE: &str =
     "All attempts must be graded before analytics are available";
@@ -52,23 +49,21 @@ async fn require_course_access(
     db: &DatabaseConnection,
     session: &Session,
     course_id: i32,
-) -> Result<courses::Model, HttpResponse> {
+) -> QuizResult<courses::Model> {
     quiz_helper::require_staff(session)?;
 
     let course = courses::Entity::find_by_id(course_id)
         .one(db)
         .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("Course not found"))?;
+        .map_err(quiz_helper::db_service_error)?
+        .ok_or_else(|| QuizServiceError::NotFound("Course not found".to_string()))?;
 
-    match can_manage_course(db, session, &course).await {
+    match quiz_helper::can_manage_course_for_service(db, session, &course).await {
         Ok(true) => Ok(course),
-        Ok(false) => {
-            Err(HttpResponse::Forbidden().body("You cannot view quiz analytics for this course"))
-        }
-        Err(response) => Err(response),
+        Ok(false) => Err(QuizServiceError::Forbidden(
+            "You cannot view quiz analytics for this course".to_string(),
+        )),
+        Err(error) => Err(error),
     }
 }
 
@@ -76,14 +71,12 @@ async fn require_quiz_access(
     db: &DatabaseConnection,
     session: &Session,
     quiz_id: i32,
-) -> Result<QuizModel, HttpResponse> {
+) -> QuizResult<QuizModel> {
     let quiz = QuizEntity::find_by_id(quiz_id)
         .one(db)
         .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Database error: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("Quiz not found"))?;
+        .map_err(quiz_helper::db_service_error)?
+        .ok_or_else(|| QuizServiceError::NotFound("Quiz not found".to_string()))?;
 
     require_course_access(db, session, quiz.course_id).await?;
     Ok(quiz)
@@ -95,7 +88,7 @@ pub async fn list_course_analytics(
     course_id: i32,
 ) -> HttpResponse {
     if let Err(response) = require_course_access(db, session, course_id).await {
-        return response;
+        return response.into_response();
     }
 
     let quizzes = match QuizEntity::find()
@@ -105,7 +98,7 @@ pub async fn list_course_analytics(
     {
         Ok(quizzes) => quizzes,
         Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+            return quiz_helper::db_service_error(err).into_response();
         }
     };
 
@@ -122,7 +115,7 @@ pub async fn list_course_analytics(
     {
         Ok(attempts) => attempts,
         Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+            return quiz_helper::db_service_error(err).into_response();
         }
     };
 
@@ -166,7 +159,7 @@ pub async fn get_quiz_analytics(
 ) -> HttpResponse {
     let quiz = match require_quiz_access(db, session, quiz_id).await {
         Ok(quiz) => quiz,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
 
     let attempts = match QuizAttemptEntity::find()
@@ -176,26 +169,17 @@ pub async fn get_quiz_analytics(
         .await
     {
         Ok(attempts) => attempts,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
 
     if attempts.is_empty() || attempts.iter().any(|attempt| !attempt.is_graded) {
         return HttpResponse::Conflict().body(ANALYTICS_UNAVAILABLE_MESSAGE);
     }
 
-    let mut questions = match QuizQuestionEntity::find()
-        .filter(QuizQuestionColumn::QuizId.eq(quiz_id))
-        .all(db)
-        .await
-    {
+    let questions = match quiz_helper::load_quiz_questions(db, quiz_id).await {
         Ok(questions) => questions,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
+        Err(error) => return error.into_response(),
     };
-    questions.sort_by_key(|question| question.position);
 
     let max_score = questions
         .iter()
@@ -216,7 +200,7 @@ pub async fn get_quiz_analytics(
     {
         Ok(answers) => answers,
         Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+            return quiz_helper::db_service_error(err).into_response();
         }
     };
 

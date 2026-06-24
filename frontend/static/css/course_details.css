@@ -333,6 +333,125 @@
     gap: 12px;
 }
 
+.completion-card {
+    max-width: 1180px;
+}
+
+.completion-subtitle {
+    margin: 4px 0 0;
+    color: #667085;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.completion-table-wrap {
+    overflow-x: auto;
+}
+
+.completion-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1020px;
+}
+
+.completion-table th,
+.completion-table td {
+    border-bottom: 1px solid #e4e7ec;
+    padding: 14px 12px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.completion-table th {
+    color: #667085;
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.completion-meta {
+    display: block;
+    margin-top: 4px;
+    color: #667085;
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.completion-progress {
+    display: grid;
+    gap: 8px;
+    min-width: 150px;
+    color: #111827;
+    font-weight: 800;
+}
+
+.completion-progress-track {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e4e7ec;
+}
+
+.completion-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+}
+
+.completion-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 240px;
+}
+
+.completion-check,
+.completion-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.completion-check.passed,
+.completion-badge.complete {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.completion-check.pending,
+.completion-badge.pending {
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.completion-action-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.completion-certificate-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    max-width: 220px;
+}
+
+.completion-certificate-actions .course-card-action-btn {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.completion-undo-btn {
+    background: #fef2f2;
+    color: #991b1b;
+}
+
 .grade-section {
     display: grid;
     gap: 8px;
@@ -879,6 +998,7 @@
 #assignment-modal,
 #assignment-details-modal,
 #quiz-attempts-modal,
+#delete-quiz-attempt-modal,
 #quiz-analytics-modal {
     position: fixed;
     inset: 0;
@@ -901,6 +1021,7 @@
 
 #assignment-details-modal,
 #quiz-attempts-modal,
+#delete-quiz-attempt-modal,
 #quiz-analytics-modal {
     padding: 32px;
 }
@@ -910,6 +1031,39 @@
 #quiz-analytics-modal .quiz-analytics-modal-content {
     width: min(860px, 100%);
     max-height: min(820px, calc(100vh - 64px));
+}
+
+#delete-quiz-attempt-modal {
+    z-index: 1060;
+}
+
+.delete-quiz-attempt-modal {
+    display: grid;
+    gap: 14px;
+}
+
+.delete-quiz-attempt-modal h2 {
+    margin: 0;
+    color: #101828;
+    font-size: 1.25rem;
+    font-weight: 900;
+}
+
+.delete-quiz-attempt-modal p {
+    margin: 0;
+    color: #475467;
+    line-height: 1.5;
+}
+
+.quiz-attempt-delete-btn {
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: #fef2f2;
+    color: #b42318;
+    font-size: 0.82rem;
+    font-weight: 800;
+    cursor: pointer;
 }
 
 .quiz-analytics-list,

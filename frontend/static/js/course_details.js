@@ -72,6 +72,8 @@ let selectedCourseImageFile = null;
 let selectedCourseImageObjectUrl = null;
 let courseOverviewRefreshPromise = null;
 let hasCompletedInitialCourseOverviewLoad = false;
+let completionRosterLoaded = false;
+let completionRosterRows = [];
 
 function goToModuleContent(moduleId) {
     const module = currentModules.find((item) => Number(item.module_id) === Number(moduleId));
@@ -485,6 +487,8 @@ function setActiveCourseTab(tabName) {
         ?.classList.toggle("active", tabName === "dropbox");
     document.getElementById("course-submissions-panel")
         ?.classList.toggle("active", tabName === "submissions");
+    document.getElementById("course-completion-panel")
+        ?.classList.toggle("active", tabName === "completion");
 
     if (tabName === "grades" && !gradesLoaded) {
         loadGrades();
@@ -498,6 +502,10 @@ function setActiveCourseTab(tabName) {
         renderCourseSubmissionsTab();
         loadQuizAnalyticsSummaries();
     }
+
+    if (tabName === "completion") {
+        loadCompletionRoster();
+    }
 }
 
 function setGradeTabsVisible(visible) {
@@ -505,6 +513,7 @@ function setGradeTabsVisible(visible) {
     const gradesTab = document.querySelector('.course-tab[data-course-tab="grades"]');
     const dropboxTab = document.querySelector('.course-tab[data-course-tab="dropbox"]');
     const submissionsTab = document.getElementById("course-submissions-tab-btn");
+    const completionTab = document.getElementById("course-completion-tab-btn");
 
     if (tabs) {
         tabs.style.display = "flex";
@@ -522,9 +531,190 @@ function setGradeTabsVisible(visible) {
         submissionsTab.style.display = isInstructor ? "inline-flex" : "none";
     }
 
+    if (completionTab) {
+        completionTab.style.display = isInstructor ? "inline-flex" : "none";
+    }
+
     const activeTab = document.querySelector(".course-tab.active")?.dataset.courseTab;
-    if ((!visible && ["grades", "dropbox"].includes(activeTab)) || (visible && activeTab === "submissions")) {
+    if ((!visible && ["grades", "dropbox"].includes(activeTab)) || (visible && ["submissions", "completion"].includes(activeTab))) {
         setActiveCourseTab("content");
+    }
+}
+
+function completionStatusLabel(status) {
+    if (status.manual_completed) return "Marked complete";
+    if (status.automatic_completed) return "Automatically complete";
+    return "In progress";
+}
+
+function completionSourceLabel(source) {
+    if (source === "manual") return "Manual";
+    if (source === "automatic") return "Automatic";
+    return "None";
+}
+
+function completionBadgeClass(status) {
+    if (status.completed) return "completion-badge complete";
+    return "completion-badge pending";
+}
+
+function renderCompletionRoster() {
+    const body = document.getElementById("completion-roster-body");
+    const statusText = document.getElementById("completion-roster-status");
+
+    if (!body) return;
+
+    if (!completionRosterRows.length) {
+        body.innerHTML = '<tr><td colspan="6" class="grades-empty">No enrolled learners found for this course.</td></tr>';
+        if (statusText) statusText.textContent = "0 enrolled learners";
+        return;
+    }
+
+    const completedCount = completionRosterRows.filter(row => row.status?.completed).length;
+    if (statusText) {
+        statusText.textContent = `${completedCount} of ${completionRosterRows.length} learners complete`;
+    }
+
+    body.innerHTML = completionRosterRows.map((row) => {
+        const status = row.status || {};
+        const progress = status.progress || {};
+        const progressPercent = Math.max(0, Math.min(100, Number(progress.progress_percent || 0)));
+        const checks = [
+            ["Content", status.content_complete],
+            ["Assignments", status.assignments_graded],
+            ["Quizzes", status.quizzes_graded],
+        ].map(([label, passed]) => `
+            <span class="completion-check ${passed ? "passed" : "pending"}">
+                ${escapeHtml(label)}
+            </span>
+        `).join("");
+        const manualMeta = status.manual_completed_at
+            ? `<span class="completion-meta">Marked ${escapeHtml(formatAssignmentDate(status.manual_completed_at))}</span>`
+            : "";
+        const note = status.manual_completion_note
+            ? `<span class="completion-meta">${escapeHtml(status.manual_completion_note)}</span>`
+            : "";
+        const action = status.manual_completed
+            ? `<button class="course-card-action-btn completion-undo-btn" type="button" data-completion-undo="${row.user_id}">Undo</button>`
+            : `<button class="course-card-action-btn" type="button" data-completion-mark="${row.user_id}">Mark Complete</button>`;
+        const certificate = row.certificate;
+        const certificateCell = certificate?.verification_url
+            ? `
+                <div class="completion-certificate-actions">
+                    <a class="course-card-action-btn" href="${escapeHtml(certificate.verification_url)}" target="_blank" rel="noopener">View</a>
+                    <button class="course-card-action-btn" type="button" data-certificate-copy="${escapeHtml(certificate.verification_url)}">Copy</button>
+                </div>
+            `
+            : `<span class="completion-meta">Available when complete</span>`;
+
+        return `
+            <tr>
+                <td>
+                    <strong>${escapeHtml(row.student_name || "Learner")}</strong>
+                    <span class="completion-meta">${escapeHtml(row.student_email || "")}</span>
+                </td>
+                <td>
+                    <div class="completion-progress">
+                        <span>${progressPercent}%</span>
+                        <div class="completion-progress-track" aria-hidden="true">
+                            <div class="completion-progress-fill" style="width: ${progressPercent}%;"></div>
+                        </div>
+                    </div>
+                </td>
+                <td><div class="completion-checks">${checks}</div></td>
+                <td>
+                    <span class="${completionBadgeClass(status)}">${escapeHtml(completionStatusLabel(status))}</span>
+                    <span class="completion-meta">Source: ${escapeHtml(completionSourceLabel(status.completion_source))}</span>
+                    ${manualMeta}
+                    ${note}
+                </td>
+                <td>${certificateCell}</td>
+                <td class="completion-action-cell">${action}</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+async function loadCompletionRoster(force = false) {
+    if (!isInstructor || (completionRosterLoaded && !force)) {
+        renderCompletionRoster();
+        return;
+    }
+
+    const body = document.getElementById("completion-roster-body");
+    const statusText = document.getElementById("completion-roster-status");
+    if (body) {
+        body.innerHTML = '<tr><td colspan="6" class="grades-empty">Loading completion roster...</td></tr>';
+    }
+    if (statusText) {
+        statusText.textContent = "";
+    }
+
+    try {
+        const [rosterRows, certificateRows] = await Promise.all([
+            axios.get(`/api/courses/${courseId}/completion-roster`)
+                .then(response => Array.isArray(response.data) ? response.data : []),
+            axios.get(`/api/courses/${courseId}/certificates`)
+                .then(response => Array.isArray(response.data) ? response.data : []),
+        ]);
+        const certificatesByUser = new Map(certificateRows.map(row => [Number(row.user_id), row.certificate]));
+        completionRosterRows = rosterRows.map(row => ({
+            ...row,
+            certificate: certificatesByUser.get(Number(row.user_id)) || null,
+        }));
+        completionRosterLoaded = true;
+        renderCompletionRoster();
+    } catch (error) {
+        console.error("Failed to load completion roster:", error);
+        if (body) {
+            body.innerHTML = '<tr><td colspan="6" class="grades-empty text-danger">Unable to load completion roster.</td></tr>';
+        }
+    }
+}
+
+async function copyCertificateLink(url) {
+    try {
+        await navigator.clipboard.writeText(url);
+        showActionMessage("Certificate link copied.", "success");
+    } catch (_) {
+        window.prompt("Certificate verification link:", url);
+    }
+}
+
+async function markLearnerComplete(userId) {
+    const row = completionRosterRows.find(item => Number(item.user_id) === Number(userId));
+    const learnerName = row?.student_name || "this learner";
+    const note = window.prompt(`Optional completion note for ${learnerName}:`, "");
+
+    if (note === null) {
+        return;
+    }
+
+    try {
+        await axios.put(`/api/courses/${courseId}/completions/${userId}/manual`, {
+            note: note.trim() || null,
+        });
+        completionRosterLoaded = false;
+        await loadCompletionRoster(true);
+    } catch (error) {
+        showActionMessage(error.response?.data || "Unable to mark this learner complete.", "error");
+    }
+}
+
+async function undoLearnerCompletion(userId) {
+    const row = completionRosterRows.find(item => Number(item.user_id) === Number(userId));
+    const learnerName = row?.student_name || "this learner";
+
+    if (!window.confirm(`Undo manual completion for ${learnerName}?`)) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/courses/${courseId}/completions/${userId}/manual`);
+        completionRosterLoaded = false;
+        await loadCompletionRoster(true);
+    } catch (error) {
+        showActionMessage(error.response?.data || "Unable to undo manual completion.", "error");
     }
 }
 
@@ -1279,11 +1469,30 @@ function bindInstructorControls() {
     document.getElementById("close-assignment-modal-btn")?.addEventListener("click", closeAssignmentModal);
     document.getElementById("close-assignment-details-btn")?.addEventListener("click", closeAssignmentDetails);
     document.getElementById("close-quiz-attempts-btn")?.addEventListener("click", closeQuizAttempts);
+    document.getElementById("confirm-delete-quiz-attempt-btn")?.addEventListener("click", confirmDeleteQuizAttempt);
+    document.getElementById("cancel-delete-quiz-attempt-btn")?.addEventListener("click", closeDeleteQuizAttemptModal);
     document.getElementById("close-quiz-analytics-btn")?.addEventListener("click", closeQuizAnalytics);
     document.getElementById("submit-assignment-dropbox-btn")?.addEventListener("click", submitAssignmentDropbox);
     document.getElementById("refresh-grades-btn")?.addEventListener("click", () => {
         gradesLoaded = false;
         loadGrades();
+    });
+    document.getElementById("refresh-completion-roster-btn")?.addEventListener("click", () => {
+        completionRosterLoaded = false;
+        loadCompletionRoster(true);
+    });
+    document.getElementById("completion-roster-body")?.addEventListener("click", (event) => {
+        const markButton = event.target.closest("[data-completion-mark]");
+        const undoButton = event.target.closest("[data-completion-undo]");
+        const copyButton = event.target.closest("[data-certificate-copy]");
+
+        if (markButton) {
+            markLearnerComplete(markButton.dataset.completionMark);
+        } else if (undoButton) {
+            undoLearnerCompletion(undoButton.dataset.completionUndo);
+        } else if (copyButton) {
+            copyCertificateLink(copyButton.dataset.certificateCopy || "");
+        }
     });
 
     document.querySelectorAll(".course-tab").forEach((tab) => {

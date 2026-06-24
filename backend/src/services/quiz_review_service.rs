@@ -8,8 +8,66 @@ use crate::entity::{quiz_answers, quiz_attempts, quiz_options, quiz_questions, u
 use crate::models::quiz_attempts::{
     QuizAttemptReviewAnswer, StaffQuizAttempt, StudentQuizAttemptReview,
 };
-use crate::services::auth_helpers::get_user_id;
-use crate::services::quiz_helper;
+use crate::services::quiz_helper::{self, QuizResult};
+
+struct QuizReviewData {
+    questions: Vec<quiz_questions::Model>,
+    options_by_id: HashMap<i32, quiz_options::Model>,
+    correct_by_question: HashMap<i32, quiz_options::Model>,
+    max_score: i32,
+}
+
+async fn load_quiz_review_data(
+    db: &DatabaseConnection,
+    quiz_id: i32,
+) -> QuizResult<QuizReviewData> {
+    let questions = quiz_helper::load_quiz_questions(db, quiz_id).await?;
+    let options = quiz_helper::load_options_for_quiz(db, &questions).await?;
+    let max_score = questions.iter().map(|question| question.points).sum();
+    let options_by_id = options
+        .iter()
+        .cloned()
+        .map(|option| (option.option_id, option))
+        .collect::<HashMap<_, _>>();
+    let correct_by_question = options
+        .into_iter()
+        .filter(|option| option.is_correct)
+        .map(|option| (option.question_id, option))
+        .collect::<HashMap<_, _>>();
+
+    Ok(QuizReviewData {
+        questions,
+        options_by_id,
+        correct_by_question,
+        max_score,
+    })
+}
+
+fn build_review_answer(
+    question: &quiz_questions::Model,
+    answer: Option<&quiz_answers::Model>,
+    review_data: &QuizReviewData,
+) -> QuizAttemptReviewAnswer {
+    let selected = answer
+        .and_then(|answer| answer.selected_option_id)
+        .and_then(|option_id| review_data.options_by_id.get(&option_id));
+    let correct = review_data.correct_by_question.get(&question.question_id);
+
+    QuizAttemptReviewAnswer {
+        answer_id: answer.map(|answer| answer.answer_id),
+        question_id: question.question_id,
+        question_type: question.question_type.clone(),
+        question_text: question.question_text.clone(),
+        points: question.points,
+        selected_option_id: selected.map(|option| option.option_id),
+        selected_option_text: selected.map(|option| option.option_text.clone()),
+        correct_option_id: correct.map(|option| option.option_id),
+        correct_option_text: correct.map(|option| option.option_text.clone()),
+        answer_text: answer.and_then(|answer| answer.answer_text.clone()),
+        score: answer.and_then(|answer| answer.score),
+        feedback: answer.and_then(|answer| answer.feedback.clone()),
+    }
+}
 
 pub async fn list_staff_attempts(
     db: &DatabaseConnection,
@@ -17,19 +75,12 @@ pub async fn list_staff_attempts(
     quiz_id: i32,
 ) -> HttpResponse {
     if let Err(response) = quiz_helper::require_can_manage_quiz(db, session, quiz_id).await {
-        return response;
+        return response.into_response();
     }
 
-    let questions = match quiz_questions::Entity::find()
-        .filter(quiz_questions::Column::QuizId.eq(quiz_id))
-        .order_by_asc(quiz_questions::Column::Position)
-        .all(db)
-        .await
-    {
-        Ok(questions) => questions,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
+    let review_data = match load_quiz_review_data(db, quiz_id).await {
+        Ok(review_data) => review_data,
+        Err(error) => return error.into_response(),
     };
     let attempts = match quiz_attempts::Entity::find()
         .filter(quiz_attempts::Column::QuizId.eq(quiz_id))
@@ -38,9 +89,7 @@ pub async fn list_staff_attempts(
         .await
     {
         Ok(attempts) => attempts,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
     let attempt_ids = attempts
         .iter()
@@ -49,10 +98,6 @@ pub async fn list_staff_attempts(
     let user_ids = attempts
         .iter()
         .map(|attempt| attempt.user_id)
-        .collect::<Vec<_>>();
-    let question_ids = questions
-        .iter()
-        .map(|question| question.question_id)
         .collect::<Vec<_>>();
 
     let students = if user_ids.is_empty() {
@@ -64,10 +109,7 @@ pub async fn list_staff_attempts(
             .await
         {
             Ok(students) => students,
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error: {}", err));
-            }
+            Err(err) => return quiz_helper::db_service_error(err).into_response(),
         }
     };
     let answers = if attempt_ids.is_empty() {
@@ -79,25 +121,7 @@ pub async fn list_staff_attempts(
             .await
         {
             Ok(answers) => answers,
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error: {}", err));
-            }
-        }
-    };
-    let options = if question_ids.is_empty() {
-        Vec::new()
-    } else {
-        match quiz_options::Entity::find()
-            .filter(quiz_options::Column::QuestionId.is_in(question_ids))
-            .all(db)
-            .await
-        {
-            Ok(options) => options,
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Database error: {}", err));
-            }
+            Err(err) => return quiz_helper::db_service_error(err).into_response(),
         }
     };
 
@@ -109,44 +133,17 @@ pub async fn list_staff_attempts(
         .into_iter()
         .map(|answer| ((answer.attempt_id, answer.question_id), answer))
         .collect::<HashMap<_, _>>();
-    let options_by_id = options
-        .iter()
-        .cloned()
-        .map(|option| (option.option_id, option))
-        .collect::<HashMap<_, _>>();
-    let correct_by_question = options
-        .into_iter()
-        .filter(|option| option.is_correct)
-        .map(|option| (option.question_id, option))
-        .collect::<HashMap<_, _>>();
-    let max_score = questions.iter().map(|question| question.points).sum();
 
     let payload = attempts
         .into_iter()
         .filter_map(|attempt| {
             let student = students_by_id.get(&attempt.user_id)?;
-            let review_answers = questions
+            let review_answers = review_data
+                .questions
                 .iter()
                 .map(|question| {
                     let answer = answers_by_key.get(&(attempt.attempt_id, question.question_id));
-                    let selected = answer
-                        .and_then(|answer| answer.selected_option_id)
-                        .and_then(|option_id| options_by_id.get(&option_id));
-                    let correct = correct_by_question.get(&question.question_id);
-                    QuizAttemptReviewAnswer {
-                        answer_id: answer.map(|answer| answer.answer_id),
-                        question_id: question.question_id,
-                        question_type: question.question_type.clone(),
-                        question_text: question.question_text.clone(),
-                        points: question.points,
-                        selected_option_id: selected.map(|option| option.option_id),
-                        selected_option_text: selected.map(|option| option.option_text.clone()),
-                        correct_option_id: correct.map(|option| option.option_id),
-                        correct_option_text: correct.map(|option| option.option_text.clone()),
-                        answer_text: answer.and_then(|answer| answer.answer_text.clone()),
-                        score: answer.and_then(|answer| answer.score),
-                        feedback: answer.and_then(|answer| answer.feedback.clone()),
-                    }
+                    build_review_answer(question, answer, &review_data)
                 })
                 .collect();
             Some(StaffQuizAttempt {
@@ -160,7 +157,7 @@ pub async fn list_staff_attempts(
                 started_at: attempt.started_at,
                 submitted_at: attempt.submitted_at,
                 total_score: attempt.total_score,
-                max_score,
+                max_score: review_data.max_score,
                 is_graded: attempt.is_graded,
                 answers: review_answers,
             })
@@ -175,16 +172,14 @@ pub async fn get_student_review(
     session: &Session,
     attempt_id: i32,
 ) -> HttpResponse {
-    let user_id = match get_user_id(session) {
+    let user_id = match quiz_helper::get_user_id_for_service(session) {
         Ok(user_id) => user_id,
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     };
     let attempt = match quiz_attempts::Entity::find_by_id(attempt_id).one(db).await {
         Ok(Some(attempt)) => attempt,
         Ok(None) => return HttpResponse::NotFound().body("Attempt not found"),
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
     if attempt.user_id != user_id {
         return HttpResponse::Forbidden().body("You can only view your own quiz attempt");
@@ -193,16 +188,9 @@ pub async fn get_student_review(
         return HttpResponse::Forbidden().body("This quiz attempt has not been graded yet");
     }
 
-    let questions = match quiz_questions::Entity::find()
-        .filter(quiz_questions::Column::QuizId.eq(attempt.quiz_id))
-        .order_by_asc(quiz_questions::Column::Position)
-        .all(db)
-        .await
-    {
-        Ok(questions) => questions,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
+    let review_data = match load_quiz_review_data(db, attempt.quiz_id).await {
+        Ok(review_data) => review_data,
+        Err(error) => return error.into_response(),
     };
     let answers = match quiz_answers::Entity::find()
         .filter(quiz_answers::Column::AttemptId.eq(attempt_id))
@@ -210,65 +198,18 @@ pub async fn get_student_review(
         .await
     {
         Ok(answers) => answers,
-        Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-        }
-    };
-    let question_ids = questions
-        .iter()
-        .map(|question| question.question_id)
-        .collect::<Vec<_>>();
-    let options = if question_ids.is_empty() {
-        Vec::new()
-    } else {
-        match quiz_options::Entity::find()
-            .filter(quiz_options::Column::QuestionId.is_in(question_ids))
-            .all(db)
-            .await
-        {
-            Ok(options) => options,
-            Err(err) => {
-                return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
-            }
-        }
+        Err(err) => return quiz_helper::db_service_error(err).into_response(),
     };
     let answers_by_question = answers
         .into_iter()
         .map(|answer| (answer.question_id, answer))
         .collect::<HashMap<_, _>>();
-    let options_by_id = options
+    let review_answers = review_data
+        .questions
         .iter()
-        .cloned()
-        .map(|option| (option.option_id, option))
-        .collect::<HashMap<_, _>>();
-    let correct_by_question = options
-        .into_iter()
-        .filter(|option| option.is_correct)
-        .map(|option| (option.question_id, option))
-        .collect::<HashMap<_, _>>();
-    let max_score = questions.iter().map(|question| question.points).sum();
-    let review_answers = questions
-        .into_iter()
         .map(|question| {
             let answer = answers_by_question.get(&question.question_id);
-            let selected = answer
-                .and_then(|answer| answer.selected_option_id)
-                .and_then(|option_id| options_by_id.get(&option_id));
-            let correct = correct_by_question.get(&question.question_id);
-            QuizAttemptReviewAnswer {
-                answer_id: answer.map(|answer| answer.answer_id),
-                question_id: question.question_id,
-                question_type: question.question_type,
-                question_text: question.question_text,
-                points: question.points,
-                selected_option_id: selected.map(|option| option.option_id),
-                selected_option_text: selected.map(|option| option.option_text.clone()),
-                correct_option_id: correct.map(|option| option.option_id),
-                correct_option_text: correct.map(|option| option.option_text.clone()),
-                answer_text: answer.and_then(|answer| answer.answer_text.clone()),
-                score: answer.and_then(|answer| answer.score),
-                feedback: answer.and_then(|answer| answer.feedback.clone()),
-            }
+            build_review_answer(question, answer, &review_data)
         })
         .collect();
 
@@ -276,7 +217,7 @@ pub async fn get_student_review(
         attempt_id,
         quiz_id: attempt.quiz_id,
         total_score: attempt.total_score,
-        max_score,
+        max_score: review_data.max_score,
         submitted_at: attempt.submitted_at,
         answers: review_answers,
     })
