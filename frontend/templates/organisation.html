@@ -80,6 +80,23 @@
     align-items: start;
   }
 
+  .org-manage-grid > .section-panel {
+    height: 39rem;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #members-list,
+  #course-instructor-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-right: .35rem;
+  }
+
   #org-list {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
@@ -296,6 +313,15 @@
     .org-manage-grid {
       grid-template-columns: 1fr;
     }
+
+    .org-manage-grid > .section-panel {
+      height: auto;
+    }
+
+    #members-list,
+    #course-instructor-list {
+      max-height: 28rem;
+    }
   }
 </style>
 {% endblock extra_css %}
@@ -344,7 +370,7 @@
           </button>
           {% endif %}
         </div>
-        <div id="members-list">
+        <div id="members-list" tabindex="0" aria-label="Organisation members">
           <p class="text-muted small">Select an organisation.</p>
         </div>
       </div>
@@ -380,7 +406,7 @@
         </form>
 
         <div id="course-instructor-feedback" class="mb-3"></div>
-        <div id="course-instructor-list">
+        <div id="course-instructor-list" tabindex="0" aria-label="Course instructor assignments">
           <p class="text-muted small mb-0">Loading course instructors...</p>
         </div>
       </div>
