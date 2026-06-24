@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    IntoActiveModel, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr,
+    EntityTrait, IntoActiveModel, QueryFilter, Set, Statement, TransactionTrait,
 };
 use sha1::{Digest, Sha1};
 use uuid::Uuid;
@@ -10,7 +10,7 @@ use crate::entity::{password_reset_tokens, users};
 use crate::services::mailer_service::{send_mail_message, MailRequest};
 use crate::services::user_service::hash_password;
 
-const TOKEN_EXPIRY_HOURS: i64 = 1;
+const TOKEN_EXPIRY_MINUTES: i64 = 30;
 
 #[derive(Debug)]
 pub enum ResetPasswordError {
@@ -39,13 +39,25 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(Sha1::digest(token.as_bytes()))
 }
 
-pub async fn create_password_reset_token<C>(db: &C, user_id: i32) -> Result<String, DbErr>
-where
-    C: ConnectionTrait,
-{
+pub async fn create_password_reset_token(
+    db: &DatabaseConnection,
+    user_id: i32,
+) -> Result<String, DbErr> {
+    let transaction = db.begin().await?;
     let token = format!("{}{}", Uuid::new_v4(), Uuid::new_v4());
     let hash = token_hash(&token);
-    let expires_at = (Utc::now() + Duration::hours(TOKEN_EXPIRY_HOURS)).naive_utc();
+    let expires_at = (Utc::now() + Duration::minutes(TOKEN_EXPIRY_MINUTES)).naive_utc();
+
+    // Only the newest reset email should remain valid.
+    password_reset_tokens::Entity::update_many()
+        .col_expr(
+            password_reset_tokens::Column::UsedAt,
+            sea_orm::sea_query::Expr::value(Utc::now().naive_utc()),
+        )
+        .filter(password_reset_tokens::Column::UserId.eq(user_id))
+        .filter(password_reset_tokens::Column::UsedAt.is_null())
+        .exec(&transaction)
+        .await?;
 
     let new_token = password_reset_tokens::ActiveModel {
         user_id: Set(user_id),
@@ -55,7 +67,8 @@ where
         ..Default::default()
     };
 
-    new_token.insert(db).await?;
+    new_token.insert(&transaction).await?;
+    transaction.commit().await?;
 
     Ok(token)
 }
@@ -63,8 +76,8 @@ where
 pub fn send_reset_email(email: &str, token: &str) -> Result<(), String> {
     let url = reset_url(token);
     let body = format!(
-        "You requested a password reset for your SkillUp LMS account.\n\nReset your password by opening this link:\n{}\n\nThis link expires in {} hour(s). If you did not request this, you can safely ignore this email.",
-        url, TOKEN_EXPIRY_HOURS
+        "You requested a password reset for your SkillUp LMS account.\n\nReset your password by opening this link:\n{}\n\nThis link expires in {} minutes. If you did not request this, you can safely ignore this email.",
+        url, TOKEN_EXPIRY_MINUTES
     );
 
     send_mail_message(MailRequest {
@@ -82,21 +95,30 @@ pub async fn reset_password_with_token(
     token: &str,
     new_password: String,
 ) -> Result<users::Model, ResetPasswordError> {
+    let transaction = db.begin().await?;
     let hash = token_hash(token);
 
-    let token_row = password_reset_tokens::Entity::find()
-        .filter(password_reset_tokens::Column::TokenHash.eq(hash))
-        .filter(password_reset_tokens::Column::UsedAt.is_null())
-        .one(db)
-        .await?
+    // Claim the token atomically so simultaneous submissions cannot reuse it.
+    let claimed_token = transaction
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+            UPDATE password_reset_tokens
+            SET used_at = NOW()
+            WHERE token_hash = $1
+              AND used_at IS NULL
+              AND expires_at > NOW()
+            RETURNING user_id
+            "#,
+            [hash.into()],
+        ))
+        .await?;
+    let user_id = claimed_token
+        .and_then(|row| row.try_get::<i32>("", "user_id").ok())
         .ok_or(ResetPasswordError::InvalidOrExpired)?;
 
-    if token_row.expires_at < Utc::now().naive_utc() {
-        return Err(ResetPasswordError::InvalidOrExpired);
-    }
-
-    let user = users::Entity::find_by_id(token_row.user_id)
-        .one(db)
+    let user = users::Entity::find_by_id(user_id)
+        .one(&transaction)
         .await?
         .ok_or(ResetPasswordError::InvalidOrExpired)?;
 
@@ -113,11 +135,22 @@ pub async fn reset_password_with_token(
     active_user.password_hash = Set(Some(password_hash));
     active_user.auth_provider = Set("password".to_string());
     active_user.must_change_password = Set(false);
-    let updated_user = active_user.update(db).await?;
+    active_user.failed_login_attempts = Set(0);
+    active_user.locked_until = Set(None);
+    let updated_user = active_user.update(&transaction).await?;
 
-    let mut active_token = token_row.into_active_model();
-    active_token.used_at = Set(Some(Utc::now().naive_utc()));
-    active_token.update(db).await?;
+    // A successful reset invalidates every outstanding link for the account.
+    password_reset_tokens::Entity::update_many()
+        .col_expr(
+            password_reset_tokens::Column::UsedAt,
+            sea_orm::sea_query::Expr::value(Utc::now().naive_utc()),
+        )
+        .filter(password_reset_tokens::Column::UserId.eq(updated_user.user_id))
+        .filter(password_reset_tokens::Column::UsedAt.is_null())
+        .exec(&transaction)
+        .await?;
+
+    transaction.commit().await?;
 
     Ok(updated_user)
 }

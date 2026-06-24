@@ -18,6 +18,9 @@ use crate::services::email_verification_service::{
 use crate::services::password_reset_service::{
     create_password_reset_token, reset_password_with_token, send_reset_email, ResetPasswordError,
 };
+use crate::services::login_lockout_service::{
+    clear_login_lockout, is_locked, record_failed_login, LOCKOUT_MINUTES,
+};
 use crate::services::remember_me_service::{
     create_remember_me_cookie, forget_remember_me_cookie, revoke_remember_me_token,
     REMEMBER_ME_COOKIE,
@@ -615,6 +618,16 @@ pub async fn login_submit(
         }
     };
 
+    if is_locked(user.locked_until.as_ref()) {
+        return render_login_error(
+            &format!(
+                "Too many unsuccessful attempts. Try again in {} minutes or reset your password.",
+                LOCKOUT_MINUTES
+            ),
+            &email,
+        );
+    }
+
     let password_hash = match &user.password_hash {
         Some(password_hash) => password_hash,
         None => {
@@ -634,7 +647,28 @@ pub async fn login_submit(
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_err()
     {
+        match record_failed_login(db.get_ref(), user.user_id).await {
+            Ok(true) => {
+                return render_login_error(
+                    &format!(
+                        "Too many unsuccessful attempts. Try again in {} minutes or reset your password.",
+                        LOCKOUT_MINUTES
+                    ),
+                    &email,
+                );
+            }
+            Ok(false) => {}
+            Err(err) => {
+                println!("Failed-login counter update error: {:?}", err);
+                return render_login_error("Unable to process login at this time.", &email);
+            }
+        }
         return render_login_error("Incorrect email or password.", &email);
+    }
+
+    if let Err(err) = clear_login_lockout(db.get_ref(), user.user_id).await {
+        println!("Login lockout clear error: {:?}", err);
+        return render_login_error("Unable to process login at this time.", &email);
     }
 
     let (role_ids, role_names) = match load_user_roles(db.get_ref(), user.user_id).await {

@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255),
   auth_provider VARCHAR(20) NOT NULL DEFAULT 'password',
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  failed_login_attempts INT NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
   org_id        INT,
   FOREIGN KEY (org_id)
     REFERENCES organisations(org_id)
@@ -601,6 +603,12 @@ ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) NOT NULL DEFAULT 'password';
 
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS failed_login_attempts INT NOT NULL DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS course_instructors (
   course_id     INT NOT NULL,
