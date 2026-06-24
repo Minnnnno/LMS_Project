@@ -3,7 +3,7 @@ use actix_web::HttpResponse;
 use rust_decimal::prelude::ToPrimitive;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use crate::entity::{course_instructors, courses, users};
+use crate::entity::{course_instructors, courses, enrollments, users};
 
 pub fn get_role_names(session: &Session) -> Vec<String> {
     session
@@ -142,20 +142,18 @@ pub async fn can_view_course(
         }
     };
 
-    let user = users::Entity::find_by_id(user_id)
-        .one(db)
-        .await
-        .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding user: {}", err))
-        })?
-        .ok_or_else(|| HttpResponse::NotFound().body("User not found"))?;
-
-    if user.org_id.is_some() && user.org_id == course.org_id {
+    if can_manage_course(db, session, course).await? {
         return Ok(true);
     }
 
-    can_manage_course(db, session, course).await
+    enrollments::Entity::find_by_id((user_id, course.course_id))
+        .one(db)
+        .await
+        .map(|enrollment| enrollment.is_some())
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error checking enrollment: {}", err))
+        })
 }
 
 pub async fn get_instructor_course_ids_for_session(

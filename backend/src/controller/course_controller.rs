@@ -142,11 +142,8 @@ async fn accessible_course_condition(
         return Ok(None);
     }
 
-    let user_org_id = match session.get::<i32>("user_id") {
-        Ok(Some(_)) => match get_session_user_org_id(db, session).await {
-            Ok(org_id) => org_id,
-            Err(response) => return Err(response),
-        },
+    let user_id = match session.get::<i32>("user_id") {
+        Ok(Some(user_id)) => Some(user_id),
         Ok(None) => None,
         Err(err) => {
             return Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)));
@@ -155,12 +152,51 @@ async fn accessible_course_condition(
 
     let mut condition = Condition::any().add(courses::Column::Visibility.eq("public"));
 
-    if let Some(org_id) = user_org_id {
-        condition = condition.add(
-            Condition::all()
-                .add(courses::Column::Visibility.eq("private"))
-                .add(courses::Column::OrgId.eq(org_id)),
-        );
+    if has_role(session, "Organisation Admin") {
+        let org_id = match get_session_user_org_id(db, session).await {
+            Ok(org_id) => org_id,
+            Err(response) => return Err(response),
+        };
+        if let Some(org_id) = org_id {
+            condition = condition.add(
+                Condition::all()
+                    .add(courses::Column::Visibility.eq("private"))
+                    .add(courses::Column::OrgId.eq(org_id)),
+            );
+        }
+    } else if let Some(user_id) = user_id {
+        let enrollment_rows = enrollments::Entity::find()
+            .filter(enrollments::Column::UserId.eq(user_id))
+            .all(db)
+            .await
+            .map_err(|err| {
+                HttpResponse::InternalServerError()
+                    .body(format!("Database error finding enrollments: {}", err))
+            })?;
+
+        let course_ids = enrollment_rows
+            .into_iter()
+            .map(|enrollment| enrollment.course_id)
+            .collect::<Vec<i32>>();
+
+        if !course_ids.is_empty() {
+            condition = condition.add(
+                Condition::all()
+                    .add(courses::Column::Visibility.eq("private"))
+                    .add(courses::Column::CourseId.is_in(course_ids)),
+            );
+        }
+    }
+
+    if is_instructor_course_limited(session) {
+        let course_ids = get_instructor_course_ids_for_session(db, session).await?;
+        if !course_ids.is_empty() {
+            condition = condition.add(
+                Condition::all()
+                    .add(courses::Column::Visibility.eq("private"))
+                    .add(courses::Column::CourseId.is_in(course_ids)),
+            );
+        }
     }
 
     Ok(Some(condition))
