@@ -2,8 +2,7 @@ use actix_web::web;
 
 use crate::controller::user_controller::login_submit;
 use crate::controller::user_controller::{
-    change_password_page, change_password_submit, debug_session,
-    forgot_password_page, forgot_password_submit,
+    change_password_page, change_password_submit, forgot_password_page, forgot_password_submit,
     google_auth, google_callback,
     lecturer_signup, login, logout, profile, register, register_submit, resend_verification_email,
     reset_password_page, reset_password_submit,
@@ -30,5 +29,4 @@ pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(logout);
     cfg.service(lecturer_signup);
     cfg.service(update_password_submit);
-    cfg.service(debug_session);
 }

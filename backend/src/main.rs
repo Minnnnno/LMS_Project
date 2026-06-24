@@ -1,4 +1,5 @@
 mod app_state;
+mod config;
 mod controller;
 mod db;
 mod entity;
@@ -11,7 +12,7 @@ use actix_files::Files;
 use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
     App, HttpServer,
-    cookie::Key,
+    cookie::SameSite,
     dev::ServiceResponse,
     http::{StatusCode, header},
     middleware::{ErrorHandlerResponse, ErrorHandlers, from_fn},
@@ -19,6 +20,8 @@ use actix_web::{
 };
 use app_state::AppState;
 use db::connection::connect_db;
+use services::csrf_service::{CsrfConfig, csrf_protection};
+use services::login_rate_limit_service::LoginRateLimiter;
 use services::remember_me_service::remember_me_middleware;
 
 fn render_browser_500<B>(
@@ -71,14 +74,28 @@ async fn main() -> std::io::Result<()> {
     let db = connect_db().await;
     println!("Database connected!");
 
-    let secret_key = Key::generate();
+    let secret_key = config::session_key();
+    let secure_cookies = config::is_production();
+    let cors_allowed_origin = config::cors_allowed_origin();
+    let csrf_config = web::Data::new(CsrfConfig::new(cors_allowed_origin.clone()));
+    let login_rate_limiter = web::Data::new(LoginRateLimiter::default());
     let app_state = AppState::default();
 
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allowed_origin(&cors_allowed_origin)
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+            .allowed_headers(vec![header::ACCEPT, header::AUTHORIZATION, header::CONTENT_TYPE])
+            .supports_credentials()
+            .max_age(3600);
+
         App::new()
             .app_data(actix_web::web::Data::new(db.clone()))
             .app_data(actix_web::web::Data::new(app_state.clone()))
-            .wrap(Cors::permissive())
+            .app_data(csrf_config.clone())
+            .app_data(login_rate_limiter.clone())
+            .wrap(cors)
+            .wrap(from_fn(csrf_protection))
             .wrap(
                 ErrorHandlers::new()
                     .handler(StatusCode::FORBIDDEN, redirect_browser_403)
@@ -87,7 +104,9 @@ async fn main() -> std::io::Result<()> {
             .wrap(from_fn(remember_me_middleware))
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
-                    .cookie_secure(false)
+                    .cookie_http_only(true)
+                    .cookie_same_site(SameSite::Lax)
+                    .cookie_secure(secure_cookies)
                     .build(),
             )
             .service(
@@ -95,7 +114,6 @@ async fn main() -> std::io::Result<()> {
                     .configure(routes::assignment_routes::init)
                     .configure(routes::cloudinary::init)
                     .configure(routes::certificate_routes::init)
-                    .configure(routes::mailer::init)
                     .configure(routes::payment_routes::init)
                     .configure(routes::course_routes::init)
                     .configure(routes::student_routes::init)
@@ -117,7 +135,7 @@ async fn main() -> std::io::Result<()> {
             .service(controller::organisation_controller::organisation_page)
             .service(controller::organisation_controller::organisation_signup_page)
             .service(controller::organisation_controller::organisation_signup_submit)
-            .service(Files::new("/static", "../frontend/static").show_files_listing())
+            .service(Files::new("/static", "../frontend/static"))
             .default_service(web::route().to(ssr::pages::not_found_page))
     })
     .bind(("127.0.0.1", 8080))?

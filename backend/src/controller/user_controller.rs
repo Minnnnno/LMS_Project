@@ -21,6 +21,7 @@ use crate::services::password_reset_service::{
 use crate::services::login_lockout_service::{
     clear_login_lockout, is_locked, record_failed_login, LOCKOUT_MINUTES,
 };
+use crate::services::login_rate_limit_service::LoginRateLimiter;
 use crate::services::remember_me_service::{
     create_remember_me_cookie, forget_remember_me_cookie, revoke_remember_me_token,
     REMEMBER_ME_COOKIE,
@@ -147,7 +148,11 @@ fn render_register_error(
     )
 }
 
-fn render_login_error(error_message: &str, email: &str) -> HttpResponse {
+fn render_login_error_with_status(
+    status: StatusCode,
+    error_message: &str,
+    email: &str,
+) -> HttpResponse {
     let tera = Tera::new("../frontend/templates/**/*").expect("Failed to load templates");
 
     let mut context = Context::new();
@@ -160,9 +165,27 @@ fn render_login_error(error_message: &str, email: &str) -> HttpResponse {
         .render("login.html", &context)
         .expect("Failed to render login.html");
 
-    HttpResponse::BadRequest()
+    HttpResponse::build(status)
         .content_type("text/html")
         .body(html)
+}
+
+fn render_login_error(error_message: &str, email: &str) -> HttpResponse {
+    render_login_error_with_status(StatusCode::BAD_REQUEST, error_message, email)
+}
+
+fn render_login_rate_limited(email: &str, retry_after_seconds: u64) -> HttpResponse {
+    let retry_after_minutes = retry_after_seconds.div_ceil(60);
+    let message = format!(
+        "Too many login attempts from this device. Try again in about {} minute(s).",
+        retry_after_minutes
+    );
+    let mut response =
+        render_login_error_with_status(StatusCode::TOO_MANY_REQUESTS, &message, email);
+    if let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    response
 }
 
 fn request_user_agent(req: &HttpRequest) -> Option<String> {
@@ -483,11 +506,6 @@ pub async fn register_submit(
         );
     }
 
-    println!("First name: {}", first_name);
-    println!("Last name: {}", last_name);
-    println!("Email: {}", email);
-    println!("Password hash: {}", password_hash);
-
     let new_user = users::ActiveModel {
         first_name: Set(first_name.clone()),
         last_name: Set(last_name.clone()),
@@ -589,6 +607,7 @@ pub async fn register_submit(
 #[post("/login")]
 pub async fn login_submit(
     db: web::Data<DatabaseConnection>,
+    login_rate_limiter: web::Data<LoginRateLimiter>,
     req: HttpRequest,
     session: Session,
     form: web::Form<LoginForm>,
@@ -602,6 +621,11 @@ pub async fn login_submit(
 
     let email = form.email.trim().to_lowercase();
     let password = form.password.clone();
+    let client_ip = request_rate_limit_ip(&req);
+
+    if let Some(retry_after) = login_rate_limiter.retry_after_seconds(&client_ip, &email) {
+        return render_login_rate_limited(&email, retry_after);
+    }
 
     let user = match users::Entity::find()
         .filter(users::Column::Email.eq(email.clone()))
@@ -610,6 +634,7 @@ pub async fn login_submit(
     {
         Ok(Some(user)) => user,
         Ok(None) => {
+            login_rate_limiter.record_failure(&client_ip, &email);
             return render_login_error("Incorrect email or password.", &email);
         }
         Err(err) => {
@@ -631,6 +656,7 @@ pub async fn login_submit(
     let password_hash = match &user.password_hash {
         Some(password_hash) => password_hash,
         None => {
+            login_rate_limiter.record_failure(&client_ip, &email);
             return render_login_error("Please sign in with Google for this account.", &email);
         }
     };
@@ -647,6 +673,7 @@ pub async fn login_submit(
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_err()
     {
+        login_rate_limiter.record_failure(&client_ip, &email);
         match record_failed_login(db.get_ref(), user.user_id).await {
             Ok(true) => {
                 return render_login_error(
@@ -665,6 +692,8 @@ pub async fn login_submit(
         }
         return render_login_error("Incorrect email or password.", &email);
     }
+
+    login_rate_limiter.clear_pair(&client_ip, &email);
 
     if let Err(err) = clear_login_lockout(db.get_ref(), user.user_id).await {
         println!("Login lockout clear error: {:?}", err);
@@ -1640,17 +1669,13 @@ pub async fn reset_password_submit(
     }
 }
 
-#[get("/debug-session")]
-async fn debug_session(session: Session) -> impl Responder {
-    let user_id: Option<i32> = session.get("user_id").unwrap();
-    let user_email: Option<String> = session.get("user_email").unwrap();
-    let role_ids: Option<Vec<i32>> = session.get("role_ids").unwrap();
-    let role_names: Option<Vec<String>> = session.get("role_names").unwrap();
-
-    HttpResponse::Ok().json(serde_json::json!({
-        "user_shouldntd": user_id,
-        "user_email": user_email,
-        "role_ids": role_ids,
-        "role_names": role_names
-    }))
+fn request_rate_limit_ip(req: &HttpRequest) -> String {
+    let raw = request_ip_address(req).unwrap_or_else(|| "unknown".to_string());
+    raw.parse::<std::net::IpAddr>()
+        .map(|ip| ip.to_string())
+        .or_else(|_| {
+            raw.parse::<std::net::SocketAddr>()
+                .map(|address| address.ip().to_string())
+        })
+        .unwrap_or(raw)
 }

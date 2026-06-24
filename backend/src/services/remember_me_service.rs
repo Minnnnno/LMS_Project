@@ -16,6 +16,7 @@ use sha1::{Digest, Sha1};
 use uuid::Uuid;
 
 use crate::entity::{remember_me_tokens, users};
+use crate::config::is_production;
 use crate::services::user_service::sign_user_into_session;
 
 pub const REMEMBER_ME_COOKIE: &str = "remember_me";
@@ -43,6 +44,7 @@ fn remember_me_cookie(token: String) -> Cookie<'static> {
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
+        .secure(is_production())
         .max_age(CookieDuration::days(TOKEN_EXPIRY_DAYS))
         .finish()
 }
@@ -52,6 +54,7 @@ pub fn forget_remember_me_cookie() -> Cookie<'static> {
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
+        .secure(is_production())
         .max_age(CookieDuration::seconds(0))
         .finish()
 }

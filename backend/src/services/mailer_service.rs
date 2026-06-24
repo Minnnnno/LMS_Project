@@ -1,4 +1,3 @@
-use actix_web::HttpResponse;
 use lettre::{
     message::{header::ContentType, Mailbox},
     transport::smtp::authentication::Credentials,
@@ -52,11 +51,4 @@ pub fn send_mail_message(mail: MailRequest) -> Result<(), String> {
         .send(&email)
         .map(|_| ())
         .map_err(|err| format!("Failed to send email: {}", err))
-}
-
-pub async fn send_mail(mail: MailRequest) -> HttpResponse {
-    match send_mail_message(mail) {
-        Ok(_) => HttpResponse::Ok().body("Email sent successfully"),
-        Err(err) => HttpResponse::InternalServerError().body(err),
-    }
 }
