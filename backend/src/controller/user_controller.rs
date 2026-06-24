@@ -483,11 +483,6 @@ pub async fn register_submit(
         );
     }
 
-    println!("First name: {}", first_name);
-    println!("Last name: {}", last_name);
-    println!("Email: {}", email);
-    println!("Password hash: {}", password_hash);
-
     let new_user = users::ActiveModel {
         first_name: Set(first_name.clone()),
         last_name: Set(last_name.clone()),
@@ -1638,19 +1633,4 @@ pub async fn reset_password_submit(
             render_error(&session, "Unable to reset your password right now. Please try again.", &form.token)
         }
     }
-}
-
-#[get("/debug-session")]
-async fn debug_session(session: Session) -> impl Responder {
-    let user_id: Option<i32> = session.get("user_id").unwrap();
-    let user_email: Option<String> = session.get("user_email").unwrap();
-    let role_ids: Option<Vec<i32>> = session.get("role_ids").unwrap();
-    let role_names: Option<Vec<String>> = session.get("role_names").unwrap();
-
-    HttpResponse::Ok().json(serde_json::json!({
-        "user_shouldntd": user_id,
-        "user_email": user_email,
-        "role_ids": role_ids,
-        "role_names": role_names
-    }))
 }
