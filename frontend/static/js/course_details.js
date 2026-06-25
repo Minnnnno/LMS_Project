@@ -74,6 +74,24 @@ let courseOverviewRefreshPromise = null;
 let hasCompletedInitialCourseOverviewLoad = false;
 let completionRosterLoaded = false;
 let completionRosterRows = [];
+let discussionLoaded = false;
+let discussionStatusMessageTimer = null;
+let currentDiscussionTopics = [];
+let currentDiscussionThreads = [];
+let currentDiscussionTopic = null;
+let currentDiscussionDetail = null;
+let currentEditingTopicId = null;
+let currentEditingThreadId = null;
+let currentReplyParentId = null;
+let currentDiscussionTopicPage = 1;
+let currentDiscussionThreadPage = 1;
+let currentDiscussionReplyPage = 1;
+let currentDiscussionTopicPagination = null;
+let currentDiscussionThreadPagination = null;
+let currentDiscussionReplyPagination = null;
+const DISCUSSION_TOPIC_PAGE_SIZE = 5;
+const DISCUSSION_THREAD_PAGE_SIZE = 7;
+const DISCUSSION_REPLY_PAGE_SIZE = 5;
 
 function goToModuleContent(moduleId) {
     const module = currentModules.find((item) => Number(item.module_id) === Number(moduleId));
@@ -485,6 +503,8 @@ function setActiveCourseTab(tabName) {
         ?.classList.toggle("active", tabName === "grades");
     document.getElementById("course-dropbox-panel")
         ?.classList.toggle("active", tabName === "dropbox");
+    document.getElementById("course-discussion-panel")
+        ?.classList.toggle("active", tabName === "discussion");
     document.getElementById("course-submissions-panel")
         ?.classList.toggle("active", tabName === "submissions");
     document.getElementById("course-completion-panel")
@@ -496,6 +516,10 @@ function setActiveCourseTab(tabName) {
 
     if (tabName === "dropbox") {
         renderDropboxAssignments();
+    }
+
+    if (tabName === "discussion" && !discussionLoaded) {
+        loadCourseDiscussionTopics();
     }
 
     if (tabName === "submissions") {
@@ -512,6 +536,7 @@ function setGradeTabsVisible(visible) {
     const tabs = document.getElementById("course-tabs");
     const gradesTab = document.querySelector('.course-tab[data-course-tab="grades"]');
     const dropboxTab = document.querySelector('.course-tab[data-course-tab="dropbox"]');
+    const discussionTab = document.getElementById("course-discussion-tab-btn");
     const submissionsTab = document.getElementById("course-submissions-tab-btn");
     const completionTab = document.getElementById("course-completion-tab-btn");
 
@@ -527,6 +552,10 @@ function setGradeTabsVisible(visible) {
         dropboxTab.style.display = visible ? "inline-flex" : "none";
     }
 
+    if (discussionTab) {
+        discussionTab.style.display = (isInstructor || isEnrolled) ? "inline-flex" : "none";
+    }
+
     if (submissionsTab) {
         submissionsTab.style.display = isInstructor ? "inline-flex" : "none";
     }
@@ -536,7 +565,11 @@ function setGradeTabsVisible(visible) {
     }
 
     const activeTab = document.querySelector(".course-tab.active")?.dataset.courseTab;
-    if ((!visible && ["grades", "dropbox"].includes(activeTab)) || (visible && ["submissions", "completion"].includes(activeTab))) {
+    if (
+        (!visible && ["grades", "dropbox"].includes(activeTab))
+        || (!(isInstructor || isEnrolled) && activeTab === "discussion")
+        || (visible && ["submissions", "completion"].includes(activeTab))
+    ) {
         setActiveCourseTab("content");
     }
 }
@@ -765,6 +798,527 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+}
+
+function plainTextToHtml(value) {
+    return escapeHtml(value).replace(/\n/g, "<br>");
+}
+
+function getDiscussionPreview(value, maxLength = 110) {
+    const text = String(value ?? "").replace(/\s+/g, " ").trim();
+
+    if (text.length <= maxLength) {
+        return text;
+    }
+
+    return `${text.slice(0, maxLength).trim()}...`;
+}
+
+function formatDiscussionDate(value) {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    return date.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+function discussionModuleTitle(moduleId) {
+    const module = currentModules.find((item) => Number(item.module_id) === Number(moduleId));
+    return module?.title || "Course discussion";
+}
+
+function showDiscussionStatus(message, type = "info") {
+    const messageElement = document.getElementById("discussion-status-message");
+
+    if (!messageElement) {
+        return;
+    }
+
+    if (discussionStatusMessageTimer) {
+        clearTimeout(discussionStatusMessageTimer);
+    }
+
+    messageElement.textContent = message;
+    messageElement.className = message
+        ? `course-action-message ${type} visible`
+        : "course-action-message";
+
+    if (message) {
+        discussionStatusMessageTimer = setTimeout(() => {
+            messageElement.classList.remove("visible");
+        }, 4500);
+    }
+}
+
+function renderDiscussionBreadcrumbs(items = []) {
+    const breadcrumbs = document.getElementById("discussion-breadcrumbs");
+
+    if (!breadcrumbs) {
+        return;
+    }
+
+    breadcrumbs.innerHTML = items.map((item, index) => {
+        const isLast = index === items.length - 1;
+        return isLast
+            ? `<span>${escapeHtml(item.label)}</span>`
+            : `<button type="button" data-discussion-crumb="${escapeHtml(item.view)}">${escapeHtml(item.label)}</button><i class="bi bi-chevron-right" aria-hidden="true"></i>`;
+    }).join("");
+}
+
+function setDiscussionView(view) {
+    document.getElementById("discussion-topic-list").hidden = view !== "topics";
+    document.getElementById("discussion-thread-list").hidden = view !== "threads";
+    document.getElementById("discussion-thread-detail").hidden = view !== "detail";
+
+    const backButton = document.getElementById("discussion-back-btn");
+    if (backButton) {
+        backButton.hidden = view === "topics";
+        backButton.dataset.discussionBack = view === "detail" ? "threads" : "topics";
+        const backLabel = backButton.querySelector("span");
+        if (backLabel) {
+            backLabel.textContent = view === "detail"
+                ? "Back to Topic"
+                : "Back to Discussions";
+        }
+    }
+
+    const addTopicButton = document.getElementById("add-discussion-topic-btn");
+    if (addTopicButton) {
+        addTopicButton.style.display = view === "topics" && isInstructor ? "inline-flex" : "none";
+    }
+}
+
+function renderDiscussionPagination(meta, target) {
+    if (!meta || Number(meta.total_pages || 1) <= 1) {
+        return "";
+    }
+
+    const page = Number(meta.page || 1);
+    const totalPages = Number(meta.total_pages || 1);
+    const total = Number(meta.total || 0);
+    const pageSize = Number(meta.page_size || 10);
+    const start = total === 0 ? 0 : ((page - 1) * pageSize) + 1;
+    const end = Math.min(page * pageSize, total);
+
+    return `
+        <div class="discussion-pagination">
+            <span>${start}-${end} of ${total}</span>
+            <div>
+                <button type="button" data-discussion-page-target="${target}" data-discussion-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>Previous</button>
+                <span>Page ${page} of ${totalPages}</span>
+                <button type="button" data-discussion-page-target="${target}" data-discussion-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>Next</button>
+            </div>
+        </div>
+    `;
+}
+
+async function loadCourseDiscussionTopics(page = currentDiscussionTopicPage) {
+    const list = document.getElementById("discussion-topic-list");
+
+    if (!list) {
+        return;
+    }
+
+    setDiscussionView("topics");
+    currentDiscussionThreadPagination = null;
+    currentDiscussionThreadPage = 1;
+    renderDiscussionBreadcrumbs([{ label: "Discussions", view: "topics" }]);
+
+    try {
+        const response = await axios.get(`/api/discussions/courses/${courseId}/topics`, {
+            params: { page, page_size: DISCUSSION_TOPIC_PAGE_SIZE },
+        });
+        currentDiscussionTopics = Array.isArray(response.data?.items) ? response.data.items : [];
+        currentDiscussionTopicPagination = response.data;
+        currentDiscussionTopicPage = Number(response.data?.page || page || 1);
+        discussionLoaded = true;
+
+        if (!currentDiscussionTopics.length) {
+            if (currentDiscussionTopicPage > 1 && Number(currentDiscussionTopicPagination?.total || 0) > 0) {
+                await loadCourseDiscussionTopics(currentDiscussionTopicPage - 1);
+                return;
+            }
+
+            list.innerHTML = `
+                <div class="discussion-empty">
+                    <i class="bi bi-chat-square-text" aria-hidden="true"></i>
+                    <p>No discussion topics yet.</p>
+                </div>
+            `;
+            return;
+        }
+
+        list.innerHTML = `
+            <div class="discussion-table">
+                <div class="discussion-table-head">
+                    <span>Topic</span>
+                    <span>Threads</span>
+                    <span>Posts</span>
+                    <span>Created By</span>
+                    <span></span>
+                </div>
+                ${currentDiscussionTopics.map((topic) => {
+                    const topicActionMenu = topic.can_manage
+                        ? `
+                            <details class="discussion-actions-menu discussion-row-actions">
+                                <summary aria-label="Topic actions">
+                                    <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                                </summary>
+                                <div class="discussion-actions-dropdown">
+                                    <button type="button" data-topic-edit="${topic.topic_id}"><i class="bi bi-pencil" aria-hidden="true"></i><span>Edit Topic</span></button>
+                                    <button type="button" data-topic-lock="${topic.topic_id}" data-topic-lock-value="${topic.is_locked ? "false" : "true"}">
+                                        <i class="bi ${topic.is_locked ? "bi-unlock" : "bi-lock"}" aria-hidden="true"></i>
+                                        <span>${topic.is_locked ? "Unlock Topic" : "Lock Topic"}</span>
+                                    </button>
+                                    ${topic.can_delete ? `<button class="danger" type="button" data-topic-delete="${topic.topic_id}">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                        <span>Delete Topic</span>
+                                    </button>` : ""}
+                                </div>
+                            </details>
+                        `
+                        : "";
+
+                    return `
+                        <article class="discussion-topic-row">
+                            <button class="discussion-topic-main" type="button" data-topic-open="${topic.topic_id}">
+                                <span>
+                                    <strong>${escapeHtml(topic.title)}</strong>
+                                    <small>${escapeHtml(discussionModuleTitle(topic.module_id))}</small>
+                                    ${topic.description ? `<small>${escapeHtml(topic.description).slice(0, 140)}</small>` : ""}
+                                </span>
+                                <span>${topic.thread_count}</span>
+                                <span>${topic.post_count}</span>
+                                <span>
+                                    <strong>${escapeHtml(topic.author?.name || "Unknown user")}</strong>
+                                    <small>${formatDiscussionDate(topic.created_at)}</small>
+                                </span>
+                            </button>
+                            ${topicActionMenu}
+                        </article>
+                    `;
+                }).join("")}
+            </div>
+            ${renderDiscussionPagination(currentDiscussionTopicPagination, "topics")}
+        `;
+    } catch (error) {
+        list.innerHTML = '<p class="grades-error">Unable to load course discussions.</p>';
+        console.error("Failed to load course discussions:", error);
+    }
+}
+
+function renderDiscussionThreadItems(threads) {
+    if (!threads.length) {
+        return '<div class="discussion-empty compact"><p>No threads yet.</p></div>';
+    }
+
+    return threads.map((thread) => {
+        const threadActionMenu = thread.can_edit || thread.can_close || thread.can_hide
+            ? `
+                <details class="discussion-actions-menu discussion-row-actions">
+                    <summary aria-label="Thread actions">
+                        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                    </summary>
+                    <div class="discussion-actions-dropdown">
+                        ${thread.can_edit ? `<button type="button" data-thread-edit="${thread.thread_id}"><i class="bi bi-pencil" aria-hidden="true"></i><span>Edit</span></button>` : ""}
+                        ${thread.can_close ? `<button class="danger" type="button" data-thread-close="${thread.thread_id}"><i class="bi bi-lock" aria-hidden="true"></i><span>Close</span></button>` : ""}
+                        ${thread.can_hide ? `<button class="danger" type="button" data-thread-hide="${thread.thread_id}"><i class="bi bi-eye-slash" aria-hidden="true"></i><span>Remove</span></button>` : ""}
+                    </div>
+                </details>
+            `
+            : "";
+
+        return `
+        <article class="discussion-thread-row">
+        <button class="discussion-thread-main" type="button" data-thread-open="${thread.thread_id}">
+            <span>
+                <strong>${escapeHtml(thread.title)}</strong>
+                <small>${escapeHtml(thread.author.name)} · posted ${formatDiscussionDate(thread.created_at)}</small>
+                <span class="discussion-thread-preview">${escapeHtml(thread.body).slice(0, 180)}</span>
+            </span>
+            <span>${thread.status === "closed" ? '<span class="discussion-status-pill closed">Closed</span>' : '<span class="discussion-status-pill">Open</span>'}</span>
+            <span>${thread.reply_count}<small>Replies</small></span>
+            <span>${thread.view_count}<small>Views</small></span>
+        </button>
+        ${threadActionMenu}
+        </article>
+    `;
+    }).join("");
+}
+
+function splitAuthorName(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+
+    return {
+        first: parts[0] || "",
+        last: parts.length > 1 ? parts[parts.length - 1] : parts[0] || "",
+    };
+}
+
+function compareText(first, second) {
+    return String(first || "").localeCompare(String(second || ""), undefined, {
+        sensitivity: "base",
+        numeric: true,
+    });
+}
+
+function sortedDiscussionThreads(mode = "threaded") {
+    const threads = [...currentDiscussionThreads];
+
+    switch (mode) {
+        case "newest":
+            return threads.sort((first, second) => new Date(second.created_at) - new Date(first.created_at));
+        case "oldest":
+            return threads.sort((first, second) => new Date(first.created_at) - new Date(second.created_at));
+        case "author-first-az":
+            return threads.sort((first, second) => compareText(splitAuthorName(first.author?.name).first, splitAuthorName(second.author?.name).first));
+        case "author-first-za":
+            return threads.sort((first, second) => compareText(splitAuthorName(second.author?.name).first, splitAuthorName(first.author?.name).first));
+        case "author-last-az":
+            return threads.sort((first, second) => compareText(splitAuthorName(first.author?.name).last, splitAuthorName(second.author?.name).last));
+        case "author-last-za":
+            return threads.sort((first, second) => compareText(splitAuthorName(second.author?.name).last, splitAuthorName(first.author?.name).last));
+        case "subject-az":
+            return threads.sort((first, second) => compareText(first.title, second.title));
+        case "subject-za":
+            return threads.sort((first, second) => compareText(second.title, first.title));
+        case "threaded":
+        default:
+            return threads.sort((first, second) => new Date(second.updated_at) - new Date(first.updated_at));
+    }
+}
+
+function applyDiscussionThreadShowMode() {
+    const select = document.getElementById("discussion-thread-show");
+    const items = document.getElementById("discussion-thread-items");
+
+    if (!items) {
+        return;
+    }
+
+    items.innerHTML = renderDiscussionThreadItems(sortedDiscussionThreads(select?.value || "threaded"));
+}
+
+async function openDiscussionTopic(topicId, page = currentDiscussionThreadPage) {
+    currentDiscussionTopic = currentDiscussionTopics.find((topic) => topic.topic_id === Number(topicId)) || null;
+    const list = document.getElementById("discussion-thread-list");
+
+    if (!currentDiscussionTopic || !list) {
+        return;
+    }
+
+    setDiscussionView("threads");
+    renderDiscussionBreadcrumbs([
+        { label: "Discussions List", view: "topics" },
+        { label: "View Topic", view: "threads" },
+    ]);
+
+    try {
+        const response = await axios.get(`/api/discussions/topics/${topicId}/threads`, {
+            params: { page, page_size: DISCUSSION_THREAD_PAGE_SIZE },
+        });
+        currentDiscussionThreads = Array.isArray(response.data?.items) ? response.data.items : [];
+        currentDiscussionThreadPagination = response.data;
+        currentDiscussionThreadPage = Number(response.data?.page || page || 1);
+        if (!currentDiscussionThreads.length && currentDiscussionThreadPage > 1 && Number(currentDiscussionThreadPagination?.total || 0) > 0) {
+            await openDiscussionTopic(topicId, currentDiscussionThreadPage - 1);
+            return;
+        }
+        const canCreateThread = Boolean(currentDiscussionTopic.can_create_thread);
+        const manageActions = currentDiscussionTopic.can_manage
+            ? `<button class="discussion-link-btn" type="button" data-topic-edit="${currentDiscussionTopic.topic_id}"><i class="bi bi-pencil" aria-hidden="true"></i> Edit Topic</button>`
+            : "";
+
+        list.innerHTML = `
+            <div class="discussion-topic-hero">
+                <div class="discussion-topic-title-row">
+                    <h2>${escapeHtml(currentDiscussionTopic.title)}</h2>
+                    ${currentDiscussionTopic.is_locked ? '<span class="discussion-status-pill closed">Locked</span>' : ""}
+                </div>
+                <p class="discussion-module-label">${escapeHtml(discussionModuleTitle(currentDiscussionTopic.module_id))}</p>
+                <div class="discussion-topic-body">${plainTextToHtml(currentDiscussionTopic.description || "")}</div>
+                <div class="discussion-topic-actions">
+                    ${canCreateThread ? '<button id="start-thread-btn" class="course-card-action-btn" type="button">Start a New Thread</button>' : ""}
+                    ${manageActions}
+                </div>
+            </div>
+            <div class="discussion-thread-board">
+                <div class="discussion-thread-controls">
+                    <label>Show:
+                        <select id="discussion-thread-show">
+                            <option value="threaded">Threaded</option>
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="author-first-az">Author First Name A-Z</option>
+                            <option value="author-first-za">Author First Name Z-A</option>
+                            <option value="author-last-az">Author Last Name A-Z</option>
+                            <option value="author-last-za">Author Last Name Z-A</option>
+                            <option value="subject-az">Subject A-Z</option>
+                            <option value="subject-za">Subject Z-A</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="discussion-thread-items">
+                    ${renderDiscussionThreadItems(sortedDiscussionThreads("threaded"))}
+                </div>
+            </div>
+            ${renderDiscussionPagination(currentDiscussionThreadPagination, "threads")}
+        `;
+    } catch (error) {
+        list.innerHTML = '<p class="grades-error">Unable to load this discussion topic.</p>';
+        console.error("Failed to load discussion topic:", error);
+    }
+}
+
+async function openDiscussionThread(threadId, page = currentDiscussionReplyPage) {
+    const detail = document.getElementById("discussion-thread-detail");
+
+    if (!detail) {
+        return;
+    }
+
+    setDiscussionView("detail");
+    renderDiscussionBreadcrumbs([
+        { label: "Discussions List", view: "topics" },
+        { label: currentDiscussionTopic?.title || "Topic", view: "threads" },
+        { label: "Thread", view: "detail" },
+    ]);
+
+    try {
+        const response = await axios.get(`/api/discussions/threads/${threadId}`, {
+            params: { page, page_size: DISCUSSION_REPLY_PAGE_SIZE },
+        });
+        currentDiscussionDetail = response.data;
+        currentDiscussionReplyPage = Number(response.data?.replies_page || page || 1);
+        currentDiscussionReplyPagination = {
+            page: currentDiscussionReplyPage,
+            page_size: Number(response.data?.replies_page_size || DISCUSSION_REPLY_PAGE_SIZE),
+            total: Number(response.data?.replies_total || 0),
+            total_pages: Number(response.data?.replies_total_pages || 1),
+        };
+        if (!currentDiscussionDetail.replies?.length && currentDiscussionReplyPage > 1 && currentDiscussionReplyPagination.total > 0) {
+            await openDiscussionThread(threadId, currentDiscussionReplyPage - 1);
+            return;
+        }
+        renderDiscussionThreadDetail();
+    } catch (error) {
+        detail.innerHTML = '<p class="grades-error">Unable to load this thread.</p>';
+        console.error("Failed to load discussion thread:", error);
+    }
+}
+
+function renderDiscussionThreadDetail() {
+    const detail = document.getElementById("discussion-thread-detail");
+    const thread = currentDiscussionDetail?.thread;
+    const replies = currentDiscussionDetail?.replies || [];
+
+    if (!detail || !thread) {
+        return;
+    }
+
+    const threadActionMenu = thread.can_edit || thread.can_close || thread.can_hide
+        ? `
+            <details class="discussion-actions-menu">
+                <summary aria-label="Thread actions">
+                    <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                </summary>
+                <div class="discussion-actions-dropdown">
+                    ${thread.can_edit ? `<button type="button" data-thread-edit="${thread.thread_id}"><i class="bi bi-pencil" aria-hidden="true"></i><span>Edit</span></button>` : ""}
+                    ${thread.can_close ? `<button class="danger" type="button" data-thread-close="${thread.thread_id}"><i class="bi bi-lock" aria-hidden="true"></i><span>Close</span></button>` : ""}
+                    ${thread.can_hide ? `<button class="danger" type="button" data-thread-hide="${thread.thread_id}"><i class="bi bi-eye-slash" aria-hidden="true"></i><span>Remove</span></button>` : ""}
+                </div>
+            </details>
+        `
+        : "";
+
+    const repliesByParent = replies.reduce((groups, reply) => {
+        const parentKey = reply.parent_reply_id || 0;
+        if (!groups.has(parentKey)) {
+            groups.set(parentKey, []);
+        }
+        groups.get(parentKey).push(reply);
+        return groups;
+    }, new Map());
+    const repliesById = new Map(replies.map((reply) => [reply.reply_id, reply]));
+    const renderReplies = (parentReplyId = 0, depth = 0) => (repliesByParent.get(parentReplyId) || [])
+        .map((reply) => {
+            const parentReply = reply.parent_reply_id ? repliesById.get(reply.parent_reply_id) : null;
+            const parentContext = parentReply ? `
+                <div class="discussion-reply-context">
+                    <span>Replying to ${escapeHtml(parentReply.author.name)}</span>
+                    <p>${escapeHtml(getDiscussionPreview(parentReply.body))}</p>
+                </div>
+            ` : "";
+            const replyActions = thread.can_reply || reply.can_delete
+                ? `
+                    <div class="discussion-reply-actions">
+                        ${thread.can_reply ? `<button class="discussion-link-btn" type="button" data-reply-to="${reply.reply_id}" data-reply-author="${escapeHtml(reply.author.name)}">Reply</button>` : ""}
+                        ${reply.can_delete ? `<button class="discussion-link-btn danger" type="button" data-reply-delete="${reply.reply_id}">Delete</button>` : ""}
+                    </div>
+                `
+                : "";
+
+            return `
+            <article class="discussion-reply ${depth > 0 ? "child" : ""}" style="--reply-depth: ${Math.min(depth, 4)};">
+                <div class="discussion-avatar"><i class="bi bi-person" aria-hidden="true"></i></div>
+                <div>
+                    ${parentContext}
+                    <div class="discussion-reply-head">
+                        <strong>${escapeHtml(reply.author.name)}</strong>
+                        <span>${formatDiscussionDate(reply.created_at)}</span>
+                    </div>
+                    <div class="discussion-reply-body">${plainTextToHtml(reply.body)}</div>
+                    ${replyActions}
+                </div>
+            </article>
+            ${renderReplies(reply.reply_id, depth + 1)}
+        `;
+        })
+        .join("");
+
+    detail.innerHTML = `
+        <article class="discussion-post">
+            <div class="discussion-post-head">
+                <div>
+                    <h2>${escapeHtml(thread.title)}</h2>
+                    <p>${escapeHtml(thread.author.name)} · posted ${formatDiscussionDate(thread.created_at)}</p>
+                </div>
+                <div class="discussion-post-actions">
+                    ${thread.status === "closed" ? '<span class="discussion-status-pill closed">Closed</span>' : '<span class="discussion-status-pill">Open</span>'}
+                    ${threadActionMenu}
+                </div>
+            </div>
+            <div class="discussion-post-body">${plainTextToHtml(thread.body)}</div>
+            <div class="discussion-post-meta">${thread.reply_count} replies · ${thread.view_count} views</div>
+        </article>
+        <div class="discussion-replies">
+            ${renderReplies()}
+        </div>
+        ${renderDiscussionPagination(currentDiscussionReplyPagination, "replies")}
+        ${thread.can_reply ? `
+            <div class="discussion-reply-box">
+                <div class="discussion-reply-box-head">
+                    <label for="discussion-new-reply-input">Reply</label>
+                    <button id="clear-reply-target-btn" class="discussion-link-btn" type="button" hidden>Reply to thread</button>
+                </div>
+                <p id="discussion-reply-target" class="discussion-reply-target" hidden></p>
+                <textarea id="discussion-new-reply-input" rows="4" placeholder="Write a reply"></textarea>
+                <button id="post-discussion-reply-btn" class="course-card-action-btn" type="button">Post Reply</button>
+            </div>
+        ` : ""}
+    `;
+    currentReplyParentId = null;
 }
 
 function getGradeDateLabel(value, prefix) {
@@ -1417,6 +1971,341 @@ async function saveModule() {
     await loadModules();
 }
 
+function populateDiscussionModuleOptions(selectedModuleId = null) {
+    const moduleInput = document.getElementById("discussion-topic-module-input");
+
+    if (!moduleInput) {
+        return;
+    }
+
+    moduleInput.innerHTML = currentModules
+        .map((module) => {
+            const moduleId = Number(module.module_id);
+            const selected = Number(selectedModuleId) === moduleId ? "selected" : "";
+            return `<option value="${moduleId}" ${selected}>${escapeHtml(module.position)}. ${escapeHtml(module.title || "Untitled module")}</option>`;
+        })
+        .join("");
+}
+
+function openDiscussionTopicModal(topic = null) {
+    currentEditingTopicId = topic?.topic_id || null;
+    populateDiscussionModuleOptions(topic?.module_id || currentModules[0]?.module_id);
+    document.getElementById("discussion-topic-modal-title").textContent = topic ? "Edit Discussion Topic" : "New Discussion Topic";
+    document.getElementById("discussion-topic-module-input").disabled = Boolean(topic);
+    document.getElementById("discussion-topic-title-input").value = topic?.title || "";
+    document.getElementById("discussion-topic-description-input").value = topic?.description || "";
+    document.getElementById("discussion-topic-locked-input").checked = Boolean(topic?.is_locked);
+    document.getElementById("discussion-topic-modal").style.display = "flex";
+}
+
+function closeDiscussionTopicModal() {
+    currentEditingTopicId = null;
+    document.getElementById("discussion-topic-title-input").value = "";
+    document.getElementById("discussion-topic-description-input").value = "";
+    document.getElementById("discussion-topic-locked-input").checked = false;
+    document.getElementById("discussion-topic-modal").style.display = "none";
+}
+
+async function saveDiscussionTopic() {
+    const moduleId = Number(document.getElementById("discussion-topic-module-input").value || 0);
+    const title = document.getElementById("discussion-topic-title-input").value.trim();
+    const description = document.getElementById("discussion-topic-description-input").value.trim();
+    const isLocked = document.getElementById("discussion-topic-locked-input").checked;
+
+    if (!moduleId) {
+        alert("Please create a module before adding a discussion topic.");
+        return;
+    }
+
+    if (!title) {
+        alert("Please enter a topic title");
+        return;
+    }
+
+    try {
+        if (currentEditingTopicId) {
+            await axios.put(`/api/discussions/topics/${currentEditingTopicId}`, {
+                title,
+                description,
+                is_locked: isLocked,
+            });
+        } else {
+            await axios.post("/api/discussions/topics", {
+                module_id: moduleId,
+                title,
+                description,
+            });
+        }
+
+        closeDiscussionTopicModal();
+        discussionLoaded = false;
+        await loadCourseDiscussionTopics(currentDiscussionTopicPage);
+        showDiscussionStatus("Discussion topic saved.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to save discussion topic.", "error");
+    }
+}
+
+async function setDiscussionTopicLocked(topicId, isLocked) {
+    const topic = currentDiscussionTopics.find((item) => Number(item.topic_id) === Number(topicId));
+
+    if (!topic) {
+        return;
+    }
+
+    try {
+        await axios.put(`/api/discussions/topics/${topicId}`, {
+            title: topic.title,
+            description: topic.description || "",
+            is_locked: isLocked,
+        });
+        discussionLoaded = false;
+        await loadCourseDiscussionTopics(currentDiscussionTopicPage);
+        showDiscussionStatus(isLocked ? "Topic locked." : "Topic unlocked.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to update topic.", "error");
+    }
+}
+
+async function deleteDiscussionTopic(topicId) {
+    if (!confirm("Delete this topic and all threads and replies under it?")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/discussions/topics/${topicId}`);
+        discussionLoaded = false;
+        currentDiscussionTopic = null;
+        await loadCourseDiscussionTopics(currentDiscussionTopicPage);
+        showDiscussionStatus("Topic deleted.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to delete topic.", "error");
+    }
+}
+
+function openDiscussionThreadModal(thread = null) {
+    currentEditingThreadId = thread?.thread_id || null;
+    document.getElementById("discussion-thread-modal-title").textContent = thread ? "Edit Thread" : "Start a New Thread";
+    document.getElementById("discussion-thread-title-input").value = thread?.title || "";
+    document.getElementById("discussion-thread-body-input").value = thread?.body || "";
+    document.getElementById("discussion-thread-modal").style.display = "flex";
+}
+
+function closeDiscussionThreadModal() {
+    currentEditingThreadId = null;
+    document.getElementById("discussion-thread-title-input").value = "";
+    document.getElementById("discussion-thread-body-input").value = "";
+    document.getElementById("discussion-thread-modal").style.display = "none";
+}
+
+async function saveDiscussionThread() {
+    const title = document.getElementById("discussion-thread-title-input").value.trim();
+    const body = document.getElementById("discussion-thread-body-input").value.trim();
+
+    if (!title || !body) {
+        alert("Please enter a title and post");
+        return;
+    }
+
+    try {
+        if (currentEditingThreadId) {
+            await axios.put(`/api/discussions/threads/${currentEditingThreadId}`, { title, body });
+            closeDiscussionThreadModal();
+            await openDiscussionThread(currentEditingThreadId, currentDiscussionReplyPage);
+        } else {
+            await axios.post(`/api/discussions/topics/${currentDiscussionTopic.topic_id}/threads`, { title, body });
+            closeDiscussionThreadModal();
+            await openDiscussionTopic(currentDiscussionTopic.topic_id, currentDiscussionThreadPage);
+        }
+        discussionLoaded = false;
+        showDiscussionStatus("Thread saved.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to save thread.", "error");
+    }
+}
+
+async function postDiscussionReply() {
+    const input = document.getElementById("discussion-new-reply-input");
+    const body = input?.value.trim();
+
+    if (!body) {
+        alert("Please enter a reply");
+        return;
+    }
+
+    try {
+        await axios.post(`/api/discussions/threads/${currentDiscussionDetail.thread.thread_id}/replies`, {
+            body,
+            parent_reply_id: currentReplyParentId,
+        });
+        await openDiscussionThread(currentDiscussionDetail.thread.thread_id, currentDiscussionReplyPage);
+        discussionLoaded = false;
+        showDiscussionStatus("Reply posted.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to post reply.", "error");
+    }
+}
+
+function setReplyTarget(replyId, authorName) {
+    currentReplyParentId = Number(replyId);
+    const target = document.getElementById("discussion-reply-target");
+    const clearButton = document.getElementById("clear-reply-target-btn");
+    const input = document.getElementById("discussion-new-reply-input");
+
+    if (target) {
+        target.textContent = `Replying to ${authorName}`;
+        target.hidden = false;
+    }
+    if (clearButton) {
+        clearButton.hidden = false;
+    }
+    input?.focus();
+}
+
+function clearReplyTarget() {
+    currentReplyParentId = null;
+    const target = document.getElementById("discussion-reply-target");
+    const clearButton = document.getElementById("clear-reply-target-btn");
+
+    if (target) {
+        target.hidden = true;
+        target.textContent = "";
+    }
+    if (clearButton) {
+        clearButton.hidden = true;
+    }
+}
+
+async function closeDiscussionThread(threadId, returnToTopic = false) {
+    if (!confirm("Close this thread?")) {
+        return;
+    }
+
+    try {
+        await axios.post(`/api/discussions/threads/${threadId}/close`);
+        discussionLoaded = false;
+        if (returnToTopic && currentDiscussionTopic) {
+            await openDiscussionTopic(currentDiscussionTopic.topic_id, currentDiscussionThreadPage);
+        } else {
+            await openDiscussionThread(threadId, currentDiscussionReplyPage);
+        }
+        showDiscussionStatus("Thread closed.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to close thread.", "error");
+    }
+}
+
+async function hideDiscussionThread(threadId) {
+    if (!confirm("Remove this thread from discussions?")) {
+        return;
+    }
+
+    try {
+        await axios.post(`/api/discussions/threads/${threadId}/hide`);
+        discussionLoaded = false;
+        showDiscussionStatus("Thread removed.", "success");
+        if (currentDiscussionTopic) {
+            await openDiscussionTopic(currentDiscussionTopic.topic_id, currentDiscussionThreadPage);
+        } else {
+            await loadCourseDiscussionTopics(currentDiscussionTopicPage);
+        }
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to remove thread.", "error");
+    }
+}
+
+async function deleteDiscussionReply(replyId) {
+    if (!confirm("Delete this reply and all replies under it?")) {
+        return;
+    }
+
+    try {
+        await axios.delete(`/api/discussions/replies/${replyId}`);
+        await openDiscussionThread(currentDiscussionDetail.thread.thread_id, currentDiscussionReplyPage);
+        discussionLoaded = false;
+        showDiscussionStatus("Reply deleted.", "success");
+    } catch (error) {
+        showDiscussionStatus(error.response?.data || "Failed to delete reply.", "error");
+    }
+}
+
+function bindDiscussionControls() {
+    document.getElementById("add-discussion-topic-btn")?.addEventListener("click", () => openDiscussionTopicModal());
+    document.getElementById("save-discussion-topic-btn")?.addEventListener("click", saveDiscussionTopic);
+    document.getElementById("close-discussion-topic-modal-btn")?.addEventListener("click", closeDiscussionTopicModal);
+    document.getElementById("save-discussion-thread-btn")?.addEventListener("click", saveDiscussionThread);
+    document.getElementById("close-discussion-thread-modal-btn")?.addEventListener("click", closeDiscussionThreadModal);
+    document.getElementById("course-discussion-panel")?.addEventListener("click", (event) => {
+        const topicOpen = event.target.closest("[data-topic-open]");
+        const threadOpen = event.target.closest("[data-thread-open]");
+        const crumb = event.target.closest("[data-discussion-crumb]");
+        const topicEdit = event.target.closest("[data-topic-edit]");
+        const topicLock = event.target.closest("[data-topic-lock]");
+        const topicDelete = event.target.closest("[data-topic-delete]");
+        const threadEdit = event.target.closest("[data-thread-edit]");
+        const threadClose = event.target.closest("[data-thread-close]");
+        const threadHide = event.target.closest("[data-thread-hide]");
+        const backButton = event.target.closest("#discussion-back-btn");
+        const replyTo = event.target.closest("[data-reply-to]");
+        const replyDelete = event.target.closest("[data-reply-delete]");
+        const clearReplyTargetButton = event.target.closest("#clear-reply-target-btn");
+        const startThread = event.target.closest("#start-thread-btn");
+        const postReply = event.target.closest("#post-discussion-reply-btn");
+        const pageButton = event.target.closest("[data-discussion-page-target]");
+
+        if (topicEdit) {
+            const topic = currentDiscussionTopics.find((item) => Number(item.topic_id) === Number(topicEdit.dataset.topicEdit)) || currentDiscussionTopic;
+            openDiscussionTopicModal(topic);
+        } else if (topicLock) {
+            setDiscussionTopicLocked(topicLock.dataset.topicLock, topicLock.dataset.topicLockValue === "true");
+        } else if (topicDelete) {
+            deleteDiscussionTopic(topicDelete.dataset.topicDelete);
+        } else if (topicOpen) {
+            currentDiscussionThreadPage = 1;
+            openDiscussionTopic(topicOpen.dataset.topicOpen, 1);
+        } else if (threadEdit) {
+            openDiscussionThreadModal(currentDiscussionThreads.find((thread) => Number(thread.thread_id) === Number(threadEdit.dataset.threadEdit)) || currentDiscussionDetail?.thread);
+        } else if (threadClose) {
+            closeDiscussionThread(threadClose.dataset.threadClose, Boolean(threadClose.closest(".discussion-thread-row")));
+        } else if (threadHide) {
+            hideDiscussionThread(threadHide.dataset.threadHide);
+        } else if (threadOpen) {
+            currentDiscussionReplyPage = 1;
+            openDiscussionThread(threadOpen.dataset.threadOpen, 1);
+        } else if (crumb?.dataset.discussionCrumb === "topics") {
+            loadCourseDiscussionTopics(currentDiscussionTopicPage);
+        } else if (crumb?.dataset.discussionCrumb === "threads" && currentDiscussionTopic) {
+            openDiscussionTopic(currentDiscussionTopic.topic_id, currentDiscussionThreadPage);
+        } else if (backButton?.dataset.discussionBack === "threads" && currentDiscussionTopic) {
+            openDiscussionTopic(currentDiscussionTopic.topic_id, currentDiscussionThreadPage);
+        } else if (backButton?.dataset.discussionBack === "topics") {
+            loadCourseDiscussionTopics(currentDiscussionTopicPage);
+        } else if (pageButton?.dataset.discussionPageTarget === "topics") {
+            loadCourseDiscussionTopics(Number(pageButton.dataset.discussionPage || 1));
+        } else if (pageButton?.dataset.discussionPageTarget === "threads" && currentDiscussionTopic) {
+            openDiscussionTopic(currentDiscussionTopic.topic_id, Number(pageButton.dataset.discussionPage || 1));
+        } else if (pageButton?.dataset.discussionPageTarget === "replies" && currentDiscussionDetail?.thread) {
+            openDiscussionThread(currentDiscussionDetail.thread.thread_id, Number(pageButton.dataset.discussionPage || 1));
+        } else if (replyTo) {
+            setReplyTarget(replyTo.dataset.replyTo, replyTo.dataset.replyAuthor || "this reply");
+        } else if (replyDelete) {
+            deleteDiscussionReply(replyDelete.dataset.replyDelete);
+        } else if (clearReplyTargetButton) {
+            clearReplyTarget();
+        } else if (startThread) {
+            openDiscussionThreadModal();
+        } else if (postReply) {
+            postDiscussionReply();
+        }
+    });
+
+    document.getElementById("course-discussion-panel")?.addEventListener("change", (event) => {
+        if (event.target.closest("#discussion-thread-show")) {
+            applyDiscussionThreadShowMode();
+        }
+    });
+}
+
 function bindInstructorControls() {
     document.getElementById("edit-course-btn")?.addEventListener("click", (event) => {
         editCourse(event, courseId);
@@ -1515,6 +2404,8 @@ function bindInstructorControls() {
             setAssignmentModalTab(tab.dataset.assignmentTab);
         });
     });
+
+    bindDiscussionControls();
 }
 
 async function init() {

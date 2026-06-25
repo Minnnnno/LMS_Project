@@ -116,6 +116,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(routes::certificate_routes::init)
                     .configure(routes::payment_routes::init)
                     .configure(routes::course_routes::init)
+                    .configure(routes::discussion_routes::init)
                     .configure(routes::student_routes::init)
                     .configure(routes::enrollment_routes::init)
                     .configure(routes::organisation_routes::init)

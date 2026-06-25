@@ -3,7 +3,7 @@
 {% block title %}Course Details | SkillUp LMS{% endblock title %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/course_details.css?v=26">
+<link rel="stylesheet" href="/static/css/course_details.css?v=37">
 
 <div class="course-hero" id="course-hero">
     <div class="course-hero-overlay">
@@ -54,6 +54,7 @@
 
 <div class="course-tabs" id="course-tabs">
     <button type="button" class="course-tab active" data-course-tab="content">Content</button>
+    <button type="button" id="course-discussion-tab-btn" class="course-tab" data-course-tab="discussion" style="display: none;">Discussions</button>
     <button type="button" class="course-tab" data-course-tab="grades">Grades</button>
     <button type="button" class="course-tab" data-course-tab="dropbox">Dropbox</button>
     <button type="button" id="course-submissions-tab-btn" class="course-tab" data-course-tab="submissions" style="display: none;">Submissions</button>
@@ -87,6 +88,32 @@
             <div id="quiz-list"></div>
         </div>
 
+    </div>
+</div>
+
+<div id="course-discussion-panel" class="course-tab-panel">
+    <div class="discussion-layout">
+        <div class="course-card discussion-card">
+            <div class="discussion-toolbar">
+                <div>
+                    <h2>Discussions</h2>
+                    <p>Course topics, student threads, and replies.</p>
+                </div>
+                <button id="add-discussion-topic-btn" class="course-card-action-btn" type="button" style="display: none;">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    <span>New Topic</span>
+                </button>
+            </div>
+            <p id="discussion-status-message" class="course-action-message" role="status" aria-live="polite"></p>
+            <button id="discussion-back-btn" class="discussion-back-btn" type="button" hidden>
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                <span>Back</span>
+            </button>
+            <div id="discussion-breadcrumbs" class="discussion-breadcrumbs"></div>
+            <div id="discussion-topic-list" class="discussion-topic-list"></div>
+            <div id="discussion-thread-list" class="discussion-thread-list" hidden></div>
+            <div id="discussion-thread-detail" class="discussion-thread-detail" hidden></div>
+        </div>
     </div>
 </div>
 
@@ -429,8 +456,40 @@
         </div>
     </div>
 </div>
+<div id="discussion-topic-modal" style="display: none;">
+    <div class="modal-content discussion-edit-modal">
+        <h2 id="discussion-topic-modal-title">New Discussion Topic</h2>
+        <label for="discussion-topic-module-input">Module</label>
+        <select id="discussion-topic-module-input"></select>
+        <label for="discussion-topic-title-input">Title</label>
+        <input type="text" id="discussion-topic-title-input" placeholder="Group Project Topic Selection">
+        <label for="discussion-topic-description-input">Description</label>
+        <textarea id="discussion-topic-description-input" rows="5" placeholder="Instructions for this discussion"></textarea>
+        <label class="checkbox-label">
+            <input type="checkbox" id="discussion-topic-locked-input">
+            Lock this topic
+        </label>
+        <div class="modal-actions">
+            <button id="save-discussion-topic-btn">Save</button>
+            <button id="close-discussion-topic-modal-btn" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
+<div id="discussion-thread-modal" style="display: none;">
+    <div class="modal-content discussion-edit-modal">
+        <h2 id="discussion-thread-modal-title">Start a New Thread</h2>
+        <label for="discussion-thread-title-input">Title</label>
+        <input type="text" id="discussion-thread-title-input" placeholder="P1_Group11_Topic2">
+        <label for="discussion-thread-body-input">Post</label>
+        <textarea id="discussion-thread-body-input" rows="6" placeholder="Write your post"></textarea>
+        <div class="modal-actions">
+            <button id="save-discussion-thread-btn">Save</button>
+            <button id="close-discussion-thread-modal-btn" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="/static/js/course_assignments.js?v=2"></script>
 <script src="/static/js/course_quizzes.js?v=11"></script>
-<script src="/static/js/course_details.js?v=48"></script>
+<script src="/static/js/course_details.js?v=64"></script>
 {% endblock content %}

@@ -1,4 +1,5 @@
 pub mod cloudinary;
+pub mod discussion_routes;
 pub mod assignment_routes;
 pub mod certificate_routes;
 pub mod course_routes;

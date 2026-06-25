@@ -6,6 +6,7 @@ pub mod course_completion_service;
 pub mod certificate_service;
 pub mod course_service;
 pub mod csrf_service;
+pub mod discussion_service;
 pub mod email_verification_service;
 pub mod enrollment_service;
 pub mod mailer_service;

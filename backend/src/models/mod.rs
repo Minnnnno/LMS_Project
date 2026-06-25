@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod assignment;
 pub mod course;
+pub mod discussion;
 pub mod grade;
 pub mod module_content;
 pub mod module_progress;
