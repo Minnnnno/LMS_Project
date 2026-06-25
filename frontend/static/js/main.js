@@ -81,6 +81,9 @@ class CertificationPage {
         const certificate = row.certificate || {};
         const source = row.status?.completion_source || certificate.completion_source;
         const url = certificate.verification_url || "#";
+        const downloadUrl = certificate.certificate_id
+            ? `/api/certificates/${encodeURIComponent(certificate.certificate_id)}/download`
+            : "#";
 
         return `
             <div class="certificate-list-item">
@@ -97,6 +100,9 @@ class CertificationPage {
                 <div class="certificate-actions">
                     <a class="btn btn-sm btn-dark" href="${HtmlUtils.escape(url)}" target="_blank" rel="noopener">
                         <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>View
+                    </a>
+                    <a class="btn btn-sm btn-outline-dark" href="${HtmlUtils.escape(downloadUrl)}">
+                        <i class="bi bi-download me-1" aria-hidden="true"></i>Download
                     </a>
                     <button class="btn btn-sm btn-outline-dark" type="button" data-copy-certificate="${HtmlUtils.escape(url)}">
                         <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy

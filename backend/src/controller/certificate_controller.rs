@@ -1,13 +1,15 @@
 use actix_session::Session;
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpResponse, Responder, get, http::header, web};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::entity::{courses, enrollments, users};
+use crate::services::auth_helpers::get_user_id;
 use crate::services::certificate_service::{
     CertificateLinkPayload, certificate_payload, ensure_certificate_for_completion,
+    generate_certificate_pdf_for_user,
     verify_certificate,
 };
 use crate::services::course_completion_service::{
@@ -31,22 +33,12 @@ struct CourseCertificateRosterItem {
     certificate: CertificateLinkPayload,
 }
 
-fn session_user_id(session: &Session) -> Result<i32, HttpResponse> {
-    match session.get::<i32>("user_id") {
-        Ok(Some(id)) => Ok(id),
-        Ok(None) => Err(HttpResponse::Unauthorized().body("User not logged in")),
-        Err(err) => {
-            Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)))
-        }
-    }
-}
-
 #[get("/certificates/my")]
 pub async fn get_my_certificates(
     db: web::Data<DatabaseConnection>,
     session: Session,
 ) -> impl Responder {
-    let user_id = match session_user_id(&session) {
+    let user_id = match get_user_id(&session) {
         Ok(user_id) => user_id,
         Err(response) => return response,
     };
@@ -219,6 +211,30 @@ pub async fn get_course_certificates(
     });
 
     HttpResponse::Ok().json(roster)
+}
+
+#[get("/certificates/{certificate_id}/download")]
+pub async fn download_my_certificate(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let user_id = match get_user_id(&session) {
+        Ok(user_id) => user_id,
+        Err(response) => return response,
+    };
+
+    match generate_certificate_pdf_for_user(db.get_ref(), path.into_inner(), user_id).await {
+        Ok(Some(pdf)) => HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "application/pdf"))
+            .insert_header((
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", pdf.filename),
+            ))
+            .body(pdf.bytes),
+        Ok(None) => HttpResponse::NotFound().body("Certificate not found"),
+        Err(response) => response,
+    }
 }
 
 #[get("/certificates/verify/{token}")]

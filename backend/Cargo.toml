@@ -34,3 +34,4 @@ futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json", "multipart"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 include_dir = "0.7.4"
+qrcode = "0.14"
