@@ -1,6 +1,6 @@
+use chrono::NaiveDateTime;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
-use chrono::NaiveDateTime;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "quizzes")]
@@ -11,6 +11,7 @@ pub struct Model {
     pub title: String,
     pub description: Option<String>,
     pub max_attempts: Option<i32>,
+    pub passing_mark: i32,
     pub time_limit: Option<i32>,
     pub starts_at: Option<NaiveDateTime>,
     pub ends_at: Option<NaiveDateTime>,

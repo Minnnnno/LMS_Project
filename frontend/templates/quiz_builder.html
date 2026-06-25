@@ -54,6 +54,10 @@
                         <input id="quiz-max-attempts-input" type="number" min="1" step="1" placeholder="Unlimited">
                     </div>
                     <div>
+                        <label for="quiz-passing-mark-input">Passing mark (%)</label>
+                        <input id="quiz-passing-mark-input" type="number" min="0" max="100" step="1" value="50">
+                    </div>
+                    <div>
                         <label for="quiz-time-limit-input">Time limit</label>
                         <input id="quiz-time-limit-input" type="number" min="1" step="1" placeholder="Minutes">
                     </div>
@@ -160,5 +164,5 @@
     </div>
 </template>
 
-<script src="/static/js/quiz_builder.js?v=7"></script>
+<script src="/static/js/quiz_builder.js?v=8"></script>
 {% endblock content %}

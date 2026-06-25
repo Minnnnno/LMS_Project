@@ -4,23 +4,42 @@ use actix_session::Session;
 use actix_web::HttpResponse;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
-use crate::entity::{quiz_answers, quiz_attempts, quiz_options, quiz_questions, users};
+use crate::entity::{quiz, quiz_answers, quiz_attempts, quiz_options, quiz_questions, users};
 use crate::models::quiz_attempts::{
     QuizAttemptReviewAnswer, StaffQuizAttempt, StudentQuizAttemptReview,
 };
-use crate::services::quiz_helper::{self, QuizResult};
+use crate::services::quiz_helper::{self, QuizResult, QuizServiceError};
 
 struct QuizReviewData {
     questions: Vec<quiz_questions::Model>,
     options_by_id: HashMap<i32, quiz_options::Model>,
     correct_by_question: HashMap<i32, quiz_options::Model>,
     max_score: i32,
+    passing_mark: i32,
+}
+
+fn passed_quiz(
+    total_score: Option<i32>,
+    max_score: i32,
+    passing_mark: i32,
+    is_graded: bool,
+) -> Option<bool> {
+    if !is_graded || max_score <= 0 {
+        return None;
+    }
+
+    total_score.map(|score| score * 100 >= passing_mark * max_score)
 }
 
 async fn load_quiz_review_data(
     db: &DatabaseConnection,
     quiz_id: i32,
 ) -> QuizResult<QuizReviewData> {
+    let quiz = quiz::Entity::find_by_id(quiz_id)
+        .one(db)
+        .await
+        .map_err(quiz_helper::db_service_error)?
+        .ok_or_else(|| QuizServiceError::NotFound("Quiz not found".to_string()))?;
     let questions = quiz_helper::load_quiz_questions(db, quiz_id).await?;
     let options = quiz_helper::load_options_for_quiz(db, &questions).await?;
     let max_score = questions.iter().map(|question| question.points).sum();
@@ -40,6 +59,7 @@ async fn load_quiz_review_data(
         options_by_id,
         correct_by_question,
         max_score,
+        passing_mark: quiz.passing_mark,
     })
 }
 
@@ -158,6 +178,13 @@ pub async fn list_staff_attempts(
                 submitted_at: attempt.submitted_at,
                 total_score: attempt.total_score,
                 max_score: review_data.max_score,
+                passing_mark: review_data.passing_mark,
+                passed: passed_quiz(
+                    attempt.total_score,
+                    review_data.max_score,
+                    review_data.passing_mark,
+                    attempt.is_graded,
+                ),
                 is_graded: attempt.is_graded,
                 answers: review_answers,
             })
@@ -218,6 +245,13 @@ pub async fn get_student_review(
         quiz_id: attempt.quiz_id,
         total_score: attempt.total_score,
         max_score: review_data.max_score,
+        passing_mark: review_data.passing_mark,
+        passed: passed_quiz(
+            attempt.total_score,
+            review_data.max_score,
+            review_data.passing_mark,
+            attempt.is_graded,
+        ),
         submitted_at: attempt.submitted_at,
         answers: review_answers,
     })

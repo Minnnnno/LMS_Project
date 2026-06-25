@@ -20,6 +20,7 @@ use crate::services::quiz_helper::{self, QuizResult, QuizServiceError};
 fn validate_quiz_fields(
     title: Option<&str>,
     max_attempts: Option<i32>,
+    passing_mark: Option<i32>,
     time_limit: Option<i32>,
 ) -> QuizResult<()> {
     if title.map(|value| value.trim().is_empty()).unwrap_or(false) {
@@ -34,6 +35,15 @@ fn validate_quiz_fields(
         ));
     }
 
+    if passing_mark
+        .map(|value| !(0..=100).contains(&value))
+        .unwrap_or(false)
+    {
+        return Err(QuizServiceError::BadRequest(
+            "Passing mark must be between 0 and 100.".to_string(),
+        ));
+    }
+
     if time_limit.map(|value| value < 1).unwrap_or(false) {
         return Err(QuizServiceError::BadRequest(
             "Time limit must be 1 minute or higher".to_string(),
@@ -44,7 +54,12 @@ fn validate_quiz_fields(
 }
 
 fn validate_quiz_draft(data: &SaveQuizDraft) -> QuizResult<()> {
-    validate_quiz_fields(Some(&data.title), data.max_attempts, data.time_limit)?;
+    validate_quiz_fields(
+        Some(&data.title),
+        data.max_attempts,
+        data.passing_mark,
+        data.time_limit,
+    )?;
     if data.questions.is_empty() {
         return Err(QuizServiceError::BadRequest(
             "A quiz must contain at least one question".to_string(),
@@ -181,6 +196,7 @@ pub async fn save_quiz_draft(
         active.title = Set(data.title.clone());
         active.description = Set(data.description.clone());
         active.max_attempts = Set(data.max_attempts);
+        active.passing_mark = Set(data.passing_mark.unwrap_or(50));
         active.time_limit = Set(data.time_limit);
         active.starts_at = Set(data.starts_at);
         let saved = match active.update(&transaction).await {
@@ -207,6 +223,7 @@ pub async fn save_quiz_draft(
             title: Set(data.title.clone()),
             description: Set(data.description.clone()),
             max_attempts: Set(data.max_attempts),
+            passing_mark: Set(data.passing_mark.unwrap_or(50)),
             time_limit: Set(data.time_limit),
             starts_at: Set(data.starts_at),
             ..Default::default()
@@ -305,6 +322,7 @@ pub async fn get_quiz_editor(
         title: quiz.title,
         description: quiz.description,
         max_attempts: quiz.max_attempts,
+        passing_mark: quiz.passing_mark,
         time_limit: quiz.time_limit,
         starts_at: quiz.starts_at,
         prerequisite_module_ids,
@@ -319,6 +337,7 @@ struct QuizPayload {
     title: String,
     description: Option<String>,
     max_attempts: Option<i32>,
+    passing_mark: i32,
     time_limit: Option<i32>,
     starts_at: Option<chrono::NaiveDateTime>,
     ends_at: Option<chrono::NaiveDateTime>,
@@ -342,6 +361,7 @@ async fn quiz_payloads(
             title: quiz.title,
             description: quiz.description,
             max_attempts: quiz.max_attempts,
+            passing_mark: quiz.passing_mark,
             time_limit: quiz.time_limit,
             starts_at: quiz.starts_at,
             ends_at: quiz.ends_at,
@@ -402,6 +422,7 @@ mod tests {
             title: "Quiz".to_string(),
             description: None,
             max_attempts: Some(1),
+            passing_mark: Some(50),
             time_limit: Some(30),
             starts_at: None,
             prerequisite_module_ids: Vec::new(),

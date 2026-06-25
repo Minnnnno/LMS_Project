@@ -8,6 +8,19 @@ use crate::entity::{assignments, quiz, quiz_attempts, quiz_questions, submission
 use crate::models::grade::{AssignmentGrade, CourseGradebook, QuizGrade};
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
 
+fn passed_quiz(
+    total_score: Option<i32>,
+    max_score: i32,
+    passing_mark: i32,
+    is_graded: bool,
+) -> Option<bool> {
+    if !is_graded || max_score <= 0 {
+        return None;
+    }
+
+    total_score.map(|score| score * 100 >= passing_mark * max_score)
+}
+
 pub async fn get_my_course_grades(
     db: &DatabaseConnection,
     session: &Session,
@@ -193,15 +206,21 @@ pub async fn get_my_course_grades(
             let attempt = latest_graded_attempt_by_quiz
                 .get(&quiz.quiz_id)
                 .or_else(|| latest_attempt_by_quiz.get(&quiz.quiz_id));
+            let max_score = *max_score_by_quiz.get(&quiz.quiz_id).unwrap_or(&0);
+            let total_score =
+                attempt.and_then(|item| item.is_graded.then_some(item.total_score).flatten());
+            let is_graded = attempt.map(|item| item.is_graded).unwrap_or(false);
 
             QuizGrade {
                 quiz_id: quiz.quiz_id,
                 title: quiz.title,
-                max_score: *max_score_by_quiz.get(&quiz.quiz_id).unwrap_or(&0),
-                total_score: attempt.and_then(|item| item.is_graded.then_some(item.total_score).flatten()),
+                max_score,
+                passing_mark: quiz.passing_mark,
+                total_score,
                 submitted_at: attempt.and_then(|item| item.submitted_at),
                 attempt_id: attempt.map(|item| item.attempt_id),
-                is_graded: attempt.map(|item| item.is_graded).unwrap_or(false),
+                is_graded,
+                passed: passed_quiz(total_score, max_score, quiz.passing_mark, is_graded),
             }
         })
         .collect::<Vec<_>>();

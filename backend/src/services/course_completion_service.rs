@@ -118,7 +118,7 @@ pub async fn load_completion_statuses(
     } else {
         quiz_attempts::Entity::find()
             .filter(quiz_attempts::Column::UserId.is_in(user_ids))
-            .filter(quiz_attempts::Column::QuizId.is_in(quiz_ids))
+            .filter(quiz_attempts::Column::QuizId.is_in(quiz_ids.clone()))
             .all(db)
             .await
     };
@@ -155,7 +155,9 @@ pub async fn load_completion_statuses(
     }
 
     let mut quiz_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
+    let mut passing_mark_by_quiz: HashMap<i32, i32> = HashMap::new();
     for quiz in quiz_rows {
+        passing_mark_by_quiz.insert(quiz.quiz_id, quiz.passing_mark);
         quiz_ids_by_course
             .entry(quiz.course_id)
             .or_default()
@@ -186,10 +188,42 @@ pub async fn load_completion_statuses(
             .or_insert(submission);
     }
 
-    let mut graded_quiz_ids_by_user: HashMap<i32, HashSet<i32>> = HashMap::new();
+    let mut question_points_by_quiz: HashMap<i32, i32> = HashMap::new();
+    let quiz_question_rows = if quiz_ids.is_empty() {
+        Vec::new()
+    } else {
+        crate::entity::quiz_questions::Entity::find()
+            .filter(crate::entity::quiz_questions::Column::QuizId.is_in(quiz_ids))
+            .all(db)
+            .await
+            .map_err(|err| {
+                HttpResponse::InternalServerError()
+                    .body(format!("Database error finding quiz questions: {}", err))
+            })?
+    };
+    for question in quiz_question_rows {
+        *question_points_by_quiz.entry(question.quiz_id).or_insert(0) += question.points;
+    }
+
+    let mut passed_quiz_ids_by_user: HashMap<i32, HashSet<i32>> = HashMap::new();
     for attempt in attempt_rows {
-        if attempt.is_graded && attempt.submitted_at.is_some() {
-            graded_quiz_ids_by_user
+        let max_score = question_points_by_quiz
+            .get(&attempt.quiz_id)
+            .copied()
+            .unwrap_or(0);
+        let passing_mark = passing_mark_by_quiz
+            .get(&attempt.quiz_id)
+            .copied()
+            .unwrap_or(50);
+        let passed = attempt.is_graded
+            && attempt.submitted_at.is_some()
+            && max_score > 0
+            && attempt
+                .total_score
+                .is_some_and(|score| score * 100 >= passing_mark * max_score);
+
+        if passed {
+            passed_quiz_ids_by_user
                 .entry(attempt.user_id)
                 .or_default()
                 .insert(attempt.quiz_id);
@@ -215,7 +249,7 @@ pub async fn load_completion_statuses(
                 .get(&enrollment.user_id)
                 .cloned()
                 .unwrap_or_default();
-            let graded_quiz_ids = graded_quiz_ids_by_user
+            let passed_quiz_ids = passed_quiz_ids_by_user
                 .get(&enrollment.user_id)
                 .cloned()
                 .unwrap_or_default();
@@ -231,7 +265,7 @@ pub async fn load_completion_statuses(
             });
             let quizzes_graded = course_quiz_ids
                 .iter()
-                .all(|quiz_id| graded_quiz_ids.contains(quiz_id));
+                .all(|quiz_id| passed_quiz_ids.contains(quiz_id));
             let automatic_completed = content_complete && assignments_graded && quizzes_graded;
             let manual_completed = enrollment.manual_completed_at.is_some();
             let completed = automatic_completed || manual_completed;

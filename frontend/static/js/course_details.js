@@ -780,6 +780,7 @@ function buildGradeRow({
     meta,
     score,
     maxScore,
+    resultLabel = "",
     feedback,
     actionHtml = "",
     emptyScoreLabel = "Pending",
@@ -797,6 +798,7 @@ function buildGradeRow({
             </div>
             <div class="grade-score ${hasScore ? "" : emptyScoreClass}">
                 ${formatGradeScore(score, maxScore, emptyScoreLabel)}${percentLabel}
+                ${resultLabel}
             </div>
             ${feedback ? `<p class="grade-feedback"><strong>Feedback:</strong> ${escapeHtml(feedback)}</p>` : ""}
             ${actionHtml}
@@ -864,12 +866,19 @@ function renderGrades(data) {
 
     const quizRows = quizzes.map((quiz) => {
         const canViewAnswers = quiz.is_graded && quiz.attempt_id;
+        const resultLabel = quiz.is_graded && quiz.passed !== null && quiz.passed !== undefined
+            ? `<span class="${quiz.passed ? "quiz-pass-status pass" : "quiz-pass-status fail"}">${quiz.passed ? "Pass" : "Fail"}</span>`
+            : "";
 
         return buildGradeRow({
             title: quiz.title || "Untitled quiz",
-            meta: getGradeDateLabel(quiz.submitted_at, "Submitted") || (quiz.attempt_id ? "Attempt in progress" : ""),
+            meta: [
+                getGradeDateLabel(quiz.submitted_at, "Submitted") || (quiz.attempt_id ? "Attempt in progress" : ""),
+                `Passing mark: ${quiz.passing_mark ?? 50}%`,
+            ].filter(Boolean).join(" - "),
             score: quiz.total_score,
             maxScore: quiz.max_score,
+            resultLabel,
             feedback: null,
             actionHtml: canViewAnswers
                 ? `<button type="button" class="module-action-btn" onclick="openMyQuizAttemptReview(${quiz.attempt_id})">View Answers</button>`

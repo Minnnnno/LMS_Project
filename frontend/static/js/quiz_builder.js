@@ -157,6 +157,7 @@ function collectDraft() {
             ? `${document.getElementById("quiz-start-date-input").value}T${document.getElementById("quiz-start-time-input").value || "00:00"}:00`
             : null,
         max_attempts: document.getElementById("quiz-max-attempts-input").value.trim(),
+        passing_mark: document.getElementById("quiz-passing-mark-input").value.trim(),
         time_limit: document.getElementById("quiz-time-limit-input").value.trim(),
         prerequisite_module_ids: getSelectedQuizPrerequisiteIds(),
         questions: [...questionList.querySelectorAll(".question-card")].map((card, index) => ({
@@ -239,6 +240,10 @@ function validateDraft(draft) {
 
     if (draft.max_attempts && (!Number.isInteger(Number(draft.max_attempts)) || Number(draft.max_attempts) < 1)) {
         return "Max attempts must be 1 or higher.";
+    }
+
+    if (draft.passing_mark === "" || !Number.isInteger(Number(draft.passing_mark)) || Number(draft.passing_mark) < 0 || Number(draft.passing_mark) > 100) {
+        return "Passing mark must be between 0 and 100.";
     }
 
     if (draft.time_limit && (!Number.isInteger(Number(draft.time_limit)) || Number(draft.time_limit) < 1)) {
@@ -387,6 +392,7 @@ async function loadExistingQuiz() {
     document.getElementById("quiz-title-input").value = quiz.title || "";
     document.getElementById("quiz-description-input").value = quiz.description || "";
     document.getElementById("quiz-max-attempts-input").value = quiz.max_attempts ?? "";
+    document.getElementById("quiz-passing-mark-input").value = quiz.passing_mark ?? 50;
     document.getElementById("quiz-time-limit-input").value = quiz.time_limit ?? "";
     setDateTimeInputs(quiz.starts_at);
     renderQuizPrerequisiteOptions(quiz.prerequisite_module_ids || []);
@@ -428,6 +434,7 @@ async function saveDraft() {
             title: draft.title,
             description: draft.description || null,
             max_attempts: draft.max_attempts ? Number(draft.max_attempts) : null,
+            passing_mark: Number(draft.passing_mark),
             time_limit: draft.time_limit ? Number(draft.time_limit) : null,
             starts_at: draft.starts_at,
             prerequisite_module_ids: draft.prerequisite_module_ids,

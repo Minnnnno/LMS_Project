@@ -73,6 +73,8 @@ pub struct StaffQuizAttempt {
     pub submitted_at: Option<NaiveDateTime>,
     pub total_score: Option<i32>,
     pub max_score: i32,
+    pub passing_mark: i32,
+    pub passed: Option<bool>,
     pub is_graded: bool,
     pub answers: Vec<QuizAttemptReviewAnswer>,
 }
@@ -83,6 +85,8 @@ pub struct StudentQuizAttemptReview {
     pub quiz_id: i32,
     pub total_score: Option<i32>,
     pub max_score: i32,
+    pub passing_mark: i32,
+    pub passed: Option<bool>,
     pub submitted_at: Option<NaiveDateTime>,
     pub answers: Vec<QuizAttemptReviewAnswer>,
 }

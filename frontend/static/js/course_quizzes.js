@@ -23,11 +23,16 @@ function renderDeleteQuizAttemptButton(attemptId) {
 }
 
 function renderQuizAttemptMeta(attempt, includeDate = false) {
+    const result = attempt.is_graded && attempt.passed !== null && attempt.passed !== undefined
+        ? `<span class="${attempt.passed ? "quiz-pass-status pass" : "quiz-pass-status fail"}">${attempt.passed ? "Pass" : "Fail"}</span>`
+        : "";
+
     return `
         <span>${attempt.submitted_at ? "Submitted" : "In progress"}</span>
         <span>${attempt.is_graded ? "Graded" : "Not graded"}</span>
         ${includeDate ? `<span>${escapeHtml(formatAssignmentDate(attempt.submitted_at || attempt.started_at))}</span>` : ""}
         <span class="${isPerfectQuizAttempt(attempt) ? "quiz-perfect-score" : ""}">${includeDate ? "" : "Score: "}${escapeHtml(getQuizAttemptScoreLabel(attempt))}</span>
+        ${result}
         ${renderDeleteQuizAttemptButton(attempt.attempt_id)}
     `;
 }
@@ -179,6 +184,9 @@ function formatQuizDate(value) {
 
 function formatQuizMeta(quiz) {
     const parts = [formatQuizDate(quiz.starts_at)];
+    const passingMark = quiz.passing_mark ?? 50;
+
+    parts.push(`Passing mark: ${passingMark}%`);
 
     if (quiz.time_limit) {
         parts.push(`${quiz.time_limit} min`);
@@ -385,6 +393,9 @@ function renderStudentQuizReviewAnswer(answer) {
 
 function renderStudentQuizReview(review) {
     const answers = Array.isArray(review.answers) ? review.answers : [];
+    const result = review.passed !== null && review.passed !== undefined
+        ? `<span class="${review.passed ? "quiz-pass-status pass" : "quiz-pass-status fail"}">${review.passed ? "Pass" : "Fail"}</span>`
+        : "";
 
     return `
         <div class="staff-submission-list">
@@ -392,6 +403,8 @@ function renderStudentQuizReview(review) {
                 <div class="staff-submission-head">
                     <div>
                         <strong>Score: ${escapeHtml(formatGradeNumber(review.total_score ?? 0))} / ${escapeHtml(formatGradeNumber(review.max_score))}</strong>
+                        ${result}
+                        <span>Passing mark: ${escapeHtml(review.passing_mark ?? 50)}%</span>
                         <span>${escapeHtml(formatAssignmentDate(review.submitted_at))}</span>
                     </div>
                 </div>

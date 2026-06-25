@@ -709,6 +709,27 @@
     color: #475467;
 }
 
+.quiz-pass-status {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin-left: 0.35rem;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.quiz-pass-status.pass {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.quiz-pass-status.fail {
+    background: #fee2e2;
+    color: #b42318;
+}
+
 .quiz-question-result-head {
     display: flex;
     align-items: flex-start;

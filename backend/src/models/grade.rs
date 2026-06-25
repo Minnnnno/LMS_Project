@@ -25,8 +25,10 @@ pub struct QuizGrade {
     pub quiz_id: i32,
     pub title: String,
     pub max_score: i32,
+    pub passing_mark: i32,
     pub total_score: Option<i32>,
     pub submitted_at: Option<NaiveDateTime>,
     pub attempt_id: Option<i32>,
     pub is_graded: bool,
+    pub passed: Option<bool>,
 }
