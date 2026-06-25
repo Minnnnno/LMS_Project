@@ -89,7 +89,7 @@ class ProjectsPage {
 
         const rows = submissions.map(s => {
             const date = s.submitted_at
-                ? new Date(s.submitted_at).toLocaleString("en-SG")
+                ? new Date(s.submitted_at).toLocaleString("en-SG", { timeZone: "Asia/Singapore" })
                 : "Unknown date";
             const scoreEl = s.score != null
                 ? `<span class="badge bg-success ms-2">${s.score}</span>`

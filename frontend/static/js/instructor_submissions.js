@@ -17,7 +17,7 @@ class InstructorSubmissionsPage {
         const date = new Date(value);
         return Number.isNaN(date.getTime())
             ? String(value)
-            : date.toLocaleString("en-SG", { dateStyle: "medium", timeStyle: "short" });
+            : date.toLocaleString("en-SG", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Singapore" });
     }
 
     populateCourseFilter() {
