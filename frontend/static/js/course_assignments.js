@@ -31,6 +31,11 @@ function renderAssignments(assignments) {
     }
 
     assignmentList.innerHTML = currentAssignments.map((assignment) => {
+        const moduleLabel = getAssignmentModuleTitle(assignment);
+        const prerequisite = getFirstIncompleteAssignmentPrerequisite(assignment);
+        const lockHint = !isInstructor && prerequisite
+            ? `<div class="assignment-lock-hint">Complete ${escapeHtml(prerequisite.title || "the prerequisite module")} first</div>`
+            : "";
         const adminButtons = isInstructor
             ? `
                 <div class="module-actions">
@@ -44,7 +49,8 @@ function renderAssignments(assignments) {
             <div class="assignment-row" onclick="openAssignmentDetails(${assignment.assignment_id})">
                 <div>
                     <div class="assignment-title">${escapeHtml(assignment.title || "Untitled assignment")}</div>
-                    <div class="assignment-subtitle">Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
+                    <div class="assignment-subtitle">${escapeHtml(moduleLabel)} · Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
+                    ${lockHint}
                 </div>
                 ${adminButtons}
             </div>
@@ -76,15 +82,22 @@ function renderDropboxAssignments() {
         return;
     }
 
-    list.innerHTML = assignments.map((assignment) => `
-        <div class="grade-row dropbox-row" onclick="openAssignmentDropbox(${assignment.assignment_id})">
-            <div>
-                <div class="grade-title">${escapeHtml(assignment.title || "Untitled assignment")}</div>
-                <div class="grade-meta">Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
+    list.innerHTML = assignments.map((assignment) => {
+        const prerequisite = getFirstIncompleteAssignmentPrerequisite(assignment);
+        const status = prerequisite
+            ? `Locked: complete ${prerequisite.title || "the prerequisite module"}`
+            : `Due: ${formatAssignmentDate(assignment.due_date)}`;
+
+        return `
+            <div class="grade-row dropbox-row" onclick="openAssignmentDropbox(${assignment.assignment_id})">
+                <div>
+                    <div class="grade-title">${escapeHtml(assignment.title || "Untitled assignment")}</div>
+                    <div class="grade-meta">${escapeHtml(getAssignmentModuleTitle(assignment))} · ${escapeHtml(status)}</div>
+                </div>
+                <div class="grade-score">${prerequisite ? "Locked" : "Open"}</div>
             </div>
-            <div class="grade-score">Open</div>
-        </div>
-    `).join("");
+        `;
+    }).join("");
 }
 
 async function loadGrades() {
@@ -158,7 +171,7 @@ function renderCourseSubmissionsTab() {
         <div class="grade-row submission-shortcut-row" onclick="openAssignmentDetails(${assignment.assignment_id}, 'submissions')">
             <div>
                 <div class="grade-title">${escapeHtml(assignment.title || "Untitled assignment")}</div>
-                <div class="grade-meta">Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
+                <div class="grade-meta">${escapeHtml(getAssignmentModuleTitle(assignment))} · Due: ${escapeHtml(formatAssignmentDate(assignment.due_date))}</div>
             </div>
             <div class="grade-score">View Submissions</div>
         </div>
@@ -184,12 +197,19 @@ function openAssignmentDetails(assignmentId, initialTab = "details") {
     document.getElementById("assignment-details-title").textContent = assignment.title || "Assignment Details";
     document.getElementById("assignment-details-description").textContent =
         assignment.description || "No description provided.";
+    document.getElementById("assignment-details-module").textContent = getAssignmentModuleTitle(assignment);
     document.getElementById("assignment-details-due").textContent = formatAssignmentDate(assignment.due_date);
     document.getElementById("assignment-details-score").textContent = assignment.max_score ?? "Not set";
+    document.getElementById("assignment-details-passing").textContent =
+        assignment.passing_mark !== null && assignment.passing_mark !== undefined
+            ? `${formatGradeNumber(assignment.passing_mark)}%`
+            : "50%";
     document.getElementById("assignment-details-file-type").textContent =
         getFileTypeLabel(assignment.expected_file_type);
     document.getElementById("assignment-details-submission").textContent =
         getAssignmentSubmissionLabel(assignment);
+    document.getElementById("assignment-details-prerequisites").textContent =
+        getAssignmentPrerequisiteLabel(assignment);
 
     const briefWrap = document.getElementById("assignment-details-brief-wrap");
     const briefLink = document.getElementById("assignment-details-brief-link");
@@ -228,27 +248,31 @@ function resetAssignmentDropbox(assignment) {
     const submitButton = document.getElementById("submit-assignment-dropbox-btn");
     const existing = document.getElementById("assignment-dropbox-existing");
     const acceptsFiles = assignment.allow_file_submission ?? true;
+    const prerequisite = getFirstIncompleteAssignmentPrerequisite(assignment);
+    const isLocked = !isInstructor && Boolean(prerequisite);
 
     if (fileInput) {
         fileInput.value = "";
-        fileInput.disabled = !acceptsFiles;
+        fileInput.disabled = !acceptsFiles || isLocked;
         fileInput.accept = getAssignmentFileAccept(assignment.expected_file_type);
     }
 
     if (noteInput) {
         noteInput.value = "";
-        noteInput.disabled = assignment.allow_text_submission === false;
+        noteInput.disabled = assignment.allow_text_submission === false || isLocked;
     }
 
     if (status) {
-        status.textContent = acceptsFiles
+        status.textContent = isLocked
+            ? `Complete ${prerequisite.title || "the prerequisite module"} before submitting this assignment.`
+            : acceptsFiles
             ? ""
             : "This assignment is not accepting file uploads.";
     }
 
     if (submitButton) {
-        submitButton.disabled = !acceptsFiles;
-        submitButton.textContent = "Submit Assignment";
+        submitButton.disabled = !acceptsFiles || isLocked;
+        submitButton.textContent = isLocked ? "Locked" : "Submit Assignment";
     }
 
     if (existing) {
@@ -676,6 +700,114 @@ function getAssignmentSubmissionLabel(assignment) {
     return methods.length ? methods.join(" and ") : "No submission method set";
 }
 
+function getAssignmentPrerequisiteModules(assignment) {
+    const prerequisiteIds = Array.isArray(assignment?.prerequisite_module_ids)
+        ? assignment.prerequisite_module_ids.map(Number)
+        : [];
+
+    return prerequisiteIds
+        .map((moduleId) => currentModules.find((item) => Number(item.module_id) === moduleId))
+        .filter(Boolean)
+        .sort((first, second) => Number(first.position) - Number(second.position));
+}
+
+function getAssignmentPrerequisiteLabel(assignment) {
+    const modules = getAssignmentPrerequisiteModules(assignment);
+
+    if (!modules.length) {
+        return "None";
+    }
+
+    return modules
+        .map((module) => `${module.position}. ${module.title || "Untitled module"}`)
+        .join(", ");
+}
+
+function getFirstIncompleteAssignmentPrerequisite(assignment) {
+    if (isInstructor || !isEnrolled) {
+        return null;
+    }
+
+    return getAssignmentPrerequisiteModules(assignment)
+        .find((module) => getModuleProgressPercent(module.module_id) < 100) || null;
+}
+
+function getAssignmentModuleTitle(assignment) {
+    const moduleId = Number(assignment?.module_id);
+    const module = currentModules.find((item) => Number(item.module_id) === moduleId);
+
+    return module?.title || "Module not set";
+}
+
+function populateAssignmentModuleOptions(selectedModuleId = null) {
+    const select = document.getElementById("assignment-module-input");
+
+    if (!select) {
+        return;
+    }
+
+    if (!currentModules.length) {
+        select.innerHTML = '<option value="">Create a module first</option>';
+        select.disabled = true;
+        return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = currentModules
+        .slice()
+        .sort((first, second) => Number(first.position) - Number(second.position))
+        .map((module) => `
+            <option value="${module.module_id}">${escapeHtml(`M${module.position}: ${module.title}`)}</option>
+        `)
+        .join("");
+
+    select.value = String(selectedModuleId || currentModules[0].module_id);
+}
+
+function populateAssignmentPrerequisiteOptions(assignment = null) {
+    const prerequisiteInput = document.getElementById("assignment-prerequisites-input");
+
+    if (!prerequisiteInput) {
+        return;
+    }
+
+    const selectedIds = new Set(
+        Array.isArray(assignment?.prerequisite_module_ids)
+            ? assignment.prerequisite_module_ids.map(Number)
+            : []
+    );
+
+    const options = currentModules
+        .slice()
+        .sort((first, second) => Number(first.position) - Number(second.position))
+        .map((module) => {
+            const moduleId = Number(module.module_id);
+            const checked = selectedIds.has(moduleId) ? "checked" : "";
+            const label = `${module.position}. ${module.title || "Untitled module"}`;
+
+            return `
+                <label class="prerequisite-option">
+                    <input type="checkbox" value="${moduleId}" ${checked}>
+                    <span>${escapeHtml(label)}</span>
+                </label>
+            `;
+        })
+        .join("");
+
+    prerequisiteInput.innerHTML = options || '<p class="prerequisite-empty">Create a module first.</p>';
+}
+
+function getSelectedAssignmentPrerequisiteIds() {
+    const prerequisiteInput = document.getElementById("assignment-prerequisites-input");
+
+    if (!prerequisiteInput) {
+        return [];
+    }
+
+    return [...prerequisiteInput.querySelectorAll('input[type="checkbox"]:checked')]
+        .map((input) => Number(input.value));
+}
+
 function getFileTypeLabel(value) {
     const labels = {
         pdf: "PDF",
@@ -746,6 +878,15 @@ async function submitAssignmentDropbox() {
         return;
     }
 
+    const prerequisite = getFirstIncompleteAssignmentPrerequisite(assignment);
+    if (prerequisite) {
+        setDropboxSubmitState(
+            false,
+            `Complete ${prerequisite.title || "the prerequisite module"} before submitting this assignment.`
+        );
+        return;
+    }
+
     if ((assignment.allow_file_submission ?? true) && !file) {
         setDropboxSubmitState(false, "Please choose a file to upload.");
         return;
@@ -789,6 +930,8 @@ async function submitAssignmentDropbox() {
 
 function openAssignmentModal(assignment = null) {
     populateDueTimeOptions();
+    populateAssignmentModuleOptions(assignment?.module_id || null);
+    populateAssignmentPrerequisiteOptions(assignment);
     setAssignmentSaveState(false, "");
     currentEditingAssignmentId = assignment?.assignment_id || null;
     currentAssignmentBriefUrl = assignment?.assignment_brief_url || null;
@@ -798,6 +941,7 @@ function openAssignmentModal(assignment = null) {
     document.getElementById("assignment-due-date-input").value = getDateInputValue(assignment?.due_date);
     document.getElementById("assignment-due-time-input").value = getTimeInputValue(assignment?.due_date);
     document.getElementById("assignment-score-input").value = assignment?.max_score ?? "";
+    document.getElementById("assignment-passing-mark-input").value = assignment?.passing_mark ?? 50;
     document.getElementById("assignment-brief-file-input").value = "";
     const briefLink = document.getElementById("assignment-brief-current-link");
     if (briefLink) {
@@ -815,6 +959,10 @@ function openAssignmentModal(assignment = null) {
 function closeAssignmentModal() {
     currentEditingAssignmentId = null;
     currentAssignmentBriefUrl = null;
+    const prerequisiteInput = document.getElementById("assignment-prerequisites-input");
+    if (prerequisiteInput) {
+        prerequisiteInput.innerHTML = "";
+    }
     document.getElementById("assignment-modal").style.display = "none";
 }
 
@@ -852,6 +1000,8 @@ async function saveAssignment() {
     const dueDate = document.getElementById("assignment-due-date-input").value;
     const dueTime = document.getElementById("assignment-due-time-input").value;
     const maxScore = document.getElementById("assignment-score-input").value.trim();
+    const moduleId = document.getElementById("assignment-module-input").value;
+    const passingMark = document.getElementById("assignment-passing-mark-input").value.trim();
     const briefFile = document.getElementById("assignment-brief-file-input").files[0];
     const expectedFileType = document.getElementById("assignment-file-type-input").value;
     const maxFileSize = document.getElementById("assignment-file-size-input").value.trim();
@@ -872,8 +1022,18 @@ async function saveAssignment() {
         return;
     }
 
+    if (!moduleId) {
+        alert("Please choose a module");
+        return;
+    }
+
     if (maxScore === "" || Number(maxScore) < 0) {
         alert("Please enter a max score of 0 or higher");
+        return;
+    }
+
+    if (passingMark === "" || Number(passingMark) < 0 || Number(passingMark) > 100) {
+        alert("Please enter a passing mark between 0 and 100");
         return;
     }
 
@@ -889,16 +1049,19 @@ async function saveAssignment() {
 
         const payload = {
             course_id: Number(courseId),
+            module_id: Number(moduleId),
             title,
             description,
             due_date: toApiDateTime(`${dueDate}T${dueTime}`),
             max_score: Number(maxScore),
+            passing_mark: Number(passingMark),
             assignment_brief_url: briefUrl || null,
             expected_file_type: expectedFileType || null,
             allow_text_submission: document.getElementById("assignment-text-input").checked,
             allow_file_submission: document.getElementById("assignment-file-input").checked,
             max_file_size_mb: maxFileSize ? Number(maxFileSize) : null,
             submission_instructions: submissionInstructions || null,
+            prerequisite_module_ids: getSelectedAssignmentPrerequisiteIds(),
         };
 
         if (currentEditingAssignmentId) {

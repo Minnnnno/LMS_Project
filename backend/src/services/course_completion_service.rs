@@ -147,7 +147,13 @@ pub async fn load_completion_statuses(
     }
 
     let mut assignment_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
+    let mut assignment_pass_thresholds: HashMap<i32, (rust_decimal::Decimal, rust_decimal::Decimal)> =
+        HashMap::new();
     for assignment in assignment_rows {
+        if let Some(max_score) = assignment.max_score {
+            assignment_pass_thresholds
+                .insert(assignment.assignment_id, (max_score, assignment.passing_mark));
+        }
         assignment_ids_by_course
             .entry(assignment.course_id)
             .or_default()
@@ -259,9 +265,19 @@ pub async fn load_completion_statuses(
                     .iter()
                     .all(|module_id| completed_module_ids.contains(module_id));
             let assignments_graded = course_assignment_ids.iter().all(|assignment_id| {
+                let Some((max_score, passing_mark)) = assignment_pass_thresholds.get(assignment_id) else {
+                    return false;
+                };
+                if *max_score <= rust_decimal::Decimal::ZERO {
+                    return false;
+                }
+
                 latest_submission_by_user_assignment
                     .get(&(enrollment.user_id, *assignment_id))
-                    .is_some_and(|submission| submission.score.is_some())
+                    .and_then(|submission| submission.score)
+                    .is_some_and(|score| {
+                        score * rust_decimal::Decimal::new(100, 0) >= *passing_mark * *max_score
+                    })
             });
             let quizzes_graded = course_quiz_ids
                 .iter()

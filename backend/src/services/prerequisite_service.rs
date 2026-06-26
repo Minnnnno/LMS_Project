@@ -6,7 +6,9 @@ use sea_orm::{
     QueryOrder, Set,
 };
 
-use crate::entity::{module_prerequisites, module_progress, modules, quiz_prerequisites};
+use crate::entity::{
+    assignment_prerequisites, module_prerequisites, module_progress, modules, quiz_prerequisites,
+};
 use crate::services::quiz_helper::{QuizResult, QuizServiceError};
 
 fn unique_module_ids(module_ids: Vec<i32>) -> Vec<i32> {
@@ -47,6 +49,24 @@ pub async fn get_quiz_prerequisite_ids_for_service(
         .map_err(|err| {
             QuizServiceError::Internal(format!(
                 "Database error finding quiz prerequisites: {}",
+                err
+            ))
+        })
+        .map(|rows| rows.into_iter().map(|row| row.required_module_id).collect())
+}
+
+pub async fn get_assignment_prerequisite_ids(
+    db: &DatabaseConnection,
+    assignment_id: i32,
+) -> Result<Vec<i32>, HttpResponse> {
+    assignment_prerequisites::Entity::find()
+        .filter(assignment_prerequisites::Column::AssignmentId.eq(assignment_id))
+        .order_by_asc(assignment_prerequisites::Column::PrerequisiteId)
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding assignment prerequisites: {}",
                 err
             ))
         })
@@ -171,6 +191,47 @@ pub async fn replace_quiz_prerequisites_for_service(
         .await
         .map_err(|err| {
             QuizServiceError::Internal(format!("Database error saving quiz prerequisite: {}", err))
+        })?;
+    }
+
+    Ok(())
+}
+
+pub async fn replace_assignment_prerequisites(
+    db: &DatabaseConnection,
+    course_id: i32,
+    assignment_id: i32,
+    required_module_ids: Vec<i32>,
+) -> Result<(), HttpResponse> {
+    let required_module_ids = unique_module_ids(required_module_ids);
+    validate_required_modules(db, course_id, None, &required_module_ids)
+        .await
+        .map_err(QuizServiceError::into_response)?;
+
+    assignment_prerequisites::Entity::delete_many()
+        .filter(assignment_prerequisites::Column::AssignmentId.eq(assignment_id))
+        .exec(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!(
+                "Database error clearing assignment prerequisites: {}",
+                err
+            ))
+        })?;
+
+    for required_module_id in required_module_ids {
+        assignment_prerequisites::ActiveModel {
+            assignment_id: Set(assignment_id),
+            required_module_id: Set(required_module_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError().body(format!(
+                "Database error saving assignment prerequisite: {}",
+                err
+            ))
         })?;
     }
 

@@ -2110,6 +2110,13 @@
     font-size: 0.9rem;
 }
 
+.assignment-lock-hint {
+    margin-top: 6px;
+    color: #b42318;
+    font-size: 0.84rem;
+    font-weight: 800;
+}
+
 .quiz-attempt-state {
     margin-top: 6px;
     color: #1570ef;

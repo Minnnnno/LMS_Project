@@ -1,3 +1,4 @@
+pub mod assignment_prerequisites;
 pub mod assignments;
 pub mod course_certificates;
 pub mod courses;

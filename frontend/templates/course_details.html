@@ -302,6 +302,12 @@
         <label for="assignment-description-input">Description</label>
         <textarea id="assignment-description-input" rows="3" placeholder="Brief assignment description"></textarea>
 
+        <label for="assignment-module-input">Module</label>
+        <select id="assignment-module-input"></select>
+
+        <label for="assignment-prerequisites-input">Prerequisites</label>
+        <div id="assignment-prerequisites-input" class="prerequisite-checklist"></div>
+
         <div class="form-row">
             <div>
                 <label for="assignment-due-date-input">Due date</label>
@@ -315,6 +321,9 @@
 
         <label for="assignment-score-input">Max score</label>
         <input type="number" id="assignment-score-input" min="0" step="0.01" placeholder="100">
+
+        <label for="assignment-passing-mark-input">Passing mark (%)</label>
+        <input type="number" id="assignment-passing-mark-input" min="0" max="100" step="0.01" placeholder="50">
 
         <label for="assignment-brief-file-input">Brief file</label>
         <input type="file" id="assignment-brief-file-input">
@@ -371,6 +380,10 @@
 
             <dl class="assignment-details-list">
                 <div>
+                    <dt>Module</dt>
+                    <dd id="assignment-details-module"></dd>
+                </div>
+                <div>
                     <dt>Due</dt>
                     <dd id="assignment-details-due"></dd>
                 </div>
@@ -379,12 +392,20 @@
                     <dd id="assignment-details-score"></dd>
                 </div>
                 <div>
+                    <dt>Passing mark</dt>
+                    <dd id="assignment-details-passing"></dd>
+                </div>
+                <div>
                     <dt>Expected file type</dt>
                     <dd id="assignment-details-file-type"></dd>
                 </div>
                 <div>
                     <dt>Submission</dt>
                     <dd id="assignment-details-submission"></dd>
+                </div>
+                <div>
+                    <dt>Prerequisites</dt>
+                    <dd id="assignment-details-prerequisites"></dd>
                 </div>
             </dl>
 

@@ -8,6 +8,21 @@ use crate::entity::{assignments, quiz, quiz_attempts, quiz_questions, submission
 use crate::models::grade::{AssignmentGrade, CourseGradebook, QuizGrade};
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
 
+fn passed_assignment(
+    score: Option<rust_decimal::Decimal>,
+    max_score: Option<rust_decimal::Decimal>,
+    passing_mark: rust_decimal::Decimal,
+) -> Option<bool> {
+    let max_score = max_score?;
+    let score = score?;
+
+    if max_score <= rust_decimal::Decimal::ZERO {
+        return None;
+    }
+
+    Some(score * rust_decimal::Decimal::new(100, 0) >= passing_mark * max_score)
+}
+
 fn passed_quiz(
     total_score: Option<i32>,
     max_score: i32,
@@ -96,11 +111,17 @@ pub async fn get_my_course_grades(
                 title: assignment.title,
                 due_date: assignment.due_date,
                 max_score: assignment.max_score,
+                passing_mark: assignment.passing_mark,
                 score: submission.and_then(|item| item.score),
                 feedback: submission
                     .and_then(|item| item.feedback.clone())
                     .filter(|feedback| !feedback.trim().is_empty()),
                 submitted_at: submission.map(|item| item.submitted_at),
+                passed: passed_assignment(
+                    submission.and_then(|item| item.score),
+                    assignment.max_score,
+                    assignment.passing_mark,
+                ),
             }
         })
         .collect::<Vec<_>>();

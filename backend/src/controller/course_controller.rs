@@ -1,8 +1,8 @@
 use crate::entity::courses::{self, CourseStatus};
 use crate::entity::enrollments;
 use crate::entity::{
-    assignments, module_contents, module_prerequisites, module_progress, modules, quiz,
-    quiz_attempts, quiz_prerequisites, users,
+    assignment_prerequisites, assignments, module_contents, module_prerequisites, module_progress,
+    modules, quiz, quiz_attempts, quiz_prerequisites, users,
 };
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::models::module_progress::{CourseModuleProgress, CourseProgress};
@@ -44,10 +44,30 @@ struct QuizOverviewPayload {
     title: String,
     description: Option<String>,
     max_attempts: Option<i32>,
+    passing_mark: i32,
     time_limit: Option<i32>,
     starts_at: Option<chrono::NaiveDateTime>,
     ends_at: Option<chrono::NaiveDateTime>,
     created_at: chrono::NaiveDateTime,
+    prerequisite_module_ids: Vec<i32>,
+}
+
+#[derive(Serialize)]
+struct AssignmentOverviewPayload {
+    assignment_id: i32,
+    course_id: i32,
+    module_id: i32,
+    title: String,
+    description: Option<String>,
+    due_date: Option<chrono::NaiveDateTime>,
+    max_score: Option<rust_decimal::Decimal>,
+    passing_mark: rust_decimal::Decimal,
+    assignment_brief_url: Option<String>,
+    expected_file_type: Option<String>,
+    allow_text_submission: Option<bool>,
+    allow_file_submission: Option<bool>,
+    max_file_size_mb: Option<i32>,
+    submission_instructions: Option<String>,
     prerequisite_module_ids: Vec<i32>,
 }
 
@@ -57,7 +77,7 @@ struct CourseOverviewPayload {
     can_manage: bool,
     enrolled: bool,
     modules: Vec<ModuleOverviewPayload>,
-    assignments: Vec<assignments::Model>,
+    assignments: Vec<AssignmentOverviewPayload>,
     quizzes: Vec<QuizOverviewPayload>,
     course_progress: Option<CourseProgress>,
     module_progress: Vec<CourseModuleProgress>,
@@ -771,6 +791,9 @@ pub async fn get_my_courses_assignments_overview(
     let course_ids: Vec<i32> = course_rows.iter().map(|course| course.course_id).collect();
     let assignment_rows = match assignments::Entity::find()
         .filter(assignments::Column::CourseId.is_in(course_ids))
+        .order_by_asc(assignments::Column::CourseId)
+        .order_by_asc(assignments::Column::ModuleId)
+        .order_by_asc(assignments::Column::DueDate)
         .all(db.get_ref())
         .await
     {
@@ -1045,6 +1068,7 @@ pub async fn get_my_courses_assessments_overview(
                 title: quiz.title,
                 description: quiz.description,
                 max_attempts: quiz.max_attempts,
+                passing_mark: quiz.passing_mark,
                 time_limit: quiz.time_limit,
                 starts_at: quiz.starts_at,
                 ends_at: quiz.ends_at,
@@ -1159,6 +1183,8 @@ pub async fn get_course_overview(
             .all(db.get_ref()),
         assignments::Entity::find()
             .filter(assignments::Column::CourseId.eq(course_id))
+            .order_by_asc(assignments::Column::ModuleId)
+            .order_by_asc(assignments::Column::DueDate)
             .all(db.get_ref()),
         quiz::Entity::find()
             .filter(quiz::Column::CourseId.eq(course_id))
@@ -1188,6 +1214,10 @@ pub async fn get_course_overview(
     };
 
     let module_ids: Vec<i32> = module_rows.iter().map(|module| module.module_id).collect();
+    let assignment_ids: Vec<i32> = assignment_rows
+        .iter()
+        .map(|assignment| assignment.assignment_id)
+        .collect();
     let quiz_ids: Vec<i32> = quiz_rows.iter().map(|quiz| quiz.quiz_id).collect();
 
     let module_prerequisite_rows = if module_ids.is_empty() {
@@ -1205,6 +1235,15 @@ pub async fn get_course_overview(
         quiz_prerequisites::Entity::find()
             .filter(quiz_prerequisites::Column::QuizId.is_in(quiz_ids))
             .order_by_asc(quiz_prerequisites::Column::PrerequisiteId)
+            .all(db.get_ref())
+            .await
+    };
+    let assignment_prerequisite_rows = if assignment_ids.is_empty() {
+        Ok(Vec::new())
+    } else {
+        assignment_prerequisites::Entity::find()
+            .filter(assignment_prerequisites::Column::AssignmentId.is_in(assignment_ids))
+            .order_by_asc(assignment_prerequisites::Column::PrerequisiteId)
             .all(db.get_ref())
             .await
     };
@@ -1240,6 +1279,24 @@ pub async fn get_course_overview(
         Err(err) => {
             return HttpResponse::InternalServerError().body(format!(
                 "Database error finding quiz prerequisites: {}",
+                err
+            ));
+        }
+    }
+
+    let mut assignment_prerequisites_by_id: HashMap<i32, Vec<i32>> = HashMap::new();
+    match assignment_prerequisite_rows {
+        Ok(rows) => {
+            for row in rows {
+                assignment_prerequisites_by_id
+                    .entry(row.assignment_id)
+                    .or_default()
+                    .push(row.required_module_id);
+            }
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!(
+                "Database error finding assignment prerequisites: {}",
                 err
             ));
         }
@@ -1287,12 +1344,36 @@ pub async fn get_course_overview(
             title: quiz.title,
             description: quiz.description,
             max_attempts: quiz.max_attempts,
+            passing_mark: quiz.passing_mark,
             time_limit: quiz.time_limit,
             starts_at: quiz.starts_at,
             ends_at: quiz.ends_at,
             created_at: quiz.created_at,
             prerequisite_module_ids: quiz_prerequisites_by_id
                 .remove(&quiz.quiz_id)
+                .unwrap_or_default(),
+        })
+        .collect();
+
+    let assignments: Vec<AssignmentOverviewPayload> = assignment_rows
+        .into_iter()
+        .map(|assignment| AssignmentOverviewPayload {
+            assignment_id: assignment.assignment_id,
+            course_id: assignment.course_id,
+            module_id: assignment.module_id,
+            title: assignment.title,
+            description: assignment.description,
+            due_date: assignment.due_date,
+            max_score: assignment.max_score,
+            passing_mark: assignment.passing_mark,
+            assignment_brief_url: assignment.assignment_brief_url,
+            expected_file_type: assignment.expected_file_type,
+            allow_text_submission: assignment.allow_text_submission,
+            allow_file_submission: assignment.allow_file_submission,
+            max_file_size_mb: assignment.max_file_size_mb,
+            submission_instructions: assignment.submission_instructions,
+            prerequisite_module_ids: assignment_prerequisites_by_id
+                .remove(&assignment.assignment_id)
                 .unwrap_or_default(),
         })
         .collect();
@@ -1338,7 +1419,7 @@ pub async fn get_course_overview(
         can_manage,
         enrolled,
         modules,
-        assignments: assignment_rows,
+        assignments,
         quizzes,
         course_progress,
         module_progress,

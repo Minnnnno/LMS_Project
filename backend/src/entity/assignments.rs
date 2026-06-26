@@ -11,6 +11,8 @@ pub struct Model {
 
     pub course_id: i32,
 
+    pub module_id: i32,
+
     pub title: String,
 
     pub description: Option<String>,
@@ -18,6 +20,8 @@ pub struct Model {
     pub due_date: Option<NaiveDateTime>,
 
     pub max_score: Option<Decimal>,
+
+    pub passing_mark: Decimal,
 
     pub assignment_brief_url: Option<String>,
 

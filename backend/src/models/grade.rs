@@ -15,9 +15,11 @@ pub struct AssignmentGrade {
     pub title: String,
     pub due_date: Option<NaiveDateTime>,
     pub max_score: Option<Decimal>,
+    pub passing_mark: Decimal,
     pub score: Option<Decimal>,
     pub feedback: Option<String>,
     pub submitted_at: Option<NaiveDateTime>,
+    pub passed: Option<bool>,
 }
 
 #[derive(Serialize)]

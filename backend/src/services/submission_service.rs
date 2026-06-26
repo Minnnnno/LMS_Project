@@ -11,6 +11,7 @@ use crate::models::submission::{CreateSubmission, GradeSubmission, StaffSubmissi
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
 use crate::services::course_service::can_manage_course;
 use crate::services::mailer_service::{send_mail_message, MailRequest};
+use crate::services::prerequisite_service;
 
 async fn require_enrolled_for_assignment(
     db: &DatabaseConnection,
@@ -27,7 +28,27 @@ async fn require_enrolled_for_assignment(
         .ok_or_else(|| HttpResponse::NotFound().body("Assignment not found"))?;
 
     match is_enrolled(db, user_id, assignment.course_id).await {
-        Ok(true) => Ok(assignment),
+        Ok(true) => {
+            let prerequisite_ids =
+                prerequisite_service::get_assignment_prerequisite_ids(db, assignment.assignment_id)
+                    .await?;
+
+            if let Some(prerequisite) =
+                prerequisite_service::get_first_incomplete_required_module(
+                    db,
+                    user_id,
+                    prerequisite_ids,
+                )
+                .await?
+            {
+                return Err(HttpResponse::Forbidden().body(format!(
+                    "Complete {} before submitting this assignment",
+                    prerequisite.title
+                )));
+            }
+
+            Ok(assignment)
+        }
         Ok(false) => Err(HttpResponse::Forbidden()
             .body("You must be enrolled in this course to submit assignments")),
         Err(response) => Err(response),
