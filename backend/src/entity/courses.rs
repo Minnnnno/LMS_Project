@@ -16,8 +16,32 @@ pub struct Model {
     pub description: Option<String>,
     pub background_image_url: Option<String>,
     pub visibility: String,
+    pub category: CourseCategory,
     pub created_at: Option<DateTimeWithTimeZone>,
     pub updated_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "courses_category_enum"
+)]
+pub enum CourseCategory {
+    #[sea_orm(string_value = "Uncategorised")]
+    Uncategorised,
+
+    #[sea_orm(string_value = "STEM")]
+    Stem,
+
+    #[sea_orm(string_value = "Lifestyle")]
+    Lifestyle,
+
+    #[sea_orm(string_value = "Finance")]
+    Finance,
+
+    #[sea_orm(string_value = "Technology")]
+    Technology,
 }
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[sea_orm(

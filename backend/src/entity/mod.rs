@@ -31,3 +31,4 @@ pub mod roles;
 pub mod submissions;
 pub mod user_roles;
 pub mod users;
+pub mod user_category_preferences;

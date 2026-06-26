@@ -2,14 +2,17 @@ use actix_web::web;
 
 use crate::controller::course_controller::{
     create_course, delete_course, get_course_completion_roster, get_course_overview, get_courses,
-    get_my_courses, get_my_courses_assessments_overview, get_my_courses_assignments_overview,
-    get_my_courses_completion_overview, get_my_courses_content_overview,
-    get_my_courses_progress_overview, get_organisation_courses, mark_course_manual_completion,
-    search_course, undo_course_manual_completion, update_course,
+    get_course_preferences, get_my_courses, get_my_courses_assessments_overview,
+    get_my_courses_assignments_overview, get_my_courses_completion_overview,
+    get_my_courses_content_overview, get_my_courses_progress_overview, get_organisation_courses,
+    mark_course_manual_completion, save_course_preferences, search_course,
+    undo_course_manual_completion, update_course,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(get_courses);
+    cfg.service(get_course_preferences);
+    cfg.service(save_course_preferences);
     cfg.service(get_organisation_courses);
     cfg.service(get_my_courses);
     cfg.service(get_my_courses_progress_overview);

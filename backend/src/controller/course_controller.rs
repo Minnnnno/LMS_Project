@@ -1,8 +1,8 @@
-use crate::entity::courses::{self, CourseStatus};
+use crate::entity::courses::{self, CourseCategory, CourseStatus};
 use crate::entity::enrollments;
 use crate::entity::{
     assignment_prerequisites, assignments, module_contents, module_prerequisites, module_progress,
-    modules, quiz, quiz_attempts, quiz_prerequisites, users,
+    modules, quiz, quiz_attempts, quiz_prerequisites, user_category_preferences, users,
 };
 use crate::models::course::{CourseQuery, CreateCourse, UpdateCourse};
 use crate::models::module_progress::{CourseModuleProgress, CourseProgress};
@@ -23,7 +23,7 @@ use sea_orm::sea_query::Expr;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, Set,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -152,6 +152,146 @@ struct CourseAssessmentsOverviewPayload {
     course: courses::Model,
     quizzes: Vec<QuizOverviewPayload>,
     statuses: Vec<QuizAttemptStatusOverviewPayload>,
+}
+
+#[derive(Serialize)]
+struct CoursePreferenceStatusPayload {
+    should_prompt: bool,
+    categories: Vec<String>,
+    recommended_courses: Vec<courses::Model>,
+}
+
+#[derive(Deserialize)]
+struct CoursePreferenceRequest {
+    categories: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct CoursePreferenceSavePayload {
+    recommended_courses: Vec<courses::Model>,
+}
+
+fn category_to_label(category: &CourseCategory) -> &'static str {
+    match category {
+        CourseCategory::Uncategorised => "Uncategorised",
+        CourseCategory::Stem => "STEM",
+        CourseCategory::Lifestyle => "Lifestyle",
+        CourseCategory::Finance => "Finance",
+        CourseCategory::Technology => "Technology",
+    }
+}
+
+fn is_preference_category(category: &CourseCategory) -> bool {
+    matches!(
+        category,
+        CourseCategory::Stem
+            | CourseCategory::Lifestyle
+            | CourseCategory::Finance
+            | CourseCategory::Technology
+    )
+}
+
+fn parse_course_category(value: &str) -> Option<CourseCategory> {
+    match value.trim() {
+        "STEM" => Some(CourseCategory::Stem),
+        "Lifestyle" => Some(CourseCategory::Lifestyle),
+        "Finance" => Some(CourseCategory::Finance),
+        "Technology" => Some(CourseCategory::Technology),
+        _ => None,
+    }
+}
+
+fn sort_categories(categories: &mut Vec<CourseCategory>) {
+    categories.sort_by_key(|category| match category {
+        CourseCategory::Stem => 0,
+        CourseCategory::Lifestyle => 1,
+        CourseCategory::Finance => 2,
+        CourseCategory::Technology => 3,
+        CourseCategory::Uncategorised => 4,
+    });
+}
+
+fn unique_requested_categories(values: &[String]) -> Result<Vec<CourseCategory>, HttpResponse> {
+    let mut seen = HashSet::new();
+    let mut categories = Vec::new();
+
+    for value in values {
+        let category = parse_course_category(value)
+            .ok_or_else(|| HttpResponse::BadRequest().body("Invalid course category"))?;
+        let label = category_to_label(&category).to_string();
+        if seen.insert(label) {
+            categories.push(category);
+        }
+    }
+
+    if categories.is_empty() {
+        return Err(HttpResponse::BadRequest().body("Select at least one category"));
+    }
+
+    Ok(categories)
+}
+
+async fn preference_eligible_user(
+    db: &DatabaseConnection,
+    session: &Session,
+) -> Result<users::Model, HttpResponse> {
+    let user_id = session_user_id(session)?;
+    let user = users::Entity::find_by_id(user_id)
+        .one(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding user: {}", err))
+        })?
+        .ok_or_else(|| HttpResponse::NotFound().body("User not found"))?;
+
+    if user.org_id.is_some() {
+        return Err(HttpResponse::Forbidden()
+            .body("Course preferences are only available to independent learners"));
+    }
+
+    Ok(user)
+}
+
+async fn existing_public_categories(
+    db: &DatabaseConnection,
+) -> Result<Vec<CourseCategory>, HttpResponse> {
+    let mut categories = courses::Entity::find()
+        .select_only()
+        .column(courses::Column::Category)
+        .distinct()
+        .filter(courses::Column::Visibility.eq("public"))
+        .into_tuple::<CourseCategory>()
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding course categories: {}", err))
+        })?;
+
+    categories.retain(is_preference_category);
+    sort_categories(&mut categories);
+    Ok(categories)
+}
+
+async fn recommended_courses_for_categories(
+    db: &DatabaseConnection,
+    categories: Vec<CourseCategory>,
+) -> Result<Vec<courses::Model>, HttpResponse> {
+    if categories.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    courses::Entity::find()
+        .filter(courses::Column::Visibility.eq("public"))
+        .filter(courses::Column::Category.is_in(categories))
+        .order_by_asc(courses::Column::CourseId)
+        .all(db)
+        .await
+        .map_err(|err| {
+            HttpResponse::InternalServerError()
+                .body(format!("Database error finding recommended courses: {}", err))
+        })
 }
 
 async fn accessible_course_condition(
@@ -475,6 +615,142 @@ pub async fn get_my_courses(db: web::Data<DatabaseConnection>, session: Session)
         Err(err) => HttpResponse::InternalServerError()
             .body(format!("Database error finding courses: {}", err)),
     }
+}
+
+#[get("/course-preferences")]
+pub async fn get_course_preferences(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+) -> impl Responder {
+    let user = match preference_eligible_user(db.get_ref(), &session).await {
+        Ok(user) => user,
+        Err(response) if response.status() == actix_web::http::StatusCode::UNAUTHORIZED => {
+            return HttpResponse::Ok().json(CoursePreferenceStatusPayload {
+                should_prompt: false,
+                categories: Vec::new(),
+                recommended_courses: Vec::new(),
+            });
+        }
+        Err(response) if response.status() == actix_web::http::StatusCode::FORBIDDEN => {
+            return HttpResponse::Ok().json(CoursePreferenceStatusPayload {
+                should_prompt: false,
+                categories: Vec::new(),
+                recommended_courses: Vec::new(),
+            });
+        }
+        Err(response) => return response,
+    };
+
+    let preference_rows = match user_category_preferences::Entity::find()
+        .filter(user_category_preferences::Column::UserId.eq(user.user_id))
+        .all(db.get_ref())
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding course preferences: {}", err));
+        }
+    };
+
+    if !preference_rows.is_empty() {
+        return HttpResponse::Ok().json(CoursePreferenceStatusPayload {
+            should_prompt: false,
+            categories: Vec::new(),
+            recommended_courses: Vec::new(),
+        });
+    }
+
+    let categories: Vec<String> = match existing_public_categories(db.get_ref()).await {
+        Ok(categories) => categories
+            .iter()
+            .map(category_to_label)
+            .map(|category| category.to_string())
+            .collect(),
+        Err(response) => return response,
+    };
+
+    HttpResponse::Ok().json(CoursePreferenceStatusPayload {
+        should_prompt: !categories.is_empty(),
+        categories,
+        recommended_courses: Vec::new(),
+    })
+}
+
+#[post("/course-preferences")]
+pub async fn save_course_preferences(
+    db: web::Data<DatabaseConnection>,
+    session: Session,
+    body: web::Json<CoursePreferenceRequest>,
+) -> impl Responder {
+    let user = match preference_eligible_user(db.get_ref(), &session).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let selected_categories = match unique_requested_categories(&body.categories) {
+        Ok(categories) => categories,
+        Err(response) => return response,
+    };
+
+    let existing_categories = match existing_public_categories(db.get_ref()).await {
+        Ok(categories) => categories,
+        Err(response) => return response,
+    };
+    let existing_labels = existing_categories
+        .iter()
+        .map(category_to_label)
+        .collect::<HashSet<&'static str>>();
+
+    if selected_categories
+        .iter()
+        .any(|category| !existing_labels.contains(category_to_label(category)))
+    {
+        return HttpResponse::BadRequest().body("Selected category has no available courses");
+    }
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Course preference transaction error: {}", err));
+        }
+    };
+
+    if let Err(err) = user_category_preferences::Entity::delete_many()
+        .filter(user_category_preferences::Column::UserId.eq(user.user_id))
+        .exec(&txn)
+        .await
+    {
+        return HttpResponse::InternalServerError()
+            .body(format!("Course preference cleanup error: {}", err));
+    }
+
+    for category in selected_categories.iter().cloned() {
+        let preference = user_category_preferences::ActiveModel {
+            user_id: Set(user.user_id),
+            category: Set(category),
+        };
+
+        if let Err(err) = preference.insert(&txn).await {
+            return HttpResponse::InternalServerError()
+                .body(format!("Course preference save error: {}", err));
+        }
+    }
+
+    if let Err(err) = txn.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Course preference commit error: {}", err));
+    }
+
+    let recommended_courses = match recommended_courses_for_categories(db.get_ref(), selected_categories).await {
+        Ok(courses) => courses,
+        Err(response) => return response,
+    };
+
+    HttpResponse::Ok().json(CoursePreferenceSavePayload {
+        recommended_courses,
+    })
 }
 
 #[get("/my-courses/progress-overview")]

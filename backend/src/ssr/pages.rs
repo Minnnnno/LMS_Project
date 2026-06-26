@@ -9,7 +9,7 @@ use tera::{Context, Tera};
 
 use crate::entity::{courses as course_entity, modules, quiz};
 use crate::services::auth_helpers::is_enrolled;
-use crate::services::course_service::{can_manage_course, has_role};
+use crate::services::course_service::{can_manage_course, can_view_course, has_role};
 
 #[get("/")]
 async fn index(session: Session) -> impl Responder {
@@ -138,7 +138,19 @@ async fn course_details_page(
         Err(response) => return response,
     }
 
-    match is_enrolled(db.get_ref(), user_id, course_id).await {
+    let course = match course_entity::Entity::find_by_id(course_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(course)) => course,
+        Ok(None) => return HttpResponse::NotFound().body("Course not found"),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Database error finding course: {}", err));
+        }
+    };
+
+    match can_view_course(db.get_ref(), &session, &course).await {
         Ok(true) => render_page("course_details.html", &session),
         Ok(false) => redirect_to_home(),
         Err(response) => response,
