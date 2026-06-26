@@ -824,12 +824,13 @@ function formatDiscussionDate(value) {
         return "";
     }
 
-    return date.toLocaleString([], {
+    return date.toLocaleString("en-SG", {
         month: "short",
         day: "numeric",
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
+        timeZone: "Asia/Singapore",
     });
 }
 

@@ -1652,13 +1652,14 @@ function formatDateTime(value) {
         return value;
     }
 
-    return date.toLocaleString(undefined, {
+    return date.toLocaleString("en-SG", {
         year: "numeric",
         month: "numeric",
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
         second: "2-digit",
+        timeZone: "Asia/Singapore",
     });
 }
 
