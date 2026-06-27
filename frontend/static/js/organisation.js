@@ -421,24 +421,6 @@ function renderSelectedClassTools() {
 
     tools.style.display = "";
     document.getElementById("selected-class-title").textContent = `${cls.class_name} Roster`;
-    renderExistingLearnerOptions();
-}
-
-function renderExistingLearnerOptions() {
-    const cls = selectedClass();
-    const select = document.getElementById("class-member-user-select");
-    if (!cls) return;
-
-    const currentIds = new Set((cls.members || []).map(member => member.user_id));
-    const candidates = allSystemUsers
-        .filter(user => !currentIds.has(user.user_id))
-        .filter(user => user.org_id == null || Number(user.org_id) === Number(currentOrgId))
-        .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`));
-
-    select.innerHTML = candidates.length
-        ? candidates.map(user => `<option value="${user.user_id}">${escHtml(user.first_name)} ${escHtml(user.last_name)} (${escHtml(user.email)})</option>`).join("")
-        : '<option value="">No eligible learners found</option>';
-    document.getElementById("btn-add-existing-to-class").disabled = !candidates.length;
 }
 
 function toggleCreateClassForm(forceClose = false) {
@@ -553,13 +535,6 @@ function deleteClass(classId, event) {
     });
 }
 
-async function addExistingLearnerToClass() {
-    const cls = selectedClass();
-    const userId = Number(document.getElementById("class-member-user-select").value);
-    if (!cls || !userId) return;
-
-    await addLearnersToClass(cls.class_id, { user_ids: [userId], new_users: [] });
-}
 
 async function addNewLearnerToClass(event) {
     event.preventDefault();
@@ -888,7 +863,6 @@ document.getElementById("btn-save-rename-class")?.addEventListener("click", asyn
         showResult("class-feedback", "Error: " + escHtml(err.response?.data || err.message), "error");
     }
 });
-document.getElementById("btn-add-existing-to-class")?.addEventListener("click", addExistingLearnerToClass);
 document.getElementById("class-new-learner-form")?.addEventListener("submit", addNewLearnerToClass);
 document.getElementById("btn-clear-class-file")?.addEventListener("click", clearClassImportPreview);
 document.getElementById("btn-import-classes")?.addEventListener("click", importClassRows);
