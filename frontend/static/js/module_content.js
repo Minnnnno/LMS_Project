@@ -265,17 +265,17 @@ async function saveContent() {
         : null;
 
     if (!title) {
-        alert("Please enter a content title");
+        showContentStatus("Please enter a content title", "error");
         return;
     }
 
     if (!Number.isInteger(position) || position < 1) {
-        alert("Please enter a display order of 1 or higher");
+        showContentStatus("Please enter a display order of 1 or higher", "error");
         return;
     }
 
     if (!contentFile && !existingContent?.content_url) {
-        alert("Please choose a file");
+        showContentStatus("Please choose a file", "error");
         return;
     }
 

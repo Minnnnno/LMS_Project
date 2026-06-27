@@ -1793,7 +1793,7 @@ async function saveCourse() {
     const isPaid = document.getElementById("course-paid-input").checked;
 
     if (!name) {
-        alert("Please enter a course name");
+        showActionMessage("Please enter a course name", "error");
         return;
     }
 
@@ -1934,12 +1934,12 @@ async function saveModule() {
     const position = Number(document.getElementById("module-position-input").value || 0);
 
     if (!title) {
-        alert("Please enter a module title");
+        showActionMessage("Please enter a module title", "error");
         return;
     }
 
     if (!Number.isInteger(position) || position < 1) {
-        alert("Please enter a display order of 1 or higher");
+        showActionMessage("Please enter a display order of 1 or higher", "error");
         return;
     }
 
@@ -2014,12 +2014,12 @@ async function saveDiscussionTopic() {
     const isLocked = document.getElementById("discussion-topic-locked-input").checked;
 
     if (!moduleId) {
-        alert("Please create a module before adding a discussion topic.");
+        showActionMessage("Please create a module before adding a discussion topic.", "error");
         return;
     }
 
     if (!title) {
-        alert("Please enter a topic title");
+        showActionMessage("Please enter a topic title", "error");
         return;
     }
 
@@ -2104,7 +2104,7 @@ async function saveDiscussionThread() {
     const body = document.getElementById("discussion-thread-body-input").value.trim();
 
     if (!title || !body) {
-        alert("Please enter a title and post");
+        showActionMessage("Please enter a title and post", "error");
         return;
     }
 
@@ -2130,7 +2130,7 @@ async function postDiscussionReply() {
     const body = input?.value.trim();
 
     if (!body) {
-        alert("Please enter a reply");
+        showActionMessage("Please enter a reply", "error");
         return;
     }
 

@@ -605,14 +605,14 @@ async function saveSubmissionGrade(submissionId) {
     const score = scoreInput.value.trim();
 
     if (score === "" || Number(score) < 0) {
-        alert("Please enter a score of 0 or higher");
+        showActionMessage("Please enter a score of 0 or higher", "error");
         return;
     }
 
     const maxScore = Number(scoreInput.max);
 
     if (Number.isFinite(maxScore) && maxScore >= 0 && Number(score) > maxScore) {
-        alert(`Score cannot be greater than ${formatGradeNumber(maxScore)}`);
+        showActionMessage(`Score cannot be greater than ${formatGradeNumber(maxScore)}`, "error");
         return;
     }
 
@@ -1008,32 +1008,32 @@ async function saveAssignment() {
     const submissionInstructions = document.getElementById("assignment-instructions-input").value.trim();
 
     if (!title) {
-        alert("Please enter an assignment title");
+        showActionMessage("Please enter an assignment title", "error");
         return;
     }
 
     if (!description) {
-        alert("Please enter an assignment description");
+        showActionMessage("Please enter an assignment description", "error");
         return;
     }
 
     if (!dueDate) {
-        alert("Please choose a due date");
+        showActionMessage("Please choose a due date", "error");
         return;
     }
 
     if (!moduleId) {
-        alert("Please choose a module");
+        showActionMessage("Please choose a module", "error");
         return;
     }
 
     if (maxScore === "" || Number(maxScore) < 0) {
-        alert("Please enter a max score of 0 or higher");
+        showActionMessage("Please enter a max score of 0 or higher", "error");
         return;
     }
 
     if (passingMark === "" || Number(passingMark) < 0 || Number(passingMark) > 100) {
-        alert("Please enter a passing mark between 0 and 100");
+        showActionMessage("Please enter a passing mark between 0 and 100", "error");
         return;
     }
 
