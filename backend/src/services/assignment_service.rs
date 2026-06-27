@@ -1,6 +1,8 @@
 use actix_session::Session;
 use actix_web::HttpResponse;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 
 use rust_decimal::Decimal;
 
@@ -25,7 +27,9 @@ async fn require_can_manage_course(
 
     match can_manage_course(db, session, &course).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(HttpResponse::Forbidden().body("You cannot manage assignments for this course")),
+        Ok(false) => {
+            Err(HttpResponse::Forbidden().body("You cannot manage assignments for this course"))
+        }
         Err(response) => Err(response),
     }
 }
@@ -45,9 +49,9 @@ async fn require_module_in_course(
         .ok_or_else(|| HttpResponse::BadRequest().body("Selected module does not exist"))?;
 
     if module.course_id != course_id {
-        return Err(HttpResponse::BadRequest().body(
-            "Selected module does not belong to this course",
-        ));
+        return Err(
+            HttpResponse::BadRequest().body("Selected module does not belong to this course")
+        );
     }
 
     Ok(module)
@@ -168,7 +172,9 @@ pub async fn update_assignment(
 ) -> HttpResponse {
     match assignments::Entity::find_by_id(assignment_id).one(db).await {
         Ok(Some(assignment)) => {
-            if let Err(response) = require_can_manage_course(db, session, assignment.course_id).await {
+            if let Err(response) =
+                require_can_manage_course(db, session, assignment.course_id).await
+            {
                 return response;
             }
 
@@ -176,12 +182,16 @@ pub async fn update_assignment(
             let target_module_id = data.module_id.unwrap_or(assignment.module_id);
 
             if target_course_id != assignment.course_id {
-                if let Err(response) = require_can_manage_course(db, session, target_course_id).await {
+                if let Err(response) =
+                    require_can_manage_course(db, session, target_course_id).await
+                {
                     return response;
                 }
             }
 
-            if let Err(response) = require_module_in_course(db, target_module_id, target_course_id).await {
+            if let Err(response) =
+                require_module_in_course(db, target_module_id, target_course_id).await
+            {
                 return response;
             }
 
@@ -245,21 +255,25 @@ pub async fn update_assignment(
             match active.update(db).await {
                 Ok(saved) => {
                     if let Some(prerequisite_module_ids) = data.prerequisite_module_ids {
-                        if let Err(response) = prerequisite_service::replace_assignment_prerequisites(
-                            db,
-                            target_course_id,
-                            saved.assignment_id,
-                            prerequisite_module_ids,
-                        )
-                        .await
+                        if let Err(response) =
+                            prerequisite_service::replace_assignment_prerequisites(
+                                db,
+                                target_course_id,
+                                saved.assignment_id,
+                                prerequisite_module_ids,
+                            )
+                            .await
                         {
                             return response;
                         }
                     }
 
-                    HttpResponse::Ok().body(format!("Assignment with id {} updated!", assignment_id))
-                },
-                Err(err) => HttpResponse::InternalServerError().body(format!("Update error: {}", err)),
+                    HttpResponse::Ok()
+                        .body(format!("Assignment with id {} updated!", assignment_id))
+                }
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Update error: {}", err))
+                }
             }
         }
         Ok(None) => HttpResponse::NotFound().body("Assignment not found"),
@@ -279,7 +293,8 @@ pub async fn create_assignment(
         return response;
     }
 
-    let passing_mark = match validate_passing_mark(data.passing_mark.unwrap_or(Decimal::new(50, 0))) {
+    let passing_mark = match validate_passing_mark(data.passing_mark.unwrap_or(Decimal::new(50, 0)))
+    {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -315,7 +330,7 @@ pub async fn create_assignment(
             }
 
             HttpResponse::Ok().body("New assignment created successfully!")
-        },
+        }
         Err(err) => HttpResponse::InternalServerError().body(format!("Insert error: {}", err)),
     }
 }
@@ -327,14 +342,18 @@ pub async fn delete_assignment(
 ) -> HttpResponse {
     match assignments::Entity::find_by_id(assignment_id).one(db).await {
         Ok(Some(assignment)) => {
-            if let Err(response) = require_can_manage_course(db, session, assignment.course_id).await {
+            if let Err(response) =
+                require_can_manage_course(db, session, assignment.course_id).await
+            {
                 return response;
             }
 
             let active_model: assignments::ActiveModel = assignment.into();
             match active_model.delete(db).await {
                 Ok(_) => HttpResponse::Ok().body("Assignment deleted!"),
-                Err(err) => HttpResponse::InternalServerError().body(format!("Delete error: {}", err)),
+                Err(err) => {
+                    HttpResponse::InternalServerError().body(format!("Delete error: {}", err))
+                }
             }
         }
         Ok(None) => HttpResponse::NotFound().body("Assignment not found!"),

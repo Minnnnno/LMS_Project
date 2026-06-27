@@ -1,4 +1,4 @@
-use actix_web::{post, web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, post, web};
 use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
@@ -28,4 +28,3 @@ pub async fn viewer_heartbeat(
         active_viewers: state.record_viewer(viewer_id.to_string()),
     })
 }
-

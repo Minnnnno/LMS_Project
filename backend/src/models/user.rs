@@ -12,10 +12,18 @@ pub struct RegisterForm {
     #[validate(email(message = "Please enter a valid email address."))]
     pub email: String,
 
-    #[validate(length(min = 8, max = 128, message = "Password must be between 8 and 128 characters."))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "Password must be between 8 and 128 characters."
+    ))]
     pub password: String,
 
-    #[validate(length(min = 8, max = 128, message = "Confirm password must be between 8 and 128 characters."))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "Confirm password must be between 8 and 128 characters."
+    ))]
     pub confirm_password: String,
 
     #[serde(rename = "g-recaptcha-response")]
@@ -44,9 +52,17 @@ pub struct ResetPasswordForm {
     #[validate(length(min = 1, message = "Token is required."))]
     pub token: String,
 
-    #[validate(length(min = 8, max = 128, message = "Password must be between 8 and 128 characters."))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "Password must be between 8 and 128 characters."
+    ))]
     pub password: String,
 
-    #[validate(length(min = 8, max = 128, message = "Confirm password must be between 8 and 128 characters."))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "Confirm password must be between 8 and 128 characters."
+    ))]
     pub confirm_password: String,
 }

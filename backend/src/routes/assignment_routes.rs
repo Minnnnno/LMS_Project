@@ -1,12 +1,8 @@
 use actix_web::web;
 
-use crate::{
-    controller::assignment_controller::{
-        get_assignment, 
-        get_assignment_by_course_id, 
-        update_assignment, 
-        create_assignment, 
-        delete_assignment}
+use crate::controller::assignment_controller::{
+    create_assignment, delete_assignment, get_assignment, get_assignment_by_course_id,
+    update_assignment,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {

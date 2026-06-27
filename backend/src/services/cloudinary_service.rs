@@ -25,8 +25,7 @@ pub async fn upload_to_cloudinary(
 
     let upload_url = format!(
         "https://api.cloudinary.com/v1_1/{}/{}/upload",
-        cloud_name,
-        resource_type
+        cloud_name, resource_type
     );
 
     let file_part = multipart::Part::bytes(file_bytes).file_name(filename);

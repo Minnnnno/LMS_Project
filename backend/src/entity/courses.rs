@@ -44,11 +44,7 @@ pub enum CourseCategory {
     Technology,
 }
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Enum",
-    enum_name = "course_status"
-)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "course_status")]
 pub enum CourseStatus {
     #[sea_orm(string_value = "draft")]
     Draft,

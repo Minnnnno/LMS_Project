@@ -27,7 +27,10 @@ impl LoginRateLimiter {
             .unwrap_or_else(|error| error.into_inner());
         prune(&mut attempts, now);
         attempts.entry(ip_key(ip)).or_default().push_back(now);
-        attempts.entry(pair_key(ip, email)).or_default().push_back(now);
+        attempts
+            .entry(pair_key(ip, email))
+            .or_default()
+            .push_back(now);
     }
 
     pub fn clear_pair(&self, ip: &str, email: &str) {
@@ -56,7 +59,12 @@ impl LoginRateLimiter {
             None
         }?;
 
-        Some(WINDOW.saturating_sub(now.duration_since(*oldest)).as_secs().max(1))
+        Some(
+            WINDOW
+                .saturating_sub(now.duration_since(*oldest))
+                .as_secs()
+                .max(1),
+        )
     }
 }
 

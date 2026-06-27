@@ -14,7 +14,10 @@ pub struct AppState {
 impl AppState {
     pub fn record_viewer(&self, viewer_id: String) -> usize {
         let now = Instant::now();
-        let mut viewers = self.viewers.lock().unwrap_or_else(|error| error.into_inner());
+        let mut viewers = self
+            .viewers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
 
         viewers.retain(|_, last_seen| now.duration_since(*last_seen) <= VIEWER_TIMEOUT);
         viewers.insert(viewer_id, now);
@@ -23,10 +26,12 @@ impl AppState {
 
     pub fn active_viewers(&self) -> usize {
         let now = Instant::now();
-        let mut viewers = self.viewers.lock().unwrap_or_else(|error| error.into_inner());
+        let mut viewers = self
+            .viewers
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
 
         viewers.retain(|_, last_seen| now.duration_since(*last_seen) <= VIEWER_TIMEOUT);
         viewers.len()
     }
-
 }

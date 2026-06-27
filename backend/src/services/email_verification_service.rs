@@ -7,7 +7,7 @@ use sha1::{Digest, Sha1};
 use uuid::Uuid;
 
 use crate::entity::{email_verification_tokens, users};
-use crate::services::mailer_service::{send_mail_message, MailRequest};
+use crate::services::mailer_service::{MailRequest, send_mail_message};
 
 const TOKEN_EXPIRY_HOURS: i64 = 24;
 
@@ -27,7 +27,11 @@ pub fn verification_url(token: &str) -> String {
     let base_url =
         std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
 
-    format!("{}/auth/verify-email?token={}", base_url.trim_end_matches('/'), token)
+    format!(
+        "{}/auth/verify-email?token={}",
+        base_url.trim_end_matches('/'),
+        token
+    )
 }
 
 pub fn token_hash(token: &str) -> String {

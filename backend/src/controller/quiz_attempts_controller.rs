@@ -1,6 +1,6 @@
 use crate::services::{quiz_attempt_service, quiz_review_service};
 use actix_session::Session;
-use actix_web::{delete, get, post, put, web, Responder};
+use actix_web::{Responder, delete, get, post, put, web};
 use sea_orm::DatabaseConnection;
 
 // Staff only: see all attempts for a quiz

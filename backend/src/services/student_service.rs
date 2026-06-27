@@ -4,8 +4,8 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel
 use validator::Validate;
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordVerifier, SaltString},
     Argon2, PasswordHasher,
+    password_hash::{PasswordHash, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 
 use crate::entity::users;
@@ -48,7 +48,9 @@ pub async fn update_own_profile(
 
     match update_user.update(db).await {
         Ok(updated_user) => HttpResponse::Ok().json(updated_user),
-        Err(err) => HttpResponse::InternalServerError().body(format!("Update profile error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Update profile error: {}", err))
+        }
     }
 }
 
@@ -73,7 +75,9 @@ pub async fn change_password(
     let user = match users::Entity::find_by_id(user_id).one(db).await {
         Ok(Some(user)) => user,
         Ok(None) => return HttpResponse::NotFound().body("User not found"),
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
     let password_hash = match &user.password_hash {
@@ -130,6 +134,8 @@ pub async fn change_password(
             let _ = session.insert("must_change_password", false);
             HttpResponse::Ok().body("Password changed successfully!")
         }
-        Err(err) => HttpResponse::InternalServerError().body(format!("Failed to update password: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to update password: {}", err))
+        }
     }
 }

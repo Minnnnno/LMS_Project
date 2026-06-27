@@ -11,13 +11,8 @@ pub struct Model {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Enum",
-    enum_name = "role_name"
-)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "role_name")]
 pub enum RoleName {
-
     #[sea_orm(string_value = "LMS Admin")]
     LmsAdmin,
 

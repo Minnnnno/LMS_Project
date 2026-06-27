@@ -9,8 +9,7 @@ use crate::entity::{courses, enrollments, users};
 use crate::services::auth_helpers::get_user_id;
 use crate::services::certificate_service::{
     CertificateLinkPayload, certificate_payload, ensure_certificate_for_completion,
-    generate_certificate_pdf_for_user,
-    verify_certificate,
+    generate_certificate_pdf_for_user, verify_certificate,
 };
 use crate::services::course_completion_service::{
     CourseCompletionStatus, load_completion_statuses,

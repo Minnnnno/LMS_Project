@@ -110,24 +110,24 @@ fn filename_part(value: &str) -> String {
 }
 
 fn pdf_text_width(text: &str, size: f32) -> f32 {
-    let units: f32 = text
-        .chars()
-        .map(|ch| match ch {
-            ' ' => 278.0,
-            'i' | 'j' | 'l' | 'I' => 278.0,
-            'f' | 'r' | 't' => 333.0,
-            'm' | 'w' | 'M' | 'W' => 833.0,
-            'A' | 'B' | 'C' | 'D' | 'G' | 'H' | 'N' | 'O' | 'Q' | 'R' | 'U' | 'V' | 'X'
-            | 'Y' => 722.0,
-            'E' | 'F' | 'L' | 'P' | 'S' | 'T' | 'Z' => 667.0,
-            'J' => 389.0,
-            'K' => 722.0,
-            'a' | 'b' | 'c' | 'd' | 'e' | 'g' | 'h' | 'k' | 'n' | 'o' | 'p' | 'q' | 's'
-            | 'u' | 'v' | 'x' | 'y' | 'z' => 556.0,
-            '0'..='9' => 556.0,
-            _ => 500.0,
-        })
-        .sum();
+    let units: f32 =
+        text.chars()
+            .map(|ch| match ch {
+                ' ' => 278.0,
+                'i' | 'j' | 'l' | 'I' => 278.0,
+                'f' | 'r' | 't' => 333.0,
+                'm' | 'w' | 'M' | 'W' => 833.0,
+                'A' | 'B' | 'C' | 'D' | 'G' | 'H' | 'N' | 'O' | 'Q' | 'R' | 'U' | 'V' | 'X'
+                | 'Y' => 722.0,
+                'E' | 'F' | 'L' | 'P' | 'S' | 'T' | 'Z' => 667.0,
+                'J' => 389.0,
+                'K' => 722.0,
+                'a' | 'b' | 'c' | 'd' | 'e' | 'g' | 'h' | 'k' | 'n' | 'o' | 'p' | 'q' | 's'
+                | 'u' | 'v' | 'x' | 'y' | 'z' => 556.0,
+                '0'..='9' => 556.0,
+                _ => 500.0,
+            })
+            .sum();
     units * size / 1000.0
 }
 
@@ -148,7 +148,14 @@ fn centered_text(content: &mut String, text: &str, y: f32, size: f32, font: &str
     text_at(content, text, x, y, size, font);
 }
 
-fn centered_text_at(content: &mut String, text: &str, center_x: f32, y: f32, size: f32, font: &str) {
+fn centered_text_at(
+    content: &mut String,
+    text: &str,
+    center_x: f32,
+    y: f32,
+    size: f32,
+    font: &str,
+) {
     let estimated_width = pdf_text_width(text, size);
     let x = (center_x - estimated_width / 2.0).max(0.0);
     text_at(content, text, x, y, size, font);
@@ -191,7 +198,13 @@ fn centered_wrapped_text(
     max_chars: usize,
 ) {
     for (index, line) in wrap_text(text, max_chars).iter().enumerate() {
-        centered_text(content, line, start_y - index as f32 * (size + 7.0), size, font);
+        centered_text(
+            content,
+            line,
+            start_y - index as f32 * (size + 7.0),
+            size,
+            font,
+        );
     }
 }
 
@@ -407,13 +420,10 @@ pub async fn generate_certificate_pdf_for_user(
         &verification_url,
     )
     .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Certificate PDF generation error: {}", err))
-        })?;
-    let filename = format!(
-        "SkillUp-Certificate-{}.pdf",
-        filename_part(&course_name)
-    );
+        HttpResponse::InternalServerError()
+            .body(format!("Certificate PDF generation error: {}", err))
+    })?;
+    let filename = format!("SkillUp-Certificate-{}.pdf", filename_part(&course_name));
 
     Ok(Some(CertificatePdf { filename, bytes }))
 }

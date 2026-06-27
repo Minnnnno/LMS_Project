@@ -35,7 +35,9 @@ pub fn price_to_cents(price: rust_decimal::Decimal) -> Result<i32, HttpResponse>
 }
 
 pub fn normalize_course_visibility(visibility: Option<String>) -> Result<String, HttpResponse> {
-    let visibility = visibility.unwrap_or_else(|| "public".to_string()).to_lowercase();
+    let visibility = visibility
+        .unwrap_or_else(|| "public".to_string())
+        .to_lowercase();
 
     match visibility.as_str() {
         "public" | "private" => Ok(visibility),
@@ -137,8 +139,7 @@ pub async fn can_view_course(
         Ok(Some(user_id)) => user_id,
         Ok(None) => return Ok(false),
         Err(err) => {
-            return Err(HttpResponse::InternalServerError()
-                .body(format!("Session error: {}", err)));
+            return Err(HttpResponse::InternalServerError().body(format!("Session error: {}", err)));
         }
     };
 

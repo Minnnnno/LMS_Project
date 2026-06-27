@@ -19,7 +19,9 @@ pub fn recaptcha_site_key() -> Result<String, String> {
 
     configured_key
         .or_else(|| cfg!(debug_assertions).then(|| RECAPTCHA_TEST_SITE_KEY.to_string()))
-        .ok_or_else(|| "Google reCAPTCHA is not configured. Missing RECAPTCHA_SITE_KEY.".to_string())
+        .ok_or_else(|| {
+            "Google reCAPTCHA is not configured. Missing RECAPTCHA_SITE_KEY.".to_string()
+        })
 }
 
 fn recaptcha_secret_key() -> Result<String, String> {
@@ -38,7 +40,10 @@ pub async fn verify_recaptcha(
     response_token: Option<&str>,
     remote_ip: Option<String>,
 ) -> Result<bool, String> {
-    let response_token = match response_token.map(str::trim).filter(|value| !value.is_empty()) {
+    let response_token = match response_token
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         Some(token) => token.to_string(),
         None => return Ok(false),
     };

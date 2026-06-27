@@ -14,11 +14,7 @@ pub struct Model {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Enum",
-    enum_name = "question_type"
-)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "question_type")]
 pub enum QuestionType {
     #[serde(rename = "mcq")]
     #[sea_orm(string_value = "mcq")]
