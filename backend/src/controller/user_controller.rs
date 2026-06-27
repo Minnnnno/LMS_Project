@@ -292,7 +292,7 @@ pub async fn change_password_submit(
         return render_change_password_page(
             &session,
             actix_web::http::StatusCode::BAD_REQUEST,
-            Some("Please check your password details."),
+            Some("Password must be 8-128 characters and include an uppercase letter, a lowercase letter, a number, and a special character."),
         );
     }
 
@@ -420,7 +420,7 @@ pub async fn register_submit(
         } else if field_errors.contains_key("email") {
             "Please enter a valid email address."
         } else if field_errors.contains_key("password") {
-            "Password must be between 8 and 128 characters."
+            "Password must be 8-128 characters and include an uppercase letter, a lowercase letter, a number, and a special character."
         } else if field_errors.contains_key("confirm_password") {
             "Confirm password must be between 8 and 128 characters."
         } else {
@@ -1282,7 +1282,7 @@ pub async fn update_password_submit(
 
     let form = form.into_inner();
     if let Err(_) = form.validate() {
-        let _ = session.insert("profile_error", "Please check your password details.");
+        let _ = session.insert("profile_error", "Password must be 8-128 characters and include an uppercase letter, a lowercase letter, a number, and a special character.");
         return HttpResponse::Found()
             .insert_header((header::LOCATION, "/profile"))
             .finish();
@@ -1657,7 +1657,7 @@ pub async fn reset_password_submit(
     if let Err(_) = form.validate() {
         return render_error(
             &session,
-            "Password must be between 8 and 128 characters.",
+            "Password must be 8-128 characters and include an uppercase letter, a lowercase letter, a number, and a special character.",
             &form.token,
         );
     }

@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod validation;
 pub mod assignment;
 pub mod course;
 pub mod discussion;
