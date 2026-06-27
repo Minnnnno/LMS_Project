@@ -948,7 +948,14 @@ async function refreshQuizAttemptsAfterSubmit() {
 async function deleteQuiz(event, quizId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this quiz?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete quiz",
+        message: "Delete this quiz?",
+        confirmText: "Delete quiz",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 

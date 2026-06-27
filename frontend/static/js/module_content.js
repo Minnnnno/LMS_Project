@@ -222,7 +222,14 @@ function editContent(event, contentId) {
 async function deleteContent(event, contentId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this module content?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete content",
+        message: "Delete this module content?",
+        confirmText: "Delete content",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 

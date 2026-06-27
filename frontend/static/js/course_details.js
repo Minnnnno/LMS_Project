@@ -738,7 +738,14 @@ async function undoLearnerCompletion(userId) {
     const row = completionRosterRows.find(item => Number(item.user_id) === Number(userId));
     const learnerName = row?.student_name || "this learner";
 
-    if (!window.confirm(`Undo manual completion for ${learnerName}?`)) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Undo completion",
+        message: `Undo manual completion for ${learnerName}?`,
+        confirmText: "Undo completion",
+        variant: "dark",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -1564,7 +1571,14 @@ function editCourse(event, courseId) {
 async function deleteCourse(event, courseId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this course?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete course",
+        message: "Delete this course?",
+        confirmText: "Delete course",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -1850,7 +1864,14 @@ function editModule(event, moduleId) {
 async function deleteModule(event, moduleId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this module?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete module",
+        message: "Delete this module?",
+        confirmText: "Delete module",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -1947,7 +1968,12 @@ async function saveModule() {
         const currentModule = currentModules.find((module) => module.module_id === currentEditingModuleId);
 
         if (currentModule && currentModule.position !== position) {
-            const confirmed = confirm(`Do you want to move ${title} to order ${position}?`);
+            const confirmed = await LmsConfirm.ask({
+                title: "Move module",
+                message: `Do you want to move ${title} to order ${position}?`,
+                confirmText: "Move module",
+                variant: "dark",
+            });
 
             if (!confirmed) {
                 return;
@@ -2069,7 +2095,14 @@ async function setDiscussionTopicLocked(topicId, isLocked) {
 }
 
 async function deleteDiscussionTopic(topicId) {
-    if (!confirm("Delete this topic and all threads and replies under it?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete topic",
+        message: "Delete this topic and all threads and replies under it?",
+        confirmText: "Delete topic",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -2178,7 +2211,14 @@ function clearReplyTarget() {
 }
 
 async function closeDiscussionThread(threadId, returnToTopic = false) {
-    if (!confirm("Close this thread?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Close thread",
+        message: "Close this thread?",
+        confirmText: "Close thread",
+        variant: "dark",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -2197,7 +2237,14 @@ async function closeDiscussionThread(threadId, returnToTopic = false) {
 }
 
 async function hideDiscussionThread(threadId) {
-    if (!confirm("Remove this thread from discussions?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Remove thread",
+        message: "Remove this thread from discussions?",
+        confirmText: "Remove thread",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -2216,7 +2263,14 @@ async function hideDiscussionThread(threadId) {
 }
 
 async function deleteDiscussionReply(replyId) {
-    if (!confirm("Delete this reply and all replies under it?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete reply",
+        message: "Delete this reply and all replies under it?",
+        confirmText: "Delete reply",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 

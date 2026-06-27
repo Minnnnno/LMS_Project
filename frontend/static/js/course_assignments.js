@@ -634,7 +634,14 @@ async function saveSubmissionGrade(submissionId) {
 }
 
 async function clearSubmissionGrade(submissionId) {
-    if (!confirm("Clear this grade?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Clear grade",
+        message: "Clear this grade?",
+        confirmText: "Clear grade",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 
@@ -980,7 +987,14 @@ function editAssignment(event, assignmentId) {
 async function deleteAssignment(event, assignmentId) {
     event.stopPropagation();
 
-    if (!confirm("Delete this assignment?")) {
+    const confirmed = await LmsConfirm.ask({
+        title: "Delete assignment",
+        message: "Delete this assignment?",
+        confirmText: "Delete assignment",
+        variant: "danger",
+    });
+
+    if (!confirmed) {
         return;
     }
 
