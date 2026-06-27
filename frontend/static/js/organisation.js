@@ -647,6 +647,16 @@ async function handleClassFile(file) {
         const usersByEmail = {};
         for (const user of allSystemUsers) usersByEmail[user.email.toLowerCase()] = user;
 
+        // Build a lookup of existing members per class for "already enrolled" detection
+        const classMembersByKey = {};
+        for (const cls of (learnerClassState.classes || [])) {
+            const key = cls.class_name.trim().toLowerCase();
+            classMembersByKey[key] = new Set((cls.members || []).map(m => m.email.toLowerCase()));
+        }
+
+        // Track (email, class) pairs seen in this file to catch duplicate rows
+        const seenEnrollments = new Set();
+
         classImportRows = normalized.map(row => {
             const email = (row.email || "").toLowerCase();
             const className = row.class_name || row.classname || row["class name"] || "";
@@ -659,18 +669,34 @@ async function handleClassFile(file) {
             if (!validEmail(email)) {
                 status = "invalid";
                 statusLabel = "Invalid email";
-            } else if (!className.trim() || !classNames.has(className.trim().toLowerCase())) {
-                status = "unknown_class";
-                statusLabel = "Unknown class";
+            } else if (!className.trim()) {
+                status = "invalid";
+                statusLabel = "Missing class name";
             } else if (matched && matched.org_id != null && Number(matched.org_id) !== Number(currentOrgId)) {
                 status = "other_org";
                 statusLabel = "In another organisation";
-            } else if (matched && Number(matched.org_id) === Number(currentOrgId)) {
-                statusLabel = "Existing organisation learner";
-            } else if (matched) {
-                statusLabel = "Existing unassigned learner";
             } else {
-                statusLabel = "Will create account";
+                const classKey = className.trim().toLowerCase();
+                const enrollKey = `${email}|${classKey}`;
+                if (seenEnrollments.has(enrollKey)) {
+                    status = "duplicate";
+                    statusLabel = "Duplicate row";
+                } else {
+                    seenEnrollments.add(enrollKey);
+                    if (!classNames.has(classKey)) {
+                        status = "new_class";
+                        statusLabel = "Will create class";
+                    } else if (classMembersByKey[classKey]?.has(email)) {
+                        status = "already_in_class";
+                        statusLabel = "Already in class";
+                    } else if (matched && Number(matched.org_id) === Number(currentOrgId)) {
+                        statusLabel = "Existing organisation learner";
+                    } else if (matched) {
+                        statusLabel = "Existing unassigned learner";
+                    } else {
+                        statusLabel = "Will create account";
+                    }
+                }
             }
 
             return { email, first_name: firstName, last_name: lastName, class_name: className, status, statusLabel };
@@ -683,14 +709,17 @@ async function handleClassFile(file) {
 }
 
 function renderClassImportPreview() {
-    const actionable = classImportRows.filter(row => row.status === "ready");
+    const actionable = classImportRows.filter(row => row.status === "ready" || row.status === "new_class");
+    const alreadyEnrolled = classImportRows.filter(row => row.status === "already_in_class");
+    const skipped = classImportRows.length - actionable.length - alreadyEnrolled.length;
     const body = document.getElementById("class-preview-body");
     body.innerHTML = classImportRows.map((row, index) => {
-        const ok = row.status === "ready";
-        const statusClass = ok ? "text-success" : "text-danger";
-        const icon = ok ? "bi-check-circle-fill" : "bi-x-circle-fill";
+        const isActionable = row.status === "ready" || row.status === "new_class";
+        const isInfo = row.status === "already_in_class";
+        const statusClass = isActionable ? "text-success" : isInfo ? "text-warning" : "text-danger";
+        const icon = isActionable ? "bi-check-circle-fill" : isInfo ? "bi-info-circle-fill" : "bi-x-circle-fill";
         return `
-            <tr class="${ok ? "preview-match" : "preview-nomatch"}">
+            <tr class="${isActionable ? "preview-match" : "preview-nomatch"}">
                 <td>${index + 1}</td>
                 <td>${escHtml(row.email)}</td>
                 <td>${escHtml(row.first_name)}</td>
@@ -701,8 +730,10 @@ function renderClassImportPreview() {
         `;
     }).join("");
 
-    document.getElementById("class-preview-summary").textContent =
-        `${classImportRows.length} row(s) found - ${actionable.length} ready - ${classImportRows.length - actionable.length} skipped`;
+    const parts = [`${classImportRows.length} row(s) · ${actionable.length} to import`];
+    if (alreadyEnrolled.length) parts.push(`${alreadyEnrolled.length} already enrolled`);
+    if (skipped) parts.push(`${skipped} skipped`);
+    document.getElementById("class-preview-summary").textContent = parts.join(" · ");
     document.getElementById("class-import-count").textContent = actionable.length;
     document.getElementById("btn-import-classes").disabled = !actionable.length;
     document.getElementById("class-import-preview").style.display = "";
@@ -710,7 +741,7 @@ function renderClassImportPreview() {
 
 async function importClassRows() {
     const rows = classImportRows
-        .filter(row => row.status === "ready")
+        .filter(row => row.status === "ready" || row.status === "new_class")
         .map(row => ({
             email: row.email,
             first_name: row.first_name,

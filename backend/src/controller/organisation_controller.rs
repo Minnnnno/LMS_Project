@@ -2269,13 +2269,68 @@ pub async fn import_org_class_members(
                 .body(format!("Database error finding classes: {}", err));
         }
     };
-    let classes_by_name = classes
+    let mut classes_by_name = classes
         .into_iter()
         .map(|class| (class_name_key(&class.class_name), class))
         .collect::<HashMap<String, org_classes::Model>>();
 
+    // Collect unique new class names that don't yet exist in this org
+    let mut new_class_map: HashMap<String, String> = HashMap::new();
+    for row in &body.rows {
+        let name = row.class_name.trim().to_string();
+        let key = class_name_key(&name);
+        if !name.is_empty() && !classes_by_name.contains_key(&key) {
+            new_class_map.entry(key).or_insert(name);
+        }
+    }
+
+    let txn = match db.get_ref().begin().await {
+        Ok(txn) => txn,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start transaction: {}", err));
+        }
+    };
+
+    // Create any new classes inside the transaction
+    let mut errors: Vec<String> = Vec::new();
+    let mut created_class_count = 0usize;
+    for (key, name) in new_class_map {
+        match (org_classes::ActiveModel {
+            org_id: Set(org_id),
+            class_name: Set(name.clone()),
+            ..Default::default()
+        })
+        .insert(&txn)
+        .await
+        {
+            Ok(new_class) => {
+                classes_by_name.insert(key, new_class);
+                created_class_count += 1;
+            }
+            Err(DbErr::Exec(_)) => {
+                // Race condition: another request created this class concurrently; find it
+                match org_classes::Entity::find()
+                    .filter(org_classes::Column::OrgId.eq(org_id))
+                    .filter(org_classes::Column::ClassName.eq(name.clone()))
+                    .one(&txn)
+                    .await
+                {
+                    Ok(Some(existing)) => {
+                        classes_by_name.insert(key, existing);
+                    }
+                    _ => {
+                        errors.push(format!("Could not create or find class '{}'", name));
+                    }
+                }
+            }
+            Err(err) => {
+                errors.push(format!("Failed to create class '{}': {}", name, err));
+            }
+        }
+    }
+
     let mut rows_by_class: HashMap<i32, AddClassMembersForm> = HashMap::new();
-    let mut errors = Vec::new();
 
     for row in body.rows {
         let email = row.email.trim().to_lowercase();
@@ -2289,7 +2344,11 @@ pub async fn import_org_class_members(
             continue;
         }
         let Some(class) = classes_by_name.get(&class_key) else {
-            errors.push(format!("{}: class '{}' was not found", email, row.class_name.trim()));
+            errors.push(format!(
+                "{}: class '{}' could not be created or found",
+                email,
+                row.class_name.trim()
+            ));
             continue;
         };
 
@@ -2306,14 +2365,6 @@ pub async fn import_org_class_members(
                 last_name: row.last_name,
             });
     }
-
-    let txn = match db.get_ref().begin().await {
-        Ok(txn) => txn,
-        Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to start transaction: {}", err));
-        }
-    };
 
     let mut added = Vec::new();
     let mut created_accounts = Vec::new();
@@ -2359,7 +2410,15 @@ pub async fn import_org_class_members(
             }))
             .collect::<Vec<serde_json::Value>>(),
         "errors": errors,
-        "message": format!("{} learner(s) imported into classes", added.len())
+        "message": format!(
+            "{} learner(s) imported{}",
+            added.len(),
+            if created_class_count > 0 {
+                format!(", {} new class(es) created", created_class_count)
+            } else {
+                String::new()
+            }
+        )
     }))
 }
 
