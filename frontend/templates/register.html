@@ -4,10 +4,13 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="/static/css/register.css">
+<link rel="stylesheet" href="/static/css/password-strength.css">
 {% endblock extra_css %}
 
 {% block extra_js %}
 <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<script src="/static/js/password-strength.js"></script>
+<script>initPasswordStrength('password', 'pwd-meter', 'pwd-reqs');</script>
 {% endblock extra_js %}
 
 {% block content %}
@@ -124,7 +127,22 @@
                                 minlength="8"
                                 required
                             >
-                            <div class="form-text">Use at least 8 characters.</div>
+                            <div class="pwd-strength-meter" id="pwd-meter">
+                                <div class="pwd-bars">
+                                    <span class="pwd-bar"></span>
+                                    <span class="pwd-bar"></span>
+                                    <span class="pwd-bar"></span>
+                                    <span class="pwd-bar"></span>
+                                </div>
+                                <span class="pwd-label"></span>
+                            </div>
+                            <ul class="pwd-requirements" id="pwd-reqs">
+                                <li data-rule="length">8+ characters</li>
+                                <li data-rule="upper">Uppercase (A-Z)</li>
+                                <li data-rule="lower">Lowercase (a-z)</li>
+                                <li data-rule="number">Number (0-9)</li>
+                                <li data-rule="special">Special (!@#...)</li>
+                            </ul>
                         </div>
 
                         <div class="col-12 col-md-6">
