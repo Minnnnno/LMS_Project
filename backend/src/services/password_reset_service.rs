@@ -7,7 +7,7 @@ use sha1::{Digest, Sha1};
 use uuid::Uuid;
 
 use crate::entity::{password_reset_tokens, users};
-use crate::services::mailer_service::{send_mail_message, MailRequest};
+use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::user_service::hash_password;
 
 const TOKEN_EXPIRY_MINUTES: i64 = 30;
@@ -127,9 +127,9 @@ pub async fn reset_password_with_token(
         return Err(ResetPasswordError::GoogleAccount);
     }
 
-    let password_hash = hash_password(new_password)
-        .await
-        .map_err(|_| ResetPasswordError::Database(DbErr::Custom("Password hashing failed".into())))?;
+    let password_hash = hash_password(new_password).await.map_err(|_| {
+        ResetPasswordError::Database(DbErr::Custom("Password hashing failed".into()))
+    })?;
 
     let mut active_user = user.into_active_model();
     active_user.password_hash = Set(Some(password_hash));

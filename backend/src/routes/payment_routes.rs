@@ -1,10 +1,7 @@
 use actix_web::web;
 
 use crate::controller::payment_controller::{
-    create_checkout_session,
-    payment_success,
-    payment_cancelled,
-    stripe_webhook,
+    create_checkout_session, payment_cancelled, payment_success, stripe_webhook,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {

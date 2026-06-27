@@ -1,7 +1,7 @@
 use lettre::{
-    message::{header::ContentType, Mailbox},
-    transport::smtp::authentication::Credentials,
     Message, SmtpTransport, Transport,
+    message::{Mailbox, header::ContentType},
+    transport::smtp::authentication::Credentials,
 };
 use serde::Deserialize;
 

@@ -37,7 +37,11 @@ pub enum ContentTypeEnum {
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "content_category_enum")]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "content_category_enum"
+)]
 pub enum ContentCategoryEnum {
     #[sea_orm(string_value = "lecture")]
     Lecture,

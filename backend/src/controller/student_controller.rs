@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{get, put, web, Responder};
+use actix_web::{Responder, get, put, web};
 use sea_orm::DatabaseConnection;
 
 use crate::models::student::{ChangePasswordForm, UpdateOwnProfileForm};

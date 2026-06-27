@@ -375,13 +375,22 @@ pub fn build_page_context(session: &Session) -> Context {
         .ok()
         .flatten()
         .unwrap_or_default();
+    let org_id = session.get::<i32>("org_id").ok().flatten();
 
     context.insert("role_names", &role_names);
+    context.insert("org_id", &org_id);
 
     let is_instructor_managed_only = role_names.iter().any(|role| role == "Instructor")
         && !role_names.iter().any(|role| role == "Organisation Admin")
         && !role_names.iter().any(|role| role == "LMS Admin");
     context.insert("is_instructor_managed_only", &is_instructor_managed_only);
+
+    let show_course_recommendations = role_names.iter().any(|role| role == "Student")
+        && !role_names.iter().any(|role| role == "Instructor")
+        && !role_names.iter().any(|role| role == "Organisation Admin")
+        && !role_names.iter().any(|role| role == "LMS Admin")
+        && org_id.is_none();
+    context.insert("show_course_recommendations", &show_course_recommendations);
 
     let role_ids: Vec<i32> = session
         .get::<Vec<i32>>("role_ids")
@@ -405,6 +414,7 @@ fn build_anonymous_page_context() -> Context {
     context.insert("role_names", &role_names);
     context.insert("role_ids", &role_ids);
     context.insert("is_instructor_managed_only", &false);
+    context.insert("show_course_recommendations", &false);
     context
 }
 

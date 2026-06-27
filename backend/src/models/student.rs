@@ -20,9 +20,17 @@ pub struct ChangePasswordForm {
     #[validate(length(min = 1, message = "Current password is required"))]
     pub current_password: String,
 
-    #[validate(length(min = 8, max = 128, message = "New password must be between 8 and 128 characters"))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "New password must be between 8 and 128 characters"
+    ))]
     pub new_password: String,
 
-    #[validate(length(min = 8, max = 128, message = "Confirm password must be between 8 and 128 characters"))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "Confirm password must be between 8 and 128 characters"
+    ))]
     pub confirm_password: String,
 }

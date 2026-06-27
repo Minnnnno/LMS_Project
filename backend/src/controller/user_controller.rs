@@ -2,45 +2,38 @@ use crate::entity::{roles, user_roles, users};
 use crate::models::student::ChangePasswordForm;
 use crate::models::user::{ForgotPasswordForm, LoginForm, RegisterForm, ResetPasswordForm};
 use actix_session::Session;
-use actix_web::http::{header, StatusCode};
+use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    QueryFilter, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    Set, TransactionTrait,
 };
 use serde::Deserialize;
 
-use crate::ssr::pages::build_page_context;
 use crate::services::captcha_service::{recaptcha_site_key, verify_recaptcha};
 use crate::services::email_verification_service::{
-    create_email_verification_token, send_verification_email, verify_email_token, VerifyEmailError,
-};
-use crate::services::password_reset_service::{
-    create_password_reset_token, reset_password_with_token, send_reset_email, ResetPasswordError,
+    VerifyEmailError, create_email_verification_token, send_verification_email, verify_email_token,
 };
 use crate::services::login_lockout_service::{
-    clear_login_lockout, is_locked, record_failed_login, LOCKOUT_MINUTES,
+    LOCKOUT_MINUTES, clear_login_lockout, is_locked, record_failed_login,
 };
 use crate::services::login_rate_limit_service::LoginRateLimiter;
-use crate::services::remember_me_service::{
-    create_remember_me_cookie, forget_remember_me_cookie, revoke_remember_me_token,
-    REMEMBER_ME_COOKIE,
+use crate::services::password_reset_service::{
+    ResetPasswordError, create_password_reset_token, reset_password_with_token, send_reset_email,
 };
+use crate::services::remember_me_service::{
+    REMEMBER_ME_COOKIE, create_remember_me_cookie, forget_remember_me_cookie,
+    revoke_remember_me_token,
+};
+use crate::services::user_service::{
+    assign_role_to_user, google_client_id, google_client_secret, google_redirect_uri,
+    hash_password, is_logged_in, load_user_roles, redirect_home, sign_user_into_session,
+    store_roles_in_session,
+};
+use crate::ssr::pages::build_page_context;
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordVerifier},
-};
-use crate::services::user_service::{
-    assign_role_to_user,
-    google_client_id,
-    google_client_secret,
-    google_redirect_uri,
-    hash_password,
-    is_logged_in,
-    load_user_roles,
-    redirect_home,
-    sign_user_into_session,
-    store_roles_in_session,
 };
 use tera::{Context, Tera};
 use uuid::Uuid;
@@ -158,6 +151,7 @@ fn render_login_error_with_status(
     let mut context = Context::new();
     context.insert("is_logged_in", &false);
     context.insert("role_names", &Vec::<String>::new());
+    context.insert("show_course_recommendations", &false);
     context.insert("error", error_message);
     context.insert("email", email);
 
@@ -561,20 +555,20 @@ pub async fn register_submit(
         );
     }
 
-    let verification_token = match create_email_verification_token(&txn, inserted_user.user_id).await
-    {
-        Ok(token) => token,
-        Err(err) => {
-            println!("Email verification token error: {:?}", err);
-            return render_register_error(
-                &session,
-                "Unable to prepare email verification right now.",
-                &first_name,
-                &last_name,
-                &email,
-            );
-        }
-    };
+    let verification_token =
+        match create_email_verification_token(&txn, inserted_user.user_id).await {
+            Ok(token) => token,
+            Err(err) => {
+                println!("Email verification token error: {:?}", err);
+                return render_register_error(
+                    &session,
+                    "Unable to prepare email verification right now.",
+                    &first_name,
+                    &last_name,
+                    &email,
+                );
+            }
+        };
 
     if let Err(err) = txn.commit().await {
         println!("Registration commit error: {:?}", err);
@@ -721,6 +715,13 @@ pub async fn login_submit(
     }
     if let Err(err) = session.insert("must_change_password", user.must_change_password) {
         println!("Session insert error: {:?}", err);
+    }
+    if let Some(org_id) = user.org_id {
+        if let Err(err) = session.insert("org_id", org_id) {
+            println!("Session insert error: {:?}", err);
+        }
+    } else {
+        session.remove("org_id");
     }
 
     let is_lms_admin = role_names.iter().any(|role| role == "LMS Admin");
@@ -1075,11 +1076,16 @@ pub async fn verify_email(
 
     match verify_email_token(db.get_ref(), token).await {
         Ok(user) => {
-            let is_current_user = session.get::<i32>("user_id").ok().flatten() == Some(user.user_id);
+            let is_current_user =
+                session.get::<i32>("user_id").ok().flatten() == Some(user.user_id);
             if is_current_user {
                 let _ = session.insert("email_verified", true);
             }
-            let redirect_path = if is_current_user { "/profile" } else { "/login" };
+            let redirect_path = if is_current_user {
+                "/profile"
+            } else {
+                "/login"
+            };
             if is_current_user {
                 let _ = session.insert(
                     "profile_success",
@@ -1198,6 +1204,11 @@ pub async fn profile(db: web::Data<DatabaseConnection>, session: Session) -> imp
             context.insert("user_full_name", &user_full_name);
             context.insert("has_password", &user.password_hash.is_some());
             let _ = session.insert("email_verified", user.email_verified);
+            if let Some(org_id) = user.org_id {
+                let _ = session.insert("org_id", org_id);
+            } else {
+                session.remove("org_id");
+            }
         }
         Ok(None) => {
             session.purge();
@@ -1278,7 +1289,10 @@ pub async fn update_password_submit(
     }
 
     if form.new_password != form.confirm_password {
-        let _ = session.insert("profile_error", "New password and confirm password do not match.");
+        let _ = session.insert(
+            "profile_error",
+            "New password and confirm password do not match.",
+        );
         return HttpResponse::Found()
             .insert_header((header::LOCATION, "/profile"))
             .finish();
@@ -1304,7 +1318,10 @@ pub async fn update_password_submit(
     let password_hash = match &user.password_hash {
         Some(h) => h.clone(),
         None => {
-            let _ = session.insert("profile_error", "This account uses Google Sign-In and does not have a password.");
+            let _ = session.insert(
+                "profile_error",
+                "This account uses Google Sign-In and does not have a password.",
+            );
             return HttpResponse::Found()
                 .insert_header((header::LOCATION, "/profile"))
                 .finish();
@@ -1463,7 +1480,6 @@ pub async fn lecturer_signup(
         .finish()
 }
 
-
 // ---------------------------------------------------------------------------
 // Forgot password — step 1: request reset email
 // ---------------------------------------------------------------------------
@@ -1501,7 +1517,8 @@ pub async fn forgot_password_submit(
 ) -> impl Responder {
     // Always show the same success message regardless of whether the email exists.
     // This prevents user enumeration attacks.
-    let generic_success = "If that email address is registered, you will receive a password reset link shortly.";
+    let generic_success =
+        "If that email address is registered, you will receive a password reset link shortly.";
 
     if let Err(_) = form.validate() {
         let _ = session.insert("flash_error", "Please enter a valid email address.");
@@ -1588,7 +1605,12 @@ pub async fn reset_password_page(
         return redirect_home();
     }
 
-    let token = match query.token.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+    let token = match query
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
         Some(t) => t.to_string(),
         None => {
             let _ = session.insert("flash_error", "Password reset link is missing a token.");
@@ -1633,7 +1655,11 @@ pub async fn reset_password_submit(
     };
 
     if let Err(_) = form.validate() {
-        return render_error(&session, "Password must be between 8 and 128 characters.", &form.token);
+        return render_error(
+            &session,
+            "Password must be between 8 and 128 characters.",
+            &form.token,
+        );
     }
 
     if form.password != form.confirm_password {
@@ -1650,9 +1676,11 @@ pub async fn reset_password_submit(
                 .insert_header((header::LOCATION, "/login"))
                 .finish()
         }
-        Err(ResetPasswordError::InvalidOrExpired) => {
-            render_error(&session, "This reset link is invalid or has expired. Please request a new one.", &form.token)
-        }
+        Err(ResetPasswordError::InvalidOrExpired) => render_error(
+            &session,
+            "This reset link is invalid or has expired. Please request a new one.",
+            &form.token,
+        ),
         Err(ResetPasswordError::GoogleAccount) => {
             let _ = session.insert(
                 "flash_error",
@@ -1664,7 +1692,11 @@ pub async fn reset_password_submit(
         }
         Err(ResetPasswordError::Database(err)) => {
             println!("Reset password database error: {:?}", err);
-            render_error(&session, "Unable to reset your password right now. Please try again.", &form.token)
+            render_error(
+                &session,
+                "Unable to reset your password right now. Please try again.",
+                &form.token,
+            )
         }
     }
 }

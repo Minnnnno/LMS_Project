@@ -1,8 +1,8 @@
 use actix_session::Session;
-use actix_web::{http::header, HttpResponse};
+use actix_web::{HttpResponse, http::header};
 use argon2::{
-    password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHasher,
+    password_hash::{SaltString, rand_core::OsRng},
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
@@ -161,6 +161,13 @@ pub async fn sign_user_into_session(
     }
     if let Err(err) = session.insert("must_change_password", user.must_change_password) {
         println!("Session insert error: {:?}", err);
+    }
+    if let Some(org_id) = user.org_id {
+        if let Err(err) = session.insert("org_id", org_id) {
+            println!("Session insert error: {:?}", err);
+        }
+    } else {
+        session.remove("org_id");
     }
     store_roles_in_session(session, role_ids, role_names);
 

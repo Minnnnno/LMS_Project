@@ -1,7 +1,7 @@
-use actix_multipart::Multipart;
-use actix_web::{post, HttpResponse, Responder};
-use futures_util::StreamExt;
 use crate::services::cloudinary_service::upload_to_cloudinary;
+use actix_multipart::Multipart;
+use actix_web::{HttpResponse, Responder, post};
+use futures_util::StreamExt;
 
 #[post("/cloudinary/upload")]
 pub async fn upload_file(mut payload: Multipart) -> impl Responder {
@@ -13,8 +13,7 @@ pub async fn upload_file(mut payload: Multipart) -> impl Responder {
         let mut field = match item {
             Ok(field) => field,
             Err(err) => {
-                return HttpResponse::BadRequest()
-                    .body(format!("Multipart error: {}", err));
+                return HttpResponse::BadRequest().body(format!("Multipart error: {}", err));
             }
         };
 
@@ -57,8 +56,7 @@ pub async fn upload_file(mut payload: Multipart) -> impl Responder {
                 }
             }
 
-            folder = String::from_utf8(folder_bytes)
-                .unwrap_or(String::from("lms/uploads"));
+            folder = String::from_utf8(folder_bytes).unwrap_or(String::from("lms/uploads"));
         }
     }
 
@@ -68,7 +66,8 @@ pub async fn upload_file(mut payload: Multipart) -> impl Responder {
 
     match upload_to_cloudinary(file_bytes, filename, folder).await {
         Ok(result) => HttpResponse::Ok().json(result),
-        Err(err) => HttpResponse::InternalServerError()
-            .body(format!("Cloudinary upload error: {}", err)),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Cloudinary upload error: {}", err))
+        }
     }
 }

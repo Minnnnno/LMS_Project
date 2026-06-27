@@ -235,6 +235,16 @@ async fn preference_eligible_user(
     db: &DatabaseConnection,
     session: &Session,
 ) -> Result<users::Model, HttpResponse> {
+    if !has_role(session, "Student")
+        || has_role(session, "LMS Admin")
+        || has_role(session, "Organisation Admin")
+        || has_role(session, "Instructor")
+    {
+        return Err(
+            HttpResponse::Forbidden().body("Course preferences are only available to students")
+        );
+    }
+
     let user_id = session_user_id(session)?;
     let user = users::Entity::find_by_id(user_id)
         .one(db)
@@ -247,7 +257,7 @@ async fn preference_eligible_user(
 
     if user.org_id.is_some() {
         return Err(HttpResponse::Forbidden()
-            .body("Course preferences are only available to independent learners"));
+            .body("Course preferences are only available to students without an organisation"));
     }
 
     Ok(user)
@@ -289,8 +299,10 @@ async fn recommended_courses_for_categories(
         .all(db)
         .await
         .map_err(|err| {
-            HttpResponse::InternalServerError()
-                .body(format!("Database error finding recommended courses: {}", err))
+            HttpResponse::InternalServerError().body(format!(
+                "Database error finding recommended courses: {}",
+                err
+            ))
         })
 }
 
@@ -648,8 +660,10 @@ pub async fn get_course_preferences(
     {
         Ok(rows) => rows,
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Database error finding course preferences: {}", err));
+            return HttpResponse::InternalServerError().body(format!(
+                "Database error finding course preferences: {}",
+                err
+            ));
         }
     };
 
@@ -743,10 +757,11 @@ pub async fn save_course_preferences(
             .body(format!("Course preference commit error: {}", err));
     }
 
-    let recommended_courses = match recommended_courses_for_categories(db.get_ref(), selected_categories).await {
-        Ok(courses) => courses,
-        Err(response) => return response,
-    };
+    let recommended_courses =
+        match recommended_courses_for_categories(db.get_ref(), selected_categories).await {
+            Ok(courses) => courses,
+            Err(response) => return response,
+        };
 
     HttpResponse::Ok().json(CoursePreferenceSavePayload {
         recommended_courses,

@@ -88,9 +88,9 @@ fn optional_normalized_slug(value: Option<String>) -> Result<Option<String>, Htt
         return Ok(None);
     };
     let normalized = value.to_lowercase();
-    let has_valid_chars = normalized
-        .chars()
-        .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+    let has_valid_chars = normalized.chars().all(|character| {
+        character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+    });
 
     if !has_valid_chars || normalized.starts_with('-') || normalized.ends_with('-') {
         return Err(HttpResponse::BadRequest().body(
@@ -141,7 +141,8 @@ async fn organisation_slug_is_used_by_another_org(
     org_slug: &str,
     excluded_org_id: Option<i32>,
 ) -> Result<bool, HttpResponse> {
-    let mut query = organisations::Entity::find().filter(organisations::Column::OrgSlug.eq(org_slug));
+    let mut query =
+        organisations::Entity::find().filter(organisations::Column::OrgSlug.eq(org_slug));
 
     if let Some(org_id) = excluded_org_id {
         query = query.filter(organisations::Column::OrgId.ne(org_id));
@@ -152,7 +153,8 @@ async fn organisation_slug_is_used_by_another_org(
         .await
         .map(|organisation| organisation.is_some())
         .map_err(|err| {
-            HttpResponse::InternalServerError().body(format!("Organisation slug lookup error: {}", err))
+            HttpResponse::InternalServerError()
+                .body(format!("Organisation slug lookup error: {}", err))
         })
 }
 
@@ -171,12 +173,17 @@ async fn ensure_organisation_exists(
     match organisations::Entity::find_by_id(org_id).one(db).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(HttpResponse::BadRequest().body("Selected organisation does not exist")),
-        Err(err) => Err(HttpResponse::InternalServerError()
-            .body(format!("Organisation lookup error: {}", err))),
+        Err(err) => {
+            Err(HttpResponse::InternalServerError()
+                .body(format!("Organisation lookup error: {}", err)))
+        }
     }
 }
 
-async fn ensure_role_exists(db: &DatabaseConnection, role_id: Option<i32>) -> Result<(), HttpResponse> {
+async fn ensure_role_exists(
+    db: &DatabaseConnection,
+    role_id: Option<i32>,
+) -> Result<(), HttpResponse> {
     let Some(role_id) = role_id else {
         return Ok(());
     };
@@ -188,11 +195,17 @@ async fn ensure_role_exists(db: &DatabaseConnection, role_id: Option<i32>) -> Re
     match roles::Entity::find_by_id(role_id).one(db).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(HttpResponse::BadRequest().body("Selected role does not exist")),
-        Err(err) => Err(HttpResponse::InternalServerError().body(format!("Role lookup error: {}", err))),
+        Err(err) => {
+            Err(HttpResponse::InternalServerError().body(format!("Role lookup error: {}", err)))
+        }
     }
 }
 
-async fn ensure_user_exists(db: &DatabaseConnection, user_id: Option<i32>, label: &str) -> Result<(), HttpResponse> {
+async fn ensure_user_exists(
+    db: &DatabaseConnection,
+    user_id: Option<i32>,
+    label: &str,
+) -> Result<(), HttpResponse> {
     let Some(user_id) = user_id else {
         return Ok(());
     };
@@ -203,12 +216,19 @@ async fn ensure_user_exists(db: &DatabaseConnection, user_id: Option<i32>, label
 
     match users::Entity::find_by_id(user_id).one(db).await {
         Ok(Some(_)) => Ok(()),
-        Ok(None) => Err(HttpResponse::BadRequest().body(format!("Selected {} does not exist", label.to_lowercase()))),
-        Err(err) => Err(HttpResponse::InternalServerError().body(format!("{} lookup error: {}", label, err))),
+        Ok(None) => Err(HttpResponse::BadRequest()
+            .body(format!("Selected {} does not exist", label.to_lowercase()))),
+        Err(err) => {
+            Err(HttpResponse::InternalServerError()
+                .body(format!("{} lookup error: {}", label, err)))
+        }
     }
 }
 
-async fn ensure_course_exists(db: &DatabaseConnection, course_id: Option<i32>) -> Result<(), HttpResponse> {
+async fn ensure_course_exists(
+    db: &DatabaseConnection,
+    course_id: Option<i32>,
+) -> Result<(), HttpResponse> {
     let Some(course_id) = course_id else {
         return Ok(());
     };
@@ -220,7 +240,9 @@ async fn ensure_course_exists(db: &DatabaseConnection, course_id: Option<i32>) -
     match courses::Entity::find_by_id(course_id).one(db).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(HttpResponse::BadRequest().body("Selected course does not exist")),
-        Err(err) => Err(HttpResponse::InternalServerError().body(format!("Course lookup error: {}", err))),
+        Err(err) => {
+            Err(HttpResponse::InternalServerError().body(format!("Course lookup error: {}", err)))
+        }
     }
 }
 
@@ -230,9 +252,8 @@ fn validate_optional_http_url(value: Option<&str>, field_name: &str) -> Result<(
     };
 
     if value.len() > 2048 {
-        return Err(
-            HttpResponse::BadRequest().body(format!("{} must not exceed 2048 characters", field_name))
-        );
+        return Err(HttpResponse::BadRequest()
+            .body(format!("{} must not exceed 2048 characters", field_name)));
     }
 
     if value.starts_with("https://") || value.starts_with("http://") {
@@ -252,7 +273,10 @@ fn validate_optional_course_image_url(value: Option<&str>) -> Result<(), HttpRes
 
     if value.starts_with("/static/images/course-presets/")
         && !value.contains("..")
-        && (value.ends_with(".jpg") || value.ends_with(".jpeg") || value.ends_with(".png") || value.ends_with(".webp"))
+        && (value.ends_with(".jpg")
+            || value.ends_with(".jpeg")
+            || value.ends_with(".png")
+            || value.ends_with(".webp"))
     {
         return Ok(());
     }
@@ -290,7 +314,9 @@ fn validate_website_domain(parsed_url: &Url) -> Result<(), HttpResponse> {
     }
 }
 
-fn normalize_optional_website_url(website_url: Option<String>) -> Result<Option<String>, HttpResponse> {
+fn normalize_optional_website_url(
+    website_url: Option<String>,
+) -> Result<Option<String>, HttpResponse> {
     let Some(value) = optional_trimmed_string(website_url, "Website URL", 2048)? else {
         return Ok(None);
     };
@@ -298,9 +324,8 @@ fn normalize_optional_website_url(website_url: Option<String>) -> Result<Option<
     let normalized = if value.starts_with("https://") || value.starts_with("http://") {
         value
     } else if value.contains("://") {
-        return Err(HttpResponse::BadRequest().body(
-            "Website URL must use http:// or https:// when a protocol is provided",
-        ));
+        return Err(HttpResponse::BadRequest()
+            .body("Website URL must use http:// or https:// when a protocol is provided"));
     } else {
         format!("https://{}", value)
     };
@@ -309,9 +334,7 @@ fn normalize_optional_website_url(website_url: Option<String>) -> Result<Option<
         .map_err(|_| HttpResponse::BadRequest().body("Enter a valid website URL"))?;
 
     if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
-        return Err(HttpResponse::BadRequest().body(
-            "Website URL must use http:// or https://",
-        ));
+        return Err(HttpResponse::BadRequest().body("Website URL must use http:// or https://"));
     }
 
     validate_website_domain(&parsed_url)?;
@@ -516,7 +539,9 @@ fn analytics_month_label(year: i32, month: u32) -> String {
     format!("{} {:02}", month_name, year.rem_euclid(100))
 }
 
-fn analytics_date_range_start(date_range: Option<&str>) -> Result<Option<DateTime<Utc>>, HttpResponse> {
+fn analytics_date_range_start(
+    date_range: Option<&str>,
+) -> Result<Option<DateTime<Utc>>, HttpResponse> {
     let Some(date_range) = date_range.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
@@ -527,43 +552,51 @@ fn analytics_date_range_start(date_range: Option<&str>) -> Result<Option<DateTim
     let singapore_now = now.with_timezone(&singapore_offset);
     let start = match date_range {
         "all" => None,
-        "today" => Some(singapore_offset
-            .from_local_datetime(
-                &singapore_now
-                    .date_naive()
-                    .and_hms_opt(0, 0, 0)
-                    .expect("midnight should be valid"),
-            )
-            .single()
-            .expect("Singapore local midnight should be valid")
-            .with_timezone(&Utc)),
-        "last_7_days" => Some(now - Duration::days(7)),
-        "last_30_days" => Some(now - Duration::days(30)),
-        "this_month" => {
-            let first_day = NaiveDate::from_ymd_opt(singapore_now.year(), singapore_now.month(), 1)
-                .expect("first day of current month should be valid");
-            Some(singapore_offset
+        "today" => Some(
+            singapore_offset
                 .from_local_datetime(
-                    &first_day
+                    &singapore_now
+                        .date_naive()
                         .and_hms_opt(0, 0, 0)
                         .expect("midnight should be valid"),
                 )
                 .single()
                 .expect("Singapore local midnight should be valid")
-                .with_timezone(&Utc))
+                .with_timezone(&Utc),
+        ),
+        "last_7_days" => Some(now - Duration::days(7)),
+        "last_30_days" => Some(now - Duration::days(30)),
+        "this_month" => {
+            let first_day = NaiveDate::from_ymd_opt(singapore_now.year(), singapore_now.month(), 1)
+                .expect("first day of current month should be valid");
+            Some(
+                singapore_offset
+                    .from_local_datetime(
+                        &first_day
+                            .and_hms_opt(0, 0, 0)
+                            .expect("midnight should be valid"),
+                    )
+                    .single()
+                    .expect("Singapore local midnight should be valid")
+                    .with_timezone(&Utc),
+            )
         }
         _ => {
-            return Err(HttpResponse::BadRequest().body(
-                "Date range must be all, today, last_7_days, last_30_days, or this_month",
-            ));
+            return Err(HttpResponse::BadRequest()
+                .body("Date range must be all, today, last_7_days, last_30_days, or this_month"));
         }
     };
 
     Ok(start)
 }
 
-fn analytics_course_payment_filter(course_payment: Option<&str>) -> Result<Option<bool>, HttpResponse> {
-    let Some(course_payment) = course_payment.map(str::trim).filter(|value| !value.is_empty()) else {
+fn analytics_course_payment_filter(
+    course_payment: Option<&str>,
+) -> Result<Option<bool>, HttpResponse> {
+    let Some(course_payment) = course_payment
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
 
@@ -571,7 +604,9 @@ fn analytics_course_payment_filter(course_payment: Option<&str>) -> Result<Optio
         "all" => Ok(None),
         "paid" => Ok(Some(true)),
         "free" => Ok(Some(false)),
-        _ => Err(HttpResponse::BadRequest().body("Course payment filter must be all, paid, or free")),
+        _ => {
+            Err(HttpResponse::BadRequest().body("Course payment filter must be all, paid, or free"))
+        }
     }
 }
 
@@ -676,7 +711,9 @@ pub async fn get_admin_analytics_data(
         .iter()
         .filter(|course| {
             let matches_org = selected_org_id.is_none()
-                || course.org_id.is_some_and(|org_id| selected_org_ids.contains(&org_id));
+                || course
+                    .org_id
+                    .is_some_and(|org_id| selected_org_ids.contains(&org_id));
             let matches_payment = course_payment_filter
                 .map(|is_paid| course.is_paid.unwrap_or(false) == is_paid)
                 .unwrap_or(true);
@@ -1201,7 +1238,9 @@ pub async fn create_organisation_service(
     };
 
     match organisation_name_is_used_by_another_org(db, &org_name, None).await {
-        Ok(true) => return HttpResponse::Conflict().body("An organisation with this name already exists"),
+        Ok(true) => {
+            return HttpResponse::Conflict().body("An organisation with this name already exists");
+        }
         Ok(false) => {}
         Err(response) => return response,
     }
@@ -1267,7 +1306,9 @@ pub async fn update_organisation_service(
         Err(response) => return response,
     };
     match organisation_name_is_used_by_another_org(db, &org_name, Some(org_id)).await {
-        Ok(true) => return HttpResponse::Conflict().body("An organisation with this name already exists"),
+        Ok(true) => {
+            return HttpResponse::Conflict().body("An organisation with this name already exists");
+        }
         Ok(false) => {}
         Err(response) => return response,
     }
@@ -1400,7 +1441,8 @@ pub async fn create_user_service(
     }
 
     if let Err(err) = txn.commit().await {
-        return HttpResponse::InternalServerError().body(format!("Create user commit error: {}", err));
+        return HttpResponse::InternalServerError()
+            .body(format!("Create user commit error: {}", err));
     }
 
     HttpResponse::Ok().json(inserted_user)
@@ -1488,7 +1530,9 @@ pub async fn create_course_service(
         Ok(value) => value.map(|value| value.to_uppercase()),
         Err(response) => return response,
     };
-    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, currency.as_deref()) {
+    if let Err(response) =
+        validate_course_payment(body.is_paid, body.price_cents, currency.as_deref())
+    {
         return response;
     }
     if let Err(response) = ensure_organisation_exists(db, body.org_id).await {
@@ -1554,7 +1598,9 @@ pub async fn update_course_service(
         Ok(value) => value.map(|value| value.to_uppercase()),
         Err(response) => return response,
     };
-    if let Err(response) = validate_course_payment(body.is_paid, body.price_cents, currency.as_deref()) {
+    if let Err(response) =
+        validate_course_payment(body.is_paid, body.price_cents, currency.as_deref())
+    {
         return response;
     }
     if let Err(response) = ensure_organisation_exists(db, body.org_id).await {

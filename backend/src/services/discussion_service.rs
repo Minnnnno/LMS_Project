@@ -456,9 +456,8 @@ pub async fn delete_topic(
 ) -> Result<(), HttpResponse> {
     let (topic, _, course) = topic_module_course(db, topic_id).await?;
     if !can_delete_discussion_topic(db, session, &course).await? {
-        return Err(
-            HttpResponse::Forbidden().body("Only organisation admins and LMS admins can delete discussion topics")
-        );
+        return Err(HttpResponse::Forbidden()
+            .body("Only organisation admins and LMS admins can delete discussion topics"));
     }
 
     module_discussion_topics::Entity::delete_by_id(topic.topic_id)
@@ -530,7 +529,7 @@ pub async fn list_threads(
                 .unwrap_or(DiscussionAuthor {
                     user_id: thread.author_id,
                     name: "Unknown user".to_string(),
-            }),
+                }),
             reply_count,
             can_edit: lms_admin || can_edit_owned(user_id, thread.author_id, &thread.status),
             can_close: thread.status == "open" && (can_manage || user_id == thread.author_id),
@@ -728,7 +727,10 @@ pub async fn get_thread_detail(
             ))
         })?;
     let mut replies = top_level_replies.clone();
-    let mut frontier: Vec<i32> = top_level_replies.iter().map(|reply| reply.reply_id).collect();
+    let mut frontier: Vec<i32> = top_level_replies
+        .iter()
+        .map(|reply| reply.reply_id)
+        .collect();
 
     while !frontier.is_empty() {
         let children = module_discussion_replies::Entity::find()
@@ -866,8 +868,9 @@ pub async fn hide_thread(
             .body("Only course staff can remove closed discussion threads"));
     }
     if !lms_admin && thread.status != "closed" {
-        return Err(HttpResponse::BadRequest()
-            .body("Only closed discussion threads can be removed"));
+        return Err(
+            HttpResponse::BadRequest().body("Only closed discussion threads can be removed")
+        );
     }
     if thread.hidden_at.is_some() {
         return Ok(());
@@ -880,8 +883,10 @@ pub async fn hide_thread(
     active.updated_at = Set(now);
 
     active.update(db).await.map_err(|err| {
-        HttpResponse::InternalServerError()
-            .body(format!("Database error removing discussion thread: {}", err))
+        HttpResponse::InternalServerError().body(format!(
+            "Database error removing discussion thread: {}",
+            err
+        ))
     })?;
 
     Ok(())
@@ -912,8 +917,9 @@ pub async fn create_reply(
             .ok_or_else(|| HttpResponse::BadRequest().body("Parent reply not found"))?;
 
         if parent_reply.thread_id != thread_id || parent_reply.deleted_at.is_some() {
-            return Err(HttpResponse::BadRequest()
-                .body("Parent reply does not belong to this thread"));
+            return Err(
+                HttpResponse::BadRequest().body("Parent reply does not belong to this thread")
+            );
         }
     }
 
@@ -965,8 +971,9 @@ pub async fn delete_reply(
 
     let (_, _, _, course) = thread_topic_module_course(db, reply.thread_id).await?;
     if !can_manage_course(db, session, &course).await? {
-        return Err(HttpResponse::Forbidden()
-            .body("Only course staff can delete discussion replies"));
+        return Err(
+            HttpResponse::Forbidden().body("Only course staff can delete discussion replies")
+        );
     }
     if reply.deleted_at.is_some() {
         return Ok(());

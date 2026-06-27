@@ -7,10 +7,12 @@ use sea_orm::{
 };
 
 use crate::entity::{assignments, courses, submissions, users};
-use crate::models::submission::{CreateSubmission, GradeSubmission, StaffSubmission, StudentSubmission};
+use crate::models::submission::{
+    CreateSubmission, GradeSubmission, StaffSubmission, StudentSubmission,
+};
 use crate::services::auth_helpers::{get_user_id, is_enrolled};
 use crate::services::course_service::can_manage_course;
-use crate::services::mailer_service::{send_mail_message, MailRequest};
+use crate::services::mailer_service::{MailRequest, send_mail_message};
 use crate::services::prerequisite_service;
 
 async fn require_enrolled_for_assignment(
@@ -33,13 +35,12 @@ async fn require_enrolled_for_assignment(
                 prerequisite_service::get_assignment_prerequisite_ids(db, assignment.assignment_id)
                     .await?;
 
-            if let Some(prerequisite) =
-                prerequisite_service::get_first_incomplete_required_module(
-                    db,
-                    user_id,
-                    prerequisite_ids,
-                )
-                .await?
+            if let Some(prerequisite) = prerequisite_service::get_first_incomplete_required_module(
+                db,
+                user_id,
+                prerequisite_ids,
+            )
+            .await?
             {
                 return Err(HttpResponse::Forbidden().body(format!(
                     "Complete {} before submitting this assignment",
@@ -93,7 +94,9 @@ async fn require_can_manage_assignment(
 
     match can_manage_course(db, session, &course).await {
         Ok(true) => Ok(assignment),
-        Ok(false) => Err(HttpResponse::Forbidden().body("You cannot grade submissions for this course")),
+        Ok(false) => {
+            Err(HttpResponse::Forbidden().body("You cannot grade submissions for this course"))
+        }
         Err(response) => Err(response),
     }
 }
@@ -174,7 +177,9 @@ fn content_type_matches(expected_file_type: &str, content_type: &str) -> bool {
         "xlsx" => {
             content_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         }
-        "zip" => content_type == "application/zip" || content_type == "application/x-zip-compressed",
+        "zip" => {
+            content_type == "application/zip" || content_type == "application/x-zip-compressed"
+        }
         "image" => content_type.starts_with("image/"),
         _ => true,
     }
@@ -261,7 +266,12 @@ fn build_submission_confirmation_email(
 ) -> String {
     let student_name = escape_html(&format!("{} {}", user.first_name, user.last_name));
     let assignment_title = escape_html(&assignment.title);
-    let submitted_at = escape_html(&submission.submitted_at.format("%d %b %Y, %I:%M %p").to_string());
+    let submitted_at = escape_html(
+        &submission
+            .submitted_at
+            .format("%d %b %Y, %I:%M %p")
+            .to_string(),
+    );
     let file_label = escape_html(file_name.unwrap_or("Uploaded file"));
     let file_link = submission
         .file_url
@@ -402,9 +412,8 @@ pub async fn create_submission(
 
             HttpResponse::Ok().json(to_student_submission(saved))
         }
-        Err(err) => {
-            HttpResponse::InternalServerError().body(format!("Database error saving submission: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error saving submission: {}", err)),
     }
 }
 
@@ -435,9 +444,8 @@ pub async fn list_my_submissions(
                 .map(to_student_submission)
                 .collect::<Vec<_>>(),
         ),
-        Err(err) => {
-            HttpResponse::InternalServerError().body(format!("Database error finding submission: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error finding submission: {}", err)),
     }
 }
 
@@ -465,7 +473,10 @@ pub async fn list_assignment_submissions(
 
     let mut latest_submission_ids = HashSet::new();
     for submission in &submission_rows {
-        if is_latest_submission_for_student(db, submission).await.unwrap_or(false) {
+        if is_latest_submission_for_student(db, submission)
+            .await
+            .unwrap_or(false)
+        {
             latest_submission_ids.insert(submission.submission_id);
         }
     }
@@ -504,10 +515,11 @@ pub async fn grade_submission(
         }
     };
 
-    let assignment = match require_can_manage_assignment(db, session, submission.assignment_id).await {
-        Ok(assignment) => assignment,
-        Err(response) => return response,
-    };
+    let assignment =
+        match require_can_manage_assignment(db, session, submission.assignment_id).await {
+            Ok(assignment) => assignment,
+            Err(response) => return response,
+        };
 
     if let Err(response) = require_latest_submission_for_grading(db, &submission).await {
         return response;
@@ -525,13 +537,15 @@ pub async fn grade_submission(
 
     let mut active: submissions::ActiveModel = submission.into();
     active.score = Set(Some(data.score));
-    active.feedback = Set(data.feedback.map(|feedback| feedback.trim().to_string()).filter(|feedback| !feedback.is_empty()));
+    active.feedback = Set(data
+        .feedback
+        .map(|feedback| feedback.trim().to_string())
+        .filter(|feedback| !feedback.is_empty()));
 
     match active.update(db).await {
         Ok(saved) => HttpResponse::Ok().json(to_student_submission(saved)),
-        Err(err) => {
-            HttpResponse::InternalServerError().body(format!("Database error saving grade: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error saving grade: {}", err)),
     }
 }
 
@@ -549,7 +563,9 @@ pub async fn clear_submission_grade(
         }
     };
 
-    if let Err(response) = require_can_manage_assignment(db, session, submission.assignment_id).await {
+    if let Err(response) =
+        require_can_manage_assignment(db, session, submission.assignment_id).await
+    {
         return response;
     }
 
@@ -563,8 +579,7 @@ pub async fn clear_submission_grade(
 
     match active.update(db).await {
         Ok(saved) => HttpResponse::Ok().json(to_student_submission(saved)),
-        Err(err) => {
-            HttpResponse::InternalServerError().body(format!("Database error clearing grade: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error clearing grade: {}", err)),
     }
 }

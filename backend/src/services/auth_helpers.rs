@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{http::header, HttpResponse};
+use actix_web::{HttpResponse, http::header};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::entity::enrollments;

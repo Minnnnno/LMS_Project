@@ -1,11 +1,12 @@
 use actix_session::SessionExt;
 use actix_web::{
+    Error,
     body::MessageBody,
     cookie::{Cookie, SameSite, time::Duration as CookieDuration},
     dev::{ServiceRequest, ServiceResponse},
     error::ErrorInternalServerError,
     middleware::Next,
-    web, Error,
+    web,
 };
 use chrono::{Duration, Utc};
 use sea_orm::{
@@ -15,8 +16,8 @@ use sea_orm::{
 use sha1::{Digest, Sha1};
 use uuid::Uuid;
 
-use crate::entity::{remember_me_tokens, users};
 use crate::config::is_production;
+use crate::entity::{remember_me_tokens, users};
 use crate::services::user_service::sign_user_into_session;
 
 pub const REMEMBER_ME_COOKIE: &str = "remember_me";
@@ -151,16 +152,28 @@ pub async fn remember_me_middleware(
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
     let mut response_cookie = None;
-    let has_session = req.get_session().get::<i32>("user_id").ok().flatten().is_some();
+    let has_session = req
+        .get_session()
+        .get::<i32>("user_id")
+        .ok()
+        .flatten()
+        .is_some();
 
     if !has_session {
-        let remember_token = req.cookie(REMEMBER_ME_COOKIE).map(|cookie| cookie.value().to_string());
+        let remember_token = req
+            .cookie(REMEMBER_ME_COOKIE)
+            .map(|cookie| cookie.value().to_string());
         let db = req.app_data::<web::Data<DatabaseConnection>>().cloned();
 
         if let (Some(token), Some(db)) = (remember_token, db) {
             match validate_and_rotate_remember_me_token(db.get_ref(), &token).await {
-                Ok(RememberMeValidation::Authenticated { user, replacement_cookie }) => {
-                    if let Err(message) = sign_user_into_session(db.get_ref(), &req.get_session(), &user).await {
+                Ok(RememberMeValidation::Authenticated {
+                    user,
+                    replacement_cookie,
+                }) => {
+                    if let Err(message) =
+                        sign_user_into_session(db.get_ref(), &req.get_session(), &user).await
+                    {
                         println!("Remember-me session restore error: {}", message);
                         response_cookie = Some(forget_remember_me_cookie());
                     } else {

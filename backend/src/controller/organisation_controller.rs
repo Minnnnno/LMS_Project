@@ -5,12 +5,12 @@ use actix_web::{
     post, put, web,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
-    EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use tera::{Context, Tera};
-use validator::{validate_email, Validate};
+use validator::{Validate, validate_email};
 
 use crate::entity::{
     course_instructors, courses, enrollments, org_class_courses, org_class_members, org_classes,
@@ -253,96 +253,93 @@ pub async fn organisation_signup_submit(
         }
     };
 
-    let (
-        requester_user_id,
-        admin_first_name,
-        admin_last_name,
-        admin_email,
-        admin_password_hash,
-    ) = if let Some(user) = &current_user {
-        (
-            Some(user.user_id),
-            Some(user.first_name.trim().to_string()),
-            Some(user.last_name.trim().to_string()),
-            user.email.trim().to_lowercase(),
-            None,
-        )
-    } else {
-        let admin_email = form
-            .admin_email
-            .as_deref()
-            .unwrap_or_default()
-            .trim()
-            .to_lowercase();
+    let (requester_user_id, admin_first_name, admin_last_name, admin_email, admin_password_hash) =
+        if let Some(user) = &current_user {
+            (
+                Some(user.user_id),
+                Some(user.first_name.trim().to_string()),
+                Some(user.last_name.trim().to_string()),
+                user.email.trim().to_lowercase(),
+                None,
+            )
+        } else {
+            let admin_email = form
+                .admin_email
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .to_lowercase();
 
-        match users::Entity::find()
-            .filter(users::Column::Email.eq(admin_email.clone()))
-            .one(db.get_ref())
+            match users::Entity::find()
+                .filter(users::Column::Email.eq(admin_email.clone()))
+                .one(db.get_ref())
+                .await
+            {
+                Ok(Some(_)) => {
+                    return render_signup_page(
+                        &session,
+                        StatusCode::BAD_REQUEST,
+                        Some("Email already exists."),
+                        None,
+                        None,
+                        Some(&form),
+                    );
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    println!("Admin email lookup error: {:?}", err);
+                    return render_signup_page(
+                        &session,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Some("Unable to check the admin email right now."),
+                        None,
+                        None,
+                        Some(&form),
+                    );
+                }
+            }
+
+            let password_hash = match hash_password(
+                form.admin_password
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_string(),
+            )
             .await
-        {
-            Ok(Some(_)) => {
-                return render_signup_page(
-                    &session,
-                    StatusCode::BAD_REQUEST,
-                    Some("Email already exists."),
-                    None,
-                    None,
-                    Some(&form),
-                );
-            }
-            Ok(None) => {}
-            Err(err) => {
-                println!("Admin email lookup error: {:?}", err);
-                return render_signup_page(
-                    &session,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Some("Unable to check the admin email right now."),
-                    None,
-                    None,
-                    Some(&form),
-                );
-            }
-        }
+            {
+                Ok(hash) => hash,
+                Err(message) => {
+                    return render_signup_page(
+                        &session,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Some(&message),
+                        None,
+                        None,
+                        Some(&form),
+                    );
+                }
+            };
 
-        let password_hash = match hash_password(
-            form.admin_password
-                .as_deref()
-                .unwrap_or_default()
-                .to_string(),
-        )
-        .await
-        {
-            Ok(hash) => hash,
-            Err(message) => {
-                return render_signup_page(
-                    &session,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Some(&message),
-                    None,
-                    None,
-                    Some(&form),
-                );
-            }
+            (
+                None,
+                Some(
+                    form.admin_first_name
+                        .as_deref()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                ),
+                Some(
+                    form.admin_last_name
+                        .as_deref()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                ),
+                admin_email,
+                Some(password_hash),
+            )
         };
-
-        (
-            None,
-            Some(form
-                .admin_first_name
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .to_string()),
-            Some(form
-                .admin_last_name
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .to_string()),
-            admin_email,
-            Some(password_hash),
-        )
-    };
 
     match organisation_signup_requests::Entity::find()
         .filter(organisation_signup_requests::Column::AdminEmail.eq(admin_email.clone()))
@@ -354,7 +351,9 @@ pub async fn organisation_signup_submit(
             return render_signup_page(
                 &session,
                 StatusCode::BAD_REQUEST,
-                Some("An organisation signup request for this admin email is already pending approval."),
+                Some(
+                    "An organisation signup request for this admin email is already pending approval.",
+                ),
                 current_user.as_ref(),
                 None,
                 Some(&form),
@@ -754,10 +753,13 @@ where
         ..Default::default()
     };
 
-    let inserted_user = new_user
-        .insert(db)
-        .await
-        .map_err(|err| format!("Failed to create {} account: {}", role_label(&role_name), err))?;
+    let inserted_user = new_user.insert(db).await.map_err(|err| {
+        format!(
+            "Failed to create {} account: {}",
+            role_label(&role_name),
+            err
+        )
+    })?;
 
     assign_role_if_missing(db, inserted_user.user_id, &role_name)
         .await
@@ -894,11 +896,7 @@ where
     Ok(rows.into_iter().map(|row| row.user_id).collect())
 }
 
-async fn assign_role_id_if_missing<C>(
-    db: &C,
-    user_id: i32,
-    role_id: i32,
-) -> Result<(), DbErr>
+async fn assign_role_id_if_missing<C>(db: &C, user_id: i32, role_id: i32) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
@@ -934,12 +932,18 @@ where
     let user_id = user.user_id;
 
     if lms_admins.contains(&user_id) {
-        return Err(format!("User {} is an LMS admin and cannot be added", user_id));
+        return Err(format!(
+            "User {} is an LMS admin and cannot be added",
+            user_id
+        ));
     }
 
     if let Some(existing_org_id) = user.org_id {
         if existing_org_id == org_id {
-            return Err(format!("User {} already belongs to this organisation", user_id));
+            return Err(format!(
+                "User {} already belongs to this organisation",
+                user_id
+            ));
         }
 
         return Err(format!(
@@ -1395,11 +1399,7 @@ where
         .map(|rows| rows.into_iter().map(|row| row.course_id).collect())
 }
 
-async fn set_class_courses<C>(
-    db: &C,
-    class_id: i32,
-    course_ids: &[i32],
-) -> Result<(), DbErr>
+async fn set_class_courses<C>(db: &C, class_id: i32, course_ids: &[i32]) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
@@ -1486,7 +1486,10 @@ where
     let user_id = user.user_id;
 
     if lms_admins.contains(&user_id) {
-        return Err(format!("User {} is an LMS admin and cannot be added", user_id));
+        return Err(format!(
+            "User {} is an LMS admin and cannot be added",
+            user_id
+        ));
     }
 
     match user.org_id {
@@ -1509,7 +1512,12 @@ where
 
     assign_role_id_if_missing(db, user_id, student_role_id)
         .await
-        .map_err(|err| format!("Failed to assign student role for user {}: {}", user_id, err))?;
+        .map_err(|err| {
+            format!(
+                "Failed to assign student role for user {}: {}",
+                user_id, err
+            )
+        })?;
 
     Ok(user_id)
 }
@@ -1534,7 +1542,12 @@ where
     for course_id in course_ids {
         ensure_course_enrollment(db, user_id, course_id)
             .await
-            .map_err(|err| format!("Failed to enroll user {} into class course: {}", user_id, err))?;
+            .map_err(|err| {
+                format!(
+                    "Failed to enroll user {} into class course: {}",
+                    user_id, err
+                )
+            })?;
     }
 
     Ok(())
@@ -1567,7 +1580,8 @@ where
 
     for member in members {
         for course_id in &removed_courses {
-            remove_course_enrollment_if_unassigned(db, member.user_id, class_id, *course_id).await?;
+            remove_course_enrollment_if_unassigned(db, member.user_id, class_id, *course_id)
+                .await?;
         }
         for course_id in &added_courses {
             ensure_course_enrollment(db, member.user_id, *course_id).await?;
@@ -1851,13 +1865,9 @@ pub async fn list_org_classes(
         .map(|class| OrgClassDto {
             class_id: class.class_id,
             org_id: class.org_id,
-            courses: courses_by_class
-                .remove(&class.class_id)
-                .unwrap_or_default(),
+            courses: courses_by_class.remove(&class.class_id).unwrap_or_default(),
             class_name: class.class_name,
-            members: members_by_class
-                .remove(&class.class_id)
-                .unwrap_or_default(),
+            members: members_by_class.remove(&class.class_id).unwrap_or_default(),
         })
         .collect::<Vec<OrgClassDto>>();
 
@@ -1956,7 +1966,8 @@ pub async fn update_org_class(
     };
     let body = body.into_inner();
     let new_course_ids = match body.course_ids {
-        Some(course_ids) => match validate_class_course_ids(db.get_ref(), org_id, course_ids).await {
+        Some(course_ids) => match validate_class_course_ids(db.get_ref(), org_id, course_ids).await
+        {
             Ok(course_ids) => Some(course_ids),
             Err(response) => return response,
         },
@@ -2082,14 +2093,17 @@ pub async fn delete_org_class(
                 remove_course_enrollment_if_unassigned(&txn, member.user_id, class_id, *course_id)
                     .await
             {
-                return HttpResponse::InternalServerError()
-                    .body(format!("Failed to sync enrollment for user {}: {}", member.user_id, err));
+                return HttpResponse::InternalServerError().body(format!(
+                    "Failed to sync enrollment for user {}: {}",
+                    member.user_id, err
+                ));
             }
         }
     }
 
     if let Err(err) = org_classes::Entity::delete_by_id(class_id).exec(&txn).await {
-        return HttpResponse::InternalServerError().body(format!("Failed to delete class: {}", err));
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to delete class: {}", err));
     }
 
     if let Err(err) = txn.commit().await {
@@ -2139,8 +2153,10 @@ pub async fn add_org_class_members(
         };
 
     if let Err(err) = txn.commit().await {
-        return HttpResponse::InternalServerError()
-            .body(format!("Failed to commit class membership changes: {}", err));
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to commit class membership changes: {}",
+            err
+        ));
     }
 
     for account in &created_accounts {
@@ -2227,8 +2243,10 @@ pub async fn remove_org_class_member(
     }
 
     if let Err(err) = txn.commit().await {
-        return HttpResponse::InternalServerError()
-            .body(format!("Failed to commit class membership removal: {}", err));
+        return HttpResponse::InternalServerError().body(format!(
+            "Failed to commit class membership removal: {}",
+            err
+        ));
     }
 
     HttpResponse::Ok().json(serde_json::json!({ "message": "Learner removed from class" }))
@@ -2369,7 +2387,10 @@ pub async fn import_org_class_members(
     let mut added = Vec::new();
     let mut created_accounts = Vec::new();
     for (class_id, form) in rows_by_class {
-        let Some(class) = classes_by_name.values().find(|class| class.class_id == class_id) else {
+        let Some(class) = classes_by_name
+            .values()
+            .find(|class| class.class_id == class_id)
+        else {
             continue;
         };
         match add_class_members_impl(&txn, class, &form, assigned_by).await {
@@ -2876,8 +2897,10 @@ pub async fn remove_org_member(
     {
         Ok(classes) => classes,
         Err(err) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Database error finding organisation classes: {}", err));
+            return HttpResponse::InternalServerError().body(format!(
+                "Database error finding organisation classes: {}",
+                err
+            ));
         }
     };
 
@@ -2941,12 +2964,18 @@ pub async fn remove_org_member(
         for member in member_rows {
             if let Some(course_ids) = course_ids_by_class.get(&member.class_id) {
                 for course_id in course_ids {
-                    if let Err(err) =
-                        remove_course_enrollment_if_unassigned(&txn, user_id, member.class_id, *course_id)
-                            .await
+                    if let Err(err) = remove_course_enrollment_if_unassigned(
+                        &txn,
+                        user_id,
+                        member.class_id,
+                        *course_id,
+                    )
+                    .await
                     {
-                        return HttpResponse::InternalServerError()
-                            .body(format!("Failed to sync enrollment for user {}: {}", user_id, err));
+                        return HttpResponse::InternalServerError().body(format!(
+                            "Failed to sync enrollment for user {}: {}",
+                            user_id, err
+                        ));
                     }
                 }
             }
@@ -2987,8 +3016,7 @@ pub async fn list_all_users(db: web::Data<DatabaseConnection>, session: Session)
         }
     };
 
-    match users::Entity::find().all(db.get_ref()).await
-    {
+    match users::Entity::find().all(db.get_ref()).await {
         Ok(users) => {
             let safe: Vec<serde_json::Value> = users
                 .iter()

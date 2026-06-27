@@ -1,13 +1,7 @@
 use actix_web::web;
 
-use crate::{
-    controller::module_controller::{
-        get_modules, 
-        get_modules_by_course_id, 
-        update_module,
-        create_module,
-        delete_module
-    }
+use crate::controller::module_controller::{
+    create_module, delete_module, get_modules, get_modules_by_course_id, update_module,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {

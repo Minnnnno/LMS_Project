@@ -3,9 +3,9 @@ use actix_web::web;
 use crate::controller::organisation_controller::{
     add_org_class_members, assign_course_instructor, create_org_class, create_organisation,
     delete_org_class, delete_organisation, get_organisation, import_org_class_members,
-    invite_instructor, list_all_users, list_course_instructors, list_org_classes,
-    list_org_members, list_organisations, list_unassigned_users, mass_enroll,
-    remove_course_instructor, remove_org_class_member, remove_org_member, update_org_class,
+    invite_instructor, list_all_users, list_course_instructors, list_org_classes, list_org_members,
+    list_organisations, list_unassigned_users, mass_enroll, remove_course_instructor,
+    remove_org_class_member, remove_org_member, update_org_class,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {

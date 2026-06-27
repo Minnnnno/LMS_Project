@@ -6,9 +6,9 @@ use crate::controller::admin_controller::{
     admin_delete_user, admin_enroll_user, admin_enrollments_page, admin_get_analytics_data,
     admin_get_courses, admin_get_enrollments, admin_get_organisation_signup_requests,
     admin_get_roles, admin_get_users, admin_organisations_page,
-    admin_reject_organisation_signup_request, admin_stats, admin_unenroll_user, admin_update_course,
-    admin_update_user, admin_users_page, create_organisation, delete_organisation,
-    get_organisations, update_organisation,
+    admin_reject_organisation_signup_request, admin_stats, admin_unenroll_user,
+    admin_update_course, admin_update_user, admin_users_page, create_organisation,
+    delete_organisation, get_organisations, update_organisation,
 };
 
 pub fn init(cfg: &mut web::ServiceConfig) {

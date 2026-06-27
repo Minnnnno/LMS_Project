@@ -30,7 +30,9 @@ pub async fn reorder_modules_for_course(
         .filter(|module| Some(module.module_id) != moving_module_id)
         .collect();
 
-    let insert_index = (requested_position as usize).saturating_sub(1).min(reordered.len());
+    let insert_index = (requested_position as usize)
+        .saturating_sub(1)
+        .min(reordered.len());
 
     if let Some(module_id) = moving_module_id {
         let moving_module = modules::Entity::find_by_id(module_id)
@@ -52,8 +54,7 @@ pub async fn reorder_modules_for_course(
             let mut active: modules::ActiveModel = module.into();
             active.position = Set(new_position);
             active.update(db).await.map_err(|err| {
-                HttpResponse::InternalServerError()
-                    .body(format!("Module reorder error: {}", err))
+                HttpResponse::InternalServerError().body(format!("Module reorder error: {}", err))
             })?;
         }
     }

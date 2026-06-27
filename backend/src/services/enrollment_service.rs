@@ -48,8 +48,7 @@ pub async fn enroll_free_course(
     match can_view_course(db, session, &course).await {
         Ok(true) => {}
         Ok(false) => {
-            return HttpResponse::Forbidden()
-                .body("This course is private to its organisation");
+            return HttpResponse::Forbidden().body("This course is private to its organisation");
         }
         Err(response) => return response,
     }
@@ -60,7 +59,9 @@ pub async fn enroll_free_course(
         .one(db)
         .await
     {
-        Ok(Some(_)) => return HttpResponse::BadRequest().body("User is already enrolled in this course"),
+        Ok(Some(_)) => {
+            return HttpResponse::BadRequest().body("User is already enrolled in this course");
+        }
         Ok(None) => {}
         Err(err) => {
             return HttpResponse::InternalServerError()
@@ -76,8 +77,7 @@ pub async fn enroll_free_course(
 
     match new_enrollment.insert(db).await {
         Ok(_) => HttpResponse::Ok().body("Enrolled in course successfully"),
-        Err(err) => {
-            HttpResponse::InternalServerError().body(format!("Database error creating enrollment: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Database error creating enrollment: {}", err)),
     }
 }

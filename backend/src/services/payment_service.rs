@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{rt::time::sleep, HttpResponse};
+use actix_web::{HttpResponse, rt::time::sleep};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
@@ -9,10 +9,9 @@ use serde::Serialize;
 use std::time::Duration;
 use stripe::{
     CheckoutSession, CheckoutSessionMode, CheckoutSessionPaymentStatus, Client,
-    CreateCheckoutSession, CreateCheckoutSessionLineItems,
-    CreateCheckoutSessionLineItemsPriceData,
-    CreateCheckoutSessionLineItemsPriceDataProductData,
-    CreateCheckoutSessionPaymentIntentData, Currency, EventObject, EventType, Webhook,
+    CreateCheckoutSession, CreateCheckoutSessionLineItems, CreateCheckoutSessionLineItemsPriceData,
+    CreateCheckoutSessionLineItemsPriceDataProductData, CreateCheckoutSessionPaymentIntentData,
+    Currency, EventObject, EventType, Webhook,
 };
 
 use crate::entity::{courses, enrollments, payments, users};
@@ -43,10 +42,16 @@ fn schedule_pending_payment_cleanup(db: DatabaseConnection, payment_id: i32) {
                 println!("Deleted expired pending payment {}", payment_id);
             }
             Ok(_) => {
-                println!("Payment {} was no longer pending, cleanup skipped", payment_id);
+                println!(
+                    "Payment {} was no longer pending, cleanup skipped",
+                    payment_id
+                );
             }
             Err(err) => {
-                println!("Failed to delete expired pending payment {}: {}", payment_id, err);
+                println!(
+                    "Failed to delete expired pending payment {}: {}",
+                    payment_id, err
+                );
             }
         }
     });
@@ -59,8 +64,12 @@ pub async fn create_checkout_session(
 ) -> HttpResponse {
     let user_id = match session.get::<i32>("user_id") {
         Ok(Some(id)) => id,
-        Ok(None) => return HttpResponse::Unauthorized().body("Please log in before buying a course"),
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Session error: {}", err)),
+        Ok(None) => {
+            return HttpResponse::Unauthorized().body("Please log in before buying a course");
+        }
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Session error: {}", err));
+        }
     };
 
     let user = match users::Entity::find_by_id(user_id).one(db).await {
@@ -82,7 +91,9 @@ pub async fn create_checkout_session(
         .one(db)
         .await
     {
-        Ok(Some(_)) => return HttpResponse::BadRequest().body("User is already enrolled in this course"),
+        Ok(Some(_)) => {
+            return HttpResponse::BadRequest().body("User is already enrolled in this course");
+        }
         Ok(None) => {}
         Err(err) => {
             return HttpResponse::InternalServerError()
@@ -93,7 +104,9 @@ pub async fn create_checkout_session(
     let course = match courses::Entity::find_by_id(course_id).one(db).await {
         Ok(Some(course)) => course,
         Ok(None) => return HttpResponse::NotFound().body("Course not found"),
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Database error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Database error: {}", err));
+        }
     };
 
     if !course.is_paid.unwrap_or(false) {
@@ -103,8 +116,7 @@ pub async fn create_checkout_session(
     match can_view_course(db, session, &course).await {
         Ok(true) => {}
         Ok(false) => {
-            return HttpResponse::Forbidden()
-                .body("This course is private to its organisation");
+            return HttpResponse::Forbidden().body("This course is private to its organisation");
         }
         Err(response) => return response,
     }
@@ -121,16 +133,21 @@ pub async fn create_checkout_session(
 
     let inserted_payment = match payment.insert(db).await {
         Ok(inserted_payment) => inserted_payment,
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Insert payment error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Insert payment error: {}", err));
+        }
     };
 
     let stripe_secret_key = match std::env::var("STRIPE_SECRET_KEY") {
         Ok(key) => key,
-        Err(_) => return HttpResponse::InternalServerError().body("Stripe secret key not set in .env"),
+        Err(_) => {
+            return HttpResponse::InternalServerError().body("Stripe secret key not set in .env");
+        }
     };
 
-    let frontend_url = std::env::var("FRONTEND_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+    let frontend_url =
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
 
     let stripe_client = Client::new(stripe_secret_key);
     let success_url = format!("{}/", frontend_url);
@@ -153,9 +170,8 @@ pub async fn create_checkout_session(
     let mut session_params = CreateCheckoutSession::new();
     session_params.success_url = Some(success_url.as_str());
     session_params.cancel_url = Some(cancel_url.as_str());
-    session_params.expires_at = Some(
-        (Utc::now() + chrono::Duration::seconds(STRIPE_CHECKOUT_EXPIRY_SECONDS)).timestamp(),
-    );
+    session_params.expires_at =
+        Some((Utc::now() + chrono::Duration::seconds(STRIPE_CHECKOUT_EXPIRY_SECONDS)).timestamp());
     session_params.mode = Some(CheckoutSessionMode::Payment);
     session_params.line_items = Some(vec![CreateCheckoutSessionLineItems {
         quantity: Some(1),
@@ -172,7 +188,10 @@ pub async fn create_checkout_session(
     }]);
 
     let metadata = std::collections::HashMap::from([
-        ("payment_id".to_string(), inserted_payment.payment_id.to_string()),
+        (
+            "payment_id".to_string(),
+            inserted_payment.payment_id.to_string(),
+        ),
         ("user_id".to_string(), user_id.to_string()),
         ("course_id".to_string(), course.course_id.to_string()),
     ]);
@@ -185,13 +204,18 @@ pub async fn create_checkout_session(
 
     let checkout_session = match CheckoutSession::create(&stripe_client, session_params).await {
         Ok(session) => session,
-        Err(err) => return HttpResponse::InternalServerError().body(format!("Stripe API error: {}", err)),
+        Err(err) => {
+            return HttpResponse::InternalServerError().body(format!("Stripe API error: {}", err));
+        }
     };
 
     let checkout_session_id = checkout_session.id.to_string();
     let checkout_url = match checkout_session.url {
         Some(url) => url,
-        None => return HttpResponse::InternalServerError().body("Stripe API error: no checkout URL returned"),
+        None => {
+            return HttpResponse::InternalServerError()
+                .body("Stripe API error: no checkout URL returned");
+        }
     };
 
     let payment_id = inserted_payment.payment_id;
@@ -208,10 +232,8 @@ pub async fn create_checkout_session(
                 checkout_url,
             })
         }
-        Err(err) => {
-            HttpResponse::InternalServerError()
-                .body(format!("Failed to update checkout session id: {}", err))
-        }
+        Err(err) => HttpResponse::InternalServerError()
+            .body(format!("Failed to update checkout session id: {}", err)),
     }
 }
 
@@ -222,12 +244,18 @@ pub async fn handle_stripe_webhook(
 ) -> HttpResponse {
     let webhook_secret = match std::env::var("STRIPE_WEBHOOK_SECRET") {
         Ok(secret) => secret,
-        Err(_) => return HttpResponse::InternalServerError().body("Stripe webhook secret missing in .env"),
+        Err(_) => {
+            return HttpResponse::InternalServerError()
+                .body("Stripe webhook secret missing in .env");
+        }
     };
 
     let event = match Webhook::construct_event(body, stripe_signature, &webhook_secret) {
         Ok(event) => event,
-        Err(err) => return HttpResponse::BadRequest().body(format!("Webhook verification failed: {}", err)),
+        Err(err) => {
+            return HttpResponse::BadRequest()
+                .body(format!("Webhook verification failed: {}", err));
+        }
     };
 
     println!("Webhook event type: {:?}", event.type_);
@@ -260,7 +288,10 @@ async fn handle_checkout_session_completed(
         None => return HttpResponse::BadRequest().body("No metadata found in checkout session"),
     };
 
-    let payment_id = match metadata.get("payment_id").and_then(|v| v.parse::<i32>().ok()) {
+    let payment_id = match metadata
+        .get("payment_id")
+        .and_then(|v| v.parse::<i32>().ok())
+    {
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing or invalid payment_id metadata"),
     };
@@ -268,7 +299,10 @@ async fn handle_checkout_session_completed(
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing or invalid user_id metadata"),
     };
-    let course_id = match metadata.get("course_id").and_then(|v| v.parse::<i32>().ok()) {
+    let course_id = match metadata
+        .get("course_id")
+        .and_then(|v| v.parse::<i32>().ok())
+    {
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing or invalid course_id metadata"),
     };
@@ -290,7 +324,10 @@ async fn handle_payment_intent_succeeded(
     };
 
     let metadata = payment_intent.metadata;
-    let payment_id = match metadata.get("payment_id").and_then(|v| v.parse::<i32>().ok()) {
+    let payment_id = match metadata
+        .get("payment_id")
+        .and_then(|v| v.parse::<i32>().ok())
+    {
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing or invalid payment_id metadata"),
     };
@@ -298,7 +335,10 @@ async fn handle_payment_intent_succeeded(
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing or invalid user_id metadata"),
     };
-    let course_id = match metadata.get("course_id").and_then(|v| v.parse::<i32>().ok()) {
+    let course_id = match metadata
+        .get("course_id")
+        .and_then(|v| v.parse::<i32>().ok())
+    {
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing or invalid course_id metadata"),
     };
@@ -348,7 +388,10 @@ async fn fulfill_payment(
         Ok(_) => HttpResponse::Ok().body("Payment succeeded and enrollment created"),
         Err(err) => {
             println!("Enrollment insert issue: {}", err);
-            HttpResponse::Ok().body(format!("Payment updated, enrollment may already exist: {}", err))
+            HttpResponse::Ok().body(format!(
+                "Payment updated, enrollment may already exist: {}",
+                err
+            ))
         }
     }
 }

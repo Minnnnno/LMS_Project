@@ -85,7 +85,11 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::default()
             .allowed_origin(&cors_allowed_origin)
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-            .allowed_headers(vec![header::ACCEPT, header::AUTHORIZATION, header::CONTENT_TYPE])
+            .allowed_headers(vec![
+                header::ACCEPT,
+                header::AUTHORIZATION,
+                header::CONTENT_TYPE,
+            ])
             .supports_credentials()
             .max_age(3600);
 

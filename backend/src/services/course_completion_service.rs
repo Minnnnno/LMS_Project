@@ -147,12 +147,16 @@ pub async fn load_completion_statuses(
     }
 
     let mut assignment_ids_by_course: HashMap<i32, Vec<i32>> = HashMap::new();
-    let mut assignment_pass_thresholds: HashMap<i32, (rust_decimal::Decimal, rust_decimal::Decimal)> =
-        HashMap::new();
+    let mut assignment_pass_thresholds: HashMap<
+        i32,
+        (rust_decimal::Decimal, rust_decimal::Decimal),
+    > = HashMap::new();
     for assignment in assignment_rows {
         if let Some(max_score) = assignment.max_score {
-            assignment_pass_thresholds
-                .insert(assignment.assignment_id, (max_score, assignment.passing_mark));
+            assignment_pass_thresholds.insert(
+                assignment.assignment_id,
+                (max_score, assignment.passing_mark),
+            );
         }
         assignment_ids_by_course
             .entry(assignment.course_id)
@@ -265,7 +269,8 @@ pub async fn load_completion_statuses(
                     .iter()
                     .all(|module_id| completed_module_ids.contains(module_id));
             let assignments_graded = course_assignment_ids.iter().all(|assignment_id| {
-                let Some((max_score, passing_mark)) = assignment_pass_thresholds.get(assignment_id) else {
+                let Some((max_score, passing_mark)) = assignment_pass_thresholds.get(assignment_id)
+                else {
                     return false;
                 };
                 if *max_score <= rust_decimal::Decimal::ZERO {
